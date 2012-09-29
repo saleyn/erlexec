@@ -1,0 +1,83 @@
+
+        Exec - OS Process Manager for Erlang VM.
+
+@author Serge Aleynikov <saleyn@gmail.com>
+@version {@vsn} $Revision: 1.1 $ $Date: 2003/06/25 10:15:35 $
+@title Exec - OS Process Manager for Erlang VM.
+
+@doc This application implements a manager of OS processes.
+
+<h3><a name="contents">Contents</a></h3>
+<ol>
+  <li><a href="#fs">Features</a></li>
+  <li><a href="#sp">Supported Platforms</a></li>
+  <li><a href="#ar">Architecture</a></li>
+  <li><a href="#sc">Configuration Options</a></li>
+  <li><a href="#ex">Examples</a></li>
+</ol>
+
+
+<h3><a name="fs">Features</a></h3>
+
+<du>
+<li>Starting, stopping OS commands and having their process IDs.</li>
+<li>Providing versatile OS command options, like working directory, 
+    environment setting, alternative termination command, effective 
+    user, process priority options.</li>
+<li>Ability to link Erlang processes to OS processes (via intermediate
+    Erlang Pids that are linked to an associated OS process).</li>
+<li>Proper cleanup of OS processes at port program termination time.</li>
+</du>
+<p/>
+
+<h3><a name="sp">Supported Platforms</a></h3>
+
+Currently the project supports Linux and Solaris operating systems.
+
+<h3><a name="ar">Architecture</a></h3>
+```
+  * - - - - - - - - - - - - *
+  |   +----+ +----+ +----+  |
+      |Pid1| |Pid2| |PidN|      Erlang light-weight Pids associated
+  |   +----+ +----+ +----+  |   one-to-one with managed OsPids
+            \   |   /
+  |          \  |  /        |
+              \ | / (links)
+  |         +------+        |
+            | exec |            Exec application running in Erlang VM
+  |         +------+        |
+   Erlang VM    |
+  * - - - - - - + - - - - - *
+                |
+          +-----------+
+          | exec-port |         Port program (separate OS process
+          +-----------+
+           /    |    \
+          /     |     \
+    +------+ +------+ +------+
+    |OsPid1| |OsPid2| |OsPidN|  Managed Child OS processes
+    +------+ +------+ +------+
+'''
+
+<h3><a name="sc">Configuration Options</a></h3>
+
+See description of types in {@link exec:exec_options()}.
+
+<h3><a name="ex">Examples</a></h3>
+```
+1> exec:start([]).                          % Start the port program.
+{ok,<0.32.0>}
+2> exec:run_link("exec sleep 1000", []).    % Run a shell command to sleep for 1000s.
+{ok,<0.34.0>,23584}
+3> exec:stop(23584).                        % Kill the shell command.
+ok                                          % Note that this could also be accomplished
+                                            % by doing exec:stop(pid(0,34,0)).
+
+** exception error: {exit_status,15}        % Our shell died because we linked to the 
+                                            % shell process via exec:run_link/2.
+
+4> exec:status(15).                         % Examine the exit status.
+{signal,15,false}                           % The program got SIGTERM signal and produced
+                                            % no core file.
+'''
+@end
