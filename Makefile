@@ -17,13 +17,15 @@ docs: all clean-docs
 clean-docs:
 	rm -f doc/*.{css,html,png} doc/edoc-info
 
-gitdocs:
+github-docs:
 	git checkout gh-pages
 	git checkout master src include c_src Makefile
 	make docs
 	make clean
-	git rm -fr ebin src include c_src Makefile
+	rm -fr ebin src include c_src Makefile
 	mv doc/* .
 	rmdir doc
-	if git commit -a; then ; git push origin; else ; ret=1; git reset --hard; fi; git checkout master
+	sh -c "ret=0; set +e; \
+		if git commit -a; then git push origin; else ret=1; git reset --hard; fi; \
+		set -e; git checkout master; exit $$ret"
 
