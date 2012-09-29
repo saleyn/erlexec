@@ -1,0 +1,3 @@
+{application,exec}.
+{packages,[]}.
+{modules,[exec,exec_app]}.
