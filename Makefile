@@ -22,11 +22,8 @@ gitdocs:
 	git checkout master src include c_src Makefile
 	make docs
 	make clean
-	git rm -fr src include c_src Makefile
+	git rm -fr ebin src include c_src Makefile
 	mv doc/* .
 	rmdir doc
-
-	#ret=0; set +e; \
-	if git commit -a; then ; git push origin; else ; ret=1; git reset --hard; fi; \
-	set -e; git co master
+	if git commit -a; then ; git push origin; else ; ret=1; git reset --hard; fi; git checkout master
 
