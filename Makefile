@@ -19,9 +19,10 @@ clean-docs:
 
 gitdocs:
 	git checkout gh-pages
-	git checkout master src
+	git checkout master src include c_src Makefile
 	make docs
-	git rm -fr src
+	make clean
+	git rm -fr src include c_src
 	mv doc/* .
 	rmdir doc
 
