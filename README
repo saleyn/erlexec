@@ -23,7 +23,12 @@ BUILDING
 
     $ git clone git@github.com:saleyn/erlexec.git
     $ make
-    
+
+DEPLOYING
+=========
+    Run "make tar".  This produces a tarball which you can deploy to your
+    destination environment and untar the content.
+
 LICENSE
 =======
     The program is distributed under BSD license.
