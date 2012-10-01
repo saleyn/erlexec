@@ -17,18 +17,24 @@
 <p><b>Behaviours:</b> <a href="gen_server.html"><tt>gen_server</tt></a>.</p>
 <p><b>Authors:</b> Serge Aleynikov (<a href="mailto:saleyn@gmail.com"><tt>saleyn@gmail.com</tt></a>).</p>
 
-<h2><a name="description">Description</a></h2>OS shell command starter.
-        It communicates with a C++ port process <code>exec-port</code> responsible
-        for starting, killing, listing, terminating, and notifying of
-        state changes.  The port program serves as a middle-man between
+<h2><a name="description">Description</a></h2><p>OS shell command starter.
+        It communicates with a separate C++ port process <code>exec-port</code>        
+spawned by this module, which is responsible        
+for starting, killing, listing, terminating, and notifying of        
+state changes.</p>
+  
+        <p>The port program serves as a middle-man between
         the OS and the virtual machine to carry out OS-specific low-level
         process control.  The Erlang/C++ protocol is described in the
-        <code>exec.cpp</code> file.  The <code>exec-port</code>
-        When <code>exec-port</code> is started with a root suid bit set, it
-        requires to be provided with the <code>{user, User}</code> option so that it
-        will not run as root.  Before changing the effective <code>User</code>,
-        it sets the kernel capabilities so that it's able to start
-        processes as other users and adjust process priorities.
+        <code>exec.cpp</code> file.  On platforms/environments which permit
+        setting the suid bit on the <code>exec-port</code> executable, it can
+        run external tasks by impersonating a different user. When
+        suid bit is on, the application requires <code>exec:start_link/2</code>
+        to be given the <code>{user, User}</code> option so that <code>exec-port</code>
+        will not run as root.  Before changing the effective <code>User</code>,        
+it sets the kernel capabilities so that it's able to start        
+processes as other users and adjust process priorities.</p>
+  
         At exit the port program makes its best effort to perform
         clean shutdown of all child OS processes.
         Every started OS process is linked to a spawned light-weight
@@ -59,9 +65,9 @@
            <dd>Set process priority between -20 and 20. Note that
                negative values can be specified only when <code>exec-port</code>
                is started with a root suid bit set.</dd>
-       <dt>{stdout, Device}</dt>
+       <dt>{stdout, output_device()}</dt>
            <dd>Option for redirecting process's standard output stream</dd>
-       <dt>{stderr, Device}</dt>
+       <dt>{stderr, output_device()}</dt>
            <dd>Option for redirecting process's standard error stream</dd>
        </dl></p>
 
@@ -91,13 +97,23 @@
                so that root suid bit can be set.</dd>
        </dl>.</p>
 
+<h3 class="typedecl"><a name="type-output_device">output_device()</a></h3>
+<p><tt>output_device() = null | stdout | stderr | Filename | {append, Filename}</tt>
+<ul class="definitions"><li><tt>Filename = string()</tt></li></ul></p>
+<p>Output device option:
+       <dl>
+       <dt>null</dt><dd>Suppress output.</dd>
+       <dt>stdout</dt><dd>Redirect output to stdout.</dd>
+       <dt>stderr</dt><dd>Redirect output to stderr.</dd>
+       <dt>Filename</dt><dd>Save output to file by overwriting it.</dd>
+       <dt>{append, Filename}</dt><dd>Append output to file.</dd>
+       </dl></p>
+
 <h2><a name="index">Function Index</a></h2>
-<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#default-0">default/0</a></td><td>Provide default value of a given option.</td></tr>
-<tr><td valign="top"><a href="#default-1">default/1</a></td><td></td></tr>
-<tr><td valign="top"><a href="#kill-2">kill/2</a></td><td>Send a <code>Signal</code> to a child <code>Pid</code> or <code>OsPid</code>.</td></tr>
-<tr><td valign="top"><a href="#ospid-1">ospid/1</a></td><td>Terminate a managed <code>Pid</code> or <code>OsPid</code> process.</td></tr>
-<tr><td valign="top"><a href="#run-2">run/2</a></td><td>Start an external program.</td></tr>
-<tr><td valign="top"><a href="#run_link-2">run_link/2</a></td><td>Start an external program and link to the OsPid.</td></tr>
+<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#kill-2">kill/2</a></td><td>Send a <code>Signal</code> to a child <code>Pid</code> or <code>OsPid</code>.</td></tr>
+<tr><td valign="top"><a href="#ospid-1">ospid/1</a></td><td>Get <code>OsPid</code> of the given Erlang <code>Pid</code>.</td></tr>
+<tr><td valign="top"><a href="#run-2">run/2</a></td><td>Run an external program.</td></tr>
+<tr><td valign="top"><a href="#run_link-2">run_link/2</a></td><td>Run an external program and link to the OsPid.</td></tr>
 <tr><td valign="top"><a href="#start-1">start/1</a></td><td>Start of an external program manager without supervision.</td></tr>
 <tr><td valign="top"><a href="#start_link-1">start_link/1</a></td><td>Supervised start an external program manager.</td></tr>
 <tr><td valign="top"><a href="#status-1">status/1</a></td><td>Decode the program's exit_status.</td></tr>
@@ -107,16 +123,6 @@
 
 <h2><a name="functions">Function Details</a></h2>
 
-<h3 class="function"><a name="default-0">default/0</a></h3>
-<div class="spec">
-<p><tt>default() -&gt; Default::<a href="#type-exec_options">exec_options()</a></tt><br></p>
-</div><p>Provide default value of a given option.</p>
-
-<h3 class="function"><a name="default-1">default/1</a></h3>
-<div class="spec">
-<p><tt>default(Option) -&gt; any()</tt></p>
-</div>
-
 <h3 class="function"><a name="kill-2">kill/2</a></h3>
 <div class="spec">
 <p><tt>kill(Pid, Signal::integer()) -&gt; ok | {error, Reason}</tt>
@@ -125,46 +131,56 @@
 
 <h3 class="function"><a name="ospid-1">ospid/1</a></h3>
 <div class="spec">
-<p><tt>ospid(Pid::pid()) -&gt; ok | {error, Reason}</tt>
-<ul class="definitions"><li><tt>Pid = pid() | OsPid</tt></li><li><tt>OsPid = integer()</tt></li></ul></p>
-</div><p>Terminate a managed <code>Pid</code> or <code>OsPid</code> process.</p>
+<p><tt>ospid(Pid::pid()) -&gt; OsPid::integer() | {error, Reason}</tt><br></p>
+</div><p>Get <code>OsPid</code> of the given Erlang <code>Pid</code>.  The <code>Pid</code> must be created
+       previously by running the run/2 or run_link/2 commands.</p>
 
 <h3 class="function"><a name="run-2">run/2</a></h3>
 <div class="spec">
 <p><tt>run(Exe::string(), Options::<a href="#type-cmd_options">cmd_options()</a>) -&gt; Result</tt>
 <ul class="definitions"><li><tt>Result = {ok, Pid::pid(), OsPid::integer()} | {error, Reason}</tt></li></ul></p>
-</div><p>Start an external program.</p>
+</div><p>Run an external program. <code>OsPid</code> is the OS process identifier of
+       the new process.</p>
 
 <h3 class="function"><a name="run_link-2">run_link/2</a></h3>
 <div class="spec">
-<p><tt>run_link(Exe, Options) -&gt; any()</tt></p>
+<p><tt>run_link(Exe::string(), Options::<a href="#type-cmd_options">cmd_options()</a>) -&gt; {ok, pid(), integer()} | {error, any()}</tt><br></p>
 </div><p>Equivalent to <tt>run / 2</tt>.</p>
-<p>Start an external program and link to the OsPid. If OsPid exits,
+<p>Run an external program and link to the OsPid. If OsPid exits,
        the calling process will be killed or if it's trapping exits,
        it'll get {'EXIT', OsPid, Status} message.  If the calling process
        dies the OsPid will be killed.</p>
 
 <h3 class="function"><a name="start-1">start/1</a></h3>
 <div class="spec">
-<p><tt>start(Options) -&gt; any()</tt></p>
+<p><tt>start(Options::<a href="#type-exec_options">exec_options()</a>) -&gt; {ok, pid()} | {error, any()}</tt><br></p>
 </div><p>Equivalent to <tt>start_link / 1</tt>.</p>
 <p>Start of an external program manager without supervision.</p>
 
 <h3 class="function"><a name="start_link-1">start_link/1</a></h3>
 <div class="spec">
-<p><tt>start_link(Options::<a href="#type-options">options()</a>) -&gt; {ok, Pid::pid()} | {error, Reason}</tt><br></p>
+<p><tt>start_link(Options::<a href="#type-exec_options">exec_options()</a>) -&gt; {ok, Pid::pid()} | {error, Reason}</tt><br></p>
 </div><p>Supervised start an external program manager.</p>
 
 <h3 class="function"><a name="status-1">status/1</a></h3>
 <div class="spec">
 <p><tt>status(Status::integer()) -&gt; {status, ExitStatus::integer()} | {signal, Signal::integer(), Core::boolean()}</tt><br></p>
-</div><p>Decode the program's exit_status.</p>
+</div><p>Decode the program's exit_status.  If the program exited by signal
+       the function returns <code>{signal, Signal, Core}</code> where the <code>Signal</code>
+       is the signal number, and <code>Core</code> indicates if the core file was
+       generated.</p>
 
 <h3 class="function"><a name="stop-1">stop/1</a></h3>
 <div class="spec">
 <p><tt>stop(Pid) -&gt; ok | {error, Reason}</tt>
 <ul class="definitions"><li><tt>Pid = pid() | OsPid</tt></li><li><tt>OsPid = integer()</tt></li></ul></p>
-</div><p>Terminate a managed <code>Pid</code> or <code>OsPid</code> process.</p>
+</div><p>Terminate a managed <code>Pid</code> or <code>OsPid</code> process. The OS process is
+       terminated gracefully.  If it was given a <code>{kill, Cmd}</code> option at
+       startup, that command is executed and a timer is started.  If
+       the program doesn't exit, then the default termination is
+       performed.  Default termination implies sending a <code>SIGTERM</code> command
+       followed by <code>SIGKILL</code> in 5 seconds, if the program doesn't get
+       killed.</p>
 
 <h3 class="function"><a name="which_children-0">which_children/0</a></h3>
 <div class="spec">
@@ -173,6 +189,6 @@
 <hr>
 
 <div class="navbar"><a name="#navbar_bottom"></a><table width="100%" border="0" cellspacing="0" cellpadding="2" summary="navigation bar"><tr><td><a href="overview-summary.html" target="overviewFrame">Overview</a></td><td><a href="http://www.erlang.org/"><img src="erlang.png" align="right" border="0" alt="erlang logo"></a></td></tr></table></div>
-<p><i>Generated by EDoc, Oct 1 2012, 09:35:21.</i></p>
+<p><i>Generated by EDoc, Oct 1 2012, 11:29:34.</i></p>
 </body>
 </html>
