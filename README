@@ -12,3 +12,8 @@ provides better control over OS processes than built-in erlang:open_port/2 comma
 {spawn, Command} option, and performs proper OS child process cleanup when the emulator exits. 
 
 See [http://saleyn.github.com/erlexec] for more information.
+
+LICENSE
+=======
+    The program is distributed under BSD license.
+    Copyright (c) 2003 Serge Aleynikov <saleyn at gmail dot com>
