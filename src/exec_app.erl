@@ -1,7 +1,8 @@
 %%%------------------------------------------------------------------------
 %%% File: $Id$
 %%%------------------------------------------------------------------------
-%%% @doc     Application for managing OS processes.
+%%% @doc     This module implements application and supervisor behaviors
+%%%          of the `exec' application.
 %%% @author  Serge Aleynikov <saleyn@gmail.com>
 %%% @version $Revision: 1.1 $
 %%% @end
@@ -14,6 +15,7 @@
 -id    ("$Id$").
 
 -behaviour(application).
+-behaviour(supervisor).
 
 %% application and supervisor callbacks
 -export([start/2, stop/1, init/1]).
