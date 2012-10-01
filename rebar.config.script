@@ -1,13 +1,16 @@
 Arch = erlang:system_info(system_architecture),
 {ok, <<"VSN=", I/binary>>} = file:read_file("vsn.mk"),
 Vsn  = binary_to_list(binary:replace(I, <<"\n">>, <<"">>)),
-[
-    {port_env, [{"CC",  "g++"},
-                {"CXX", "g++"},
-                {"linux", "LDFLAGS", "$LDFLAGS -lcap"}]},
+% Replace configuration options read from rebar.config with those dynamically set below
+lists:keymerge(1,
+    lists:keysort(1, [
+        {port_env, [{"CC",  "g++"},
+                    {"CXX", "g++"},
+                    {"linux", "LDFLAGS", "$LDFLAGS -lcap"}]},
 
-    {port_specs, [{filename:join(["priv", Arch, "exec-port"]), ["c_src/*.cpp"]}]},
-    {edoc_opts, [{overview, "src/overview.edoc"}, {title, "The exec application"},
-                 {includes, ["include"]}, {def, {vsn, Vsn}}]}
-].
+        {port_specs, [{filename:join(["priv", Arch, "exec-port"]), ["c_src/*.cpp"]}]},
+        {edoc_opts, [{overview, "src/overview.edoc"}, {title, "The exec application"},
+                     {includes, ["include"]}, {def, {vsn, Vsn}}]}
+    ]),
+    lists:keysort(1, CONFIG)).
 
