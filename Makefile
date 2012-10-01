@@ -26,6 +26,6 @@ github-docs:
 	mv doc/* .
 	rmdir doc
 	sh -c "ret=0; set +e; \
-		if git commit -a; then git push origin; else ret=1; exit $$ret; git reset --hard; fi; \
+		if git commit -a; then git push origin gh-pages; else ret=1; git reset --hard; fi; \
 		set -e; git checkout master; exit $$ret"
 

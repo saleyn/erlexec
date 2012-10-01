@@ -2,17 +2,23 @@
 %%% File: $Id$
 %%%------------------------------------------------------------------------
 %%% @doc OS shell command starter.
-%%%      It communicates with a C++ port process `exec-port' responsible
+%%%      It communicates with a separate C++ port process `exec-port'
+%%%      spawned by this module, which is responsible
 %%%      for starting, killing, listing, terminating, and notifying of
-%%%      state changes.  The port program serves as a middle-man between
+%%%      state changes.
+%%%
+%%%      The port program serves as a middle-man between
 %%%      the OS and the virtual machine to carry out OS-specific low-level
 %%%      process control.  The Erlang/C++ protocol is described in the
-%%%      `exec.cpp' file.  The `exec-port'
-%%%      When `exec-port' is started with a root suid bit set, it
-%%%      requires to be provided with the `{user, User}' option so that it
+%%%      `exec.cpp' file.  On platforms/environments which permit
+%%%      setting the suid bit on the `exec-port' executable, it can
+%%%      run external tasks by impersonating a different user. When
+%%%      suid bit is on, the application requires `exec:start_link/2'
+%%%      to be given the `{user, User}' option so that `exec-port'
 %%%      will not run as root.  Before changing the effective `User',
 %%%      it sets the kernel capabilities so that it's able to start
 %%%      processes as other users and adjust process priorities.
+%%%
 %%%      At exit the port program makes its best effort to perform
 %%%      clean shutdown of all child OS processes.
 %%%      Every started OS process is linked to a spawned light-weight
@@ -78,10 +84,20 @@
 %%%         <dd>Set process priority between -20 and 20. Note that
 %%%             negative values can be specified only when `exec-port'
 %%%             is started with a root suid bit set.</dd>
-%%%     <dt>{stdout, Device}</dt>
+%%%     <dt>{stdout, output_device()}</dt>
 %%%         <dd>Option for redirecting process's standard output stream</dd>
-%%%     <dt>{stderr, Device}</dt>
+%%%     <dt>{stderr, output_device()}</dt>
 %%%         <dd>Option for redirecting process's standard error stream</dd>
+%%%     </dl>
+%%% @type output_device() = null | stdout | stderr | Filename | {append, Filename}
+%%%         Filename = string().
+%%%     Output device option:
+%%%     <dl>
+%%%     <dt>null</dt><dd>Suppress output.</dd>
+%%%     <dt>stdout</dt><dd>Redirect output to stdout.</dd>
+%%%     <dt>stderr</dt><dd>Redirect output to stderr.</dd>
+%%%     <dt>Filename</dt><dd>Save output to file by overwriting it.</dd>
+%%%     <dt>{append, Filename}</dt><dd>Append output to file.</dd>
 %%%     </dl>
 %%% @end
 %%%------------------------------------------------------------------------
@@ -90,13 +106,6 @@
 %%%------------------------------------------------------------------------
 -module(exec).
 -author('saleyn@gmail.com').
--id    ("$Id$").
-
--ifdef(ARCH).
--define(system_architecture, ?ARCH).
--else.
--define(system_architecture, erlang:system_info(system_architecture)).
--endif.
 
 -behaviour(gen_server).
 
@@ -124,11 +133,31 @@
     debug       = false
 }).
 
+-type exec_options() :: [exec_option()].
+-type exec_option()  ::
+      debug
+    | verbose
+    | {args, [string(), ...]}
+    | {alarm, non_neg_integer()}
+    | {user, string()}
+    | {limit_users, [string(), ...]}
+    | {portexe, string()}.
+
+-type cmd_options() :: [cmd_option()].
+-type cmd_option()  ::
+      {cd, string()}
+    | {env, [string(), ...]}
+    | {user, string()}
+    | {nice, integer()}
+    | {stdout, null | stdout | stderr | string() | {append, string()}}
+    | {stderr, null | stdout | stderr | string() | {append, string()}}.
+
 %%-------------------------------------------------------------------------
-%% @spec (Options::options()) -> {ok, Pid::pid()} | {error, Reason}
+%% @spec (Options::exec_options()) -> {ok, Pid::pid()} | {error, Reason}
 %% @doc Supervised start an external program manager.
 %% @end
 %%-------------------------------------------------------------------------
+-spec start_link(exec_options()) -> {ok, pid()} | {error, any()}.
 start_link(Options) when is_list(Options) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [Options], []).
 
@@ -137,26 +166,30 @@ start_link(Options) when is_list(Options) ->
 %% @doc Start of an external program manager without supervision.
 %% @end
 %%-------------------------------------------------------------------------
+-spec start(exec_options()) -> {ok, pid()} | {error, any()}.
 start(Options) when is_list(Options) ->
     gen_server:start({local, ?MODULE}, ?MODULE, [Options], []).
 
 %%-------------------------------------------------------------------------
 %% @spec (Exe::string(), Options::cmd_options()) -> Result
 %%          Result  = {ok, Pid::pid(), OsPid::integer()} | {error, Reason}
-%% @doc Start an external program.
+%% @doc Run an external program. `OsPid' is the OS process identifier of
+%%      the new process.
 %% @end
 %%-------------------------------------------------------------------------
+-spec run(string(), cmd_options()) -> {ok, pid(), integer()} | {error, any()}.
 run(Exe, Options) when is_list(Exe), is_list(Options) ->
     gen_server:call(?MODULE, {port, {start, {run, Exe, Options}, nolink}}, 30000).
 
 %%-------------------------------------------------------------------------
 %% @equiv run/2
-%% @doc Start an external program and link to the OsPid. If OsPid exits,
+%% @doc Run an external program and link to the OsPid. If OsPid exits,
 %%      the calling process will be killed or if it's trapping exits,
 %%      it'll get {'EXIT', OsPid, Status} message.  If the calling process
 %%      dies the OsPid will be killed.
 %% @end
 %%-------------------------------------------------------------------------
+-spec run_link(string(), cmd_options()) -> {ok, pid(), integer()} | {error, any()}.
 run_link(Exe, Options) when is_list(Exe), is_list(Options) ->
     gen_server:call(?MODULE, {port, {start, {run, Exe, Options}, link}}).
 
@@ -165,6 +198,7 @@ run_link(Exe, Options) when is_list(Exe), is_list(Options) ->
 %% @doc Get a list of children managed by port program.
 %% @end
 %%-------------------------------------------------------------------------
+-spec which_children() -> [integer(), ...].
 which_children() ->
     gen_server:call(?MODULE, {port, {list}}).
 
@@ -175,6 +209,7 @@ which_children() ->
 %% @doc Send a `Signal' to a child `Pid' or `OsPid'.
 %% @end
 %%-------------------------------------------------------------------------
+-spec kill(pid() | integer(), integer()) -> ok | {error, any()}.
 kill(Pid, Signal) when is_pid(Pid); is_integer(Pid) ->
     gen_server:call(?MODULE, {port, {kill, Pid, Signal}}).
 
@@ -182,36 +217,46 @@ kill(Pid, Signal) when is_pid(Pid); is_integer(Pid) ->
 %% @spec (Pid) -> ok | {error, Reason}
 %%          Pid   = pid() | OsPid
 %%          OsPid = integer()
-%% @doc Terminate a managed `Pid' or `OsPid' process.
+%% @doc Terminate a managed `Pid' or `OsPid' process. The OS process is
+%%      terminated gracefully.  If it was given a `{kill, Cmd}' option at
+%%      startup, that command is executed and a timer is started.  If
+%%      the program doesn't exit, then the default termination is
+%%      performed.  Default termination implies sending a `SIGTERM' command
+%%      followed by `SIGKILL' in 5 seconds, if the program doesn't get
+%%      killed.
 %% @end
 %%-------------------------------------------------------------------------
+-spec stop(pid() | integer()) -> ok | {error, any()}.
 stop(Pid) when is_pid(Pid); is_integer(Pid) ->
     gen_server:call(?MODULE, {port, {stop, Pid}}, 30000).
 
 %%-------------------------------------------------------------------------
-%% @spec (Pid::pid()) -> ok | {error, Reason}
-%%          Pid   = pid() | OsPid
-%%          OsPid = integer()
-%% @doc Terminate a managed `Pid' or `OsPid' process.
+%% @spec (Pid::pid()) -> OsPid::integer() | {error, Reason}
+%% @doc Get `OsPid' of the given Erlang `Pid'.  The `Pid' must be created
+%%      previously by running the run/2 or run_link/2 commands.
 %% @end
 %%-------------------------------------------------------------------------
-ospid(Pid) ->
+-spec ospid(pid()) -> integer() | {error, timeout}.
+ospid(Pid) when is_pid(Pid) ->
     Ref = make_ref(),
     Pid ! {{self(), Ref}, ospid},
     receive
     {Ref, Reply} -> Reply;
-    Other -> Other
-    after 7000 ->
-        {error, timeout}
+    Other        -> Other
+    after 5000   -> {error, timeout}
     end.
 
 %%-------------------------------------------------------------------------
 %% @spec (Status::integer()) -> 
 %%          {status, ExitStatus::integer()} | 
 %%          {signal, Signal::integer(), Core::boolean()}
-%% @doc Decode the program's exit_status.
+%% @doc Decode the program's exit_status.  If the program exited by signal
+%%      the function returns `{signal, Signal, Core}' where the `Signal'
+%%      is the signal number, and `Core' indicates if the core file was
+%%      generated.
 %% @end
 %%-------------------------------------------------------------------------
+-spec status(integer()) -> {status, integer()} | {signal, integer(), boolean()}.
 status(Status) when is_integer(Status) ->
     case {Status band 16#FF00 bsr 8, Status band 16#7F, (Status band 16#80) =:= 16#80} of
     {Stat, 0, _}      -> {status, Stat};
@@ -220,6 +265,7 @@ status(Status) when is_integer(Status) ->
     end.
 
 %%-------------------------------------------------------------------------
+%% @private
 %% @spec () -> Default::exec_options()
 %% @doc Provide default value of a given option.
 %% @end
@@ -233,10 +279,11 @@ default() ->
      {limit_users, []}, % Restricted list of users allowed to run commands
      {portexe, default(portexe)}].
 
+%% @private
 default(portexe) -> 
     % Get architecture (e.g. i386-linux)
     Dir = filename:dirname(filename:dirname(code:which(?MODULE))),
-    filename:join([Dir, "priv", ?system_architecture, "exec-port"]);
+    filename:join([Dir, "priv", erlang:system_info(system_architecture), "exec-port"]);
 default(Option) ->
     proplists:get_value(Option, default()).
 
