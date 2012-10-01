@@ -1,0 +1,10 @@
+#!/bin/bash -e
+
+INSTALL=${1:-$(cd ${0%/*} && pwd)/install}
+
+echo "Install dir: ${INSTALL}"
+
+make -f bootstrap.mk
+./configure --prefix=${INSTALL}
+make
+make install
