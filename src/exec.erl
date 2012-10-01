@@ -236,8 +236,7 @@ default() ->
 default(portexe) -> 
     % Get architecture (e.g. i386-linux)
     Dir = filename:dirname(filename:dirname(code:which(?MODULE))),
-    %filename:join([Dir, "priv", ?system_architecture, "bin", "exec-port"]);
-    filename:join([Dir, "priv", "exec-port"]);
+    filename:join([Dir, "priv", ?system_architecture, "exec-port"]);
 default(Option) ->
     proplists:get_value(Option, default()).
 
