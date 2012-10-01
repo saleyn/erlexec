@@ -28,7 +28,7 @@
 %%%      versa.
 %%%
 %%% @author Serge Aleynikov <saleyn@gmail.com>
-%%% @version $Revision$
+%%% @version {@vsn}
 %%%
 %%% @type exec_options() = [Option]
 %%%         Option = debug | verbose | {args, Args} | {alarm, Secs} |

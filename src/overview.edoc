@@ -51,7 +51,7 @@ Currently the project supports Linux and Solaris operating systems.
   * - - - - - - + - - - - - *
                 |
           +-----------+
-          | exec-port |         Port program (separate OS process
+          | exec-port |         Port program (separate OS process)
           +-----------+
            /    |    \
           /     |     \
@@ -66,19 +66,19 @@ See description of types in {@link exec:exec_options()}.
 
 <h3><a name="ex">Examples</a></h3>
 ```
-1> exec:start([]).                          % Start the port program.
+1> exec:start([]).                                      % Start the port program.
 {ok,<0.32.0>}
-2> exec:run_link("exec sleep 1000", []).    % Run a shell command to sleep for 1000s.
+2> {ok, _, I} = exec:run_link("exec sleep 1000", []).   % Run a shell command to sleep for 1000s.
 {ok,<0.34.0>,23584}
-3> exec:stop(23584).                        % Kill the shell command.
-ok                                          % Note that this could also be accomplished
-                                            % by doing exec:stop(pid(0,34,0)).
+3> exec:stop(I).                                        % Kill the shell command.
+ok                                                      % Note that this could also be accomplished
+                                                        % by doing exec:stop(pid(0,34,0)).
 
-** exception error: {exit_status,15}        % Our shell died because we linked to the 
-                                            % shell process via exec:run_link/2.
+** exception error: {exit_status,15}                    % Our shell died because we linked to the 
+                                                        % shell process via exec:run_link/2.
 
-4> exec:status(15).                         % Examine the exit status.
-{signal,15,false}                           % The program got SIGTERM signal and produced
-                                            % no core file.
+4> exec:status(15).                                     % Examine the exit status.
+{signal,15,false}                                       % The program got SIGTERM signal and produced
+                                                        % no core file.
 '''
 @end
