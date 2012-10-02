@@ -456,6 +456,8 @@ namespace ei {
         void encode(char v)                 { wcheck(2);           ei_encode_char(&m_wbuf, &m_wIdx, v);   }
         void encode(int i)                  { wcheck(sizeof(i));   ei_encode_long(&m_wbuf, &m_wIdx, i);   }
         void encode(unsigned int i)         { wcheck(8);           ei_encode_ulong(&m_wbuf, &m_wIdx, i);  }
+        void encode(long l)                 { wcheck(sizeof(l));   ei_encode_long(&m_wbuf, &m_wIdx, l);   }
+        void encode(unsigned long l)        { wcheck(sizeof(l));   ei_encode_ulong(&m_wbuf, &m_wIdx, l);  }
         void encode(long long i)            { int n=0; ei_encode_longlong (NULL,&n,i); wcheck(n); ei_encode_longlong(&m_wbuf,&m_wIdx,i); }
         void encode(unsigned long long i)   { int n=0; ei_encode_ulonglong(NULL,&n,i); wcheck(n); ei_encode_ulonglong(&m_wbuf,&m_wIdx,i); }
         void encode(bool b)                 { wcheck(8);           ei_encode_boolean(&m_wbuf, &m_wIdx, b); }
