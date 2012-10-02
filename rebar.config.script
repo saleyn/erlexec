@@ -1,12 +1,27 @@
 Arch = erlang:system_info(system_architecture),
 {ok, <<"VSN=", I/binary>>} = file:read_file("vsn.mk"),
 Vsn  = binary_to_list(binary:replace(I, <<"\n">>, <<"">>)),
+%% Check for Linux capability API.
+Cap  =  case file:read_file_info("/usr/include/sys/capability.h") of
+        {ok, _} ->
+            io:put_chars("INFO:  Detected support of linux capabilities.\n"),
+            [{"linux", "CXXFLAGS", "$CXXFLAGS -DUSE_PRCTL"},
+             {"linux", "LDFLAGS", "$LDFLAGS -lcap"}];
+        _ ->
+            []
+        end,
+
 % Replace configuration options read from rebar.config with those dynamically set below
 lists:keymerge(1,
     lists:keysort(1, [
-        {port_env, [{"CC",  "g++"},
-                    {"CXX", "g++"},
-                    {"linux", "LDFLAGS", "$LDFLAGS -lcap"}]},
+        {port_env, Cap ++ [
+                    %% XXXjh Force 64bit build, assume default g++ and native ld.
+                    {"solaris", "CXXFLAGS", "$CXXFLAGS -m64"},
+                    {"solaris", "LDFLAGS", "$LDFLAGS -m64 -lrt"},
+
+                    {"CC",  "g++"},
+                    {"CXX", "g++"}
+                   ]},
 
         {port_specs, [{filename:join(["priv", Arch, "exec-port"]), ["c_src/*.cpp"]}]},
         {edoc_opts, [{overview, "src/overview.edoc"}, {title, "The exec application"},
