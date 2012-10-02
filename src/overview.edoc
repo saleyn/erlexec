@@ -19,7 +19,7 @@
 
 <h3><a name="fs">Features</a></h3>
 
-<du>
+<ul>
 <li>Starting, stopping OS commands and getting their OS process IDs.</li>
 <li>Providing versatile OS command options, including working directory, 
     environment settings, alternative termination command, effective 
@@ -28,7 +28,7 @@
 <li>Ability to link Erlang processes to OS processes (via intermediate
     Erlang Pids that are linked to an associated OS process).</li>
 <li>Proper cleanup of OS processes at port program termination time.</li>
-</du>
+</ul>
 <p/>
 
 <h3><a name="sp">Supported Platforms</a></h3>
