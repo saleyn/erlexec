@@ -45,9 +45,12 @@
 %%%         <dd>Give `Secs' deadline for the port program to clean up
 %%%             child pids before exiting</dd>
 %%%     <dt>{user, User}</dt>
-%%%         <dd>When port program is owned by root, this option must be
-%%%             specified so that the port program is not running under
-%%%             root account.</dd>
+%%%         <dd>When the port program was compiled with capability (Linux)
+%%%             support enabled, and is owned by root with a a suid bit set,
+%%%             this option must be specified so that upon startup the port
+%%%             program is running under the effective user different from root.
+%%%             This is a security measure that will also prevent the port program
+%%%             to execute root commands.</dd>
 %%%     <dt>{limit_users, LimitUsers}</dt>
 %%%         <dd>Limit execution of external commands to these set of users.
 %%%             This option is only valid when the port program is owned
@@ -78,8 +81,10 @@
 %%%             SIGTERM/SIGKILL combination is used for process
 %%%             termination.</dd>
 %%%     <dt>{user, RunAsUser}</dt>
-%%%         <dd>When exec-port has a suid bit set, it's capable of running
-%%%             commands with a different RunAsUser effective user.</dd>
+%%%         <dd>When exec-port was compiled with capability (Linux) support
+%%%             enabled and has a suid bit set, it's capable of running
+%%%             commands with a different RunAsUser effective user. Passing
+%%%             "root" value of `RunAsUser' is prohibited.</dd>
 %%%     <dt>{nice, Priority}</dt>
 %%%         <dd>Set process priority between -20 and 20. Note that
 %%%             negative values can be specified only when `exec-port'
@@ -288,6 +293,7 @@ default(Option) ->
     proplists:get_value(Option, default()).
 
 get_opt({Option, Value}) -> {Option, Value};
+get_opt(verbose)         -> {verbose, true};
 get_opt(debug)           -> {debug, true}.
 
 %%%----------------------------------------------------------------------
