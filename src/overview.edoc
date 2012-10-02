@@ -37,18 +37,18 @@ Currently the project supports Linux and Solaris operating systems.
 
 <h3><a name="ar">Architecture</a></h3>
 ```
-  * - - - - - - - - - - - - *
+  *-------------------------*
   |   +----+ +----+ +----+  |
-      |Pid1| |Pid2| |PidN|      Erlang light-weight Pids associated
+  |   |Pid1| |Pid2| |PidN|  |   Erlang light-weight Pids associated
   |   +----+ +----+ +----+  |   one-to-one with managed OsPids
-            \   |   /
+  |         \   |   /       |
   |          \  |  /        |
-              \ | / (links)
+  |           \ | / (links) |
   |         +------+        |
-            | exec |            Exec application running in Erlang VM
+  |         | exec |        |   Exec application running in Erlang VM
   |         +------+        |
-   Erlang VM    |
-  * - - - - - - + - - - - - *
+   Erlang VM    |           |
+  *-------------+-----------*
                 |
           +-----------+
           | exec-port |         Port program (separate OS process)
