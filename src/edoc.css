@@ -63,11 +63,7 @@ body {
    color: #333;
 }
 
-tt, code, pre {
-   font-family: "Andale Mono", "Inconsolata", "Monaco", "DejaVu Sans Mono", monospaced;
-}
-
-tt, code { font-size: 0.875em }
+tt, code, pre { font-size: 0.875em }
 
 pre {
    font-size: 0.875em; /* 14px */
