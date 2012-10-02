@@ -28,6 +28,7 @@ lists:keymerge(1,
                      {title,        "The exec application"},
                      {includes,     ["include"]},
                      {def,          {vsn, Vsn}},
+                     {stylesheet_file, "src/edoc.css"},
                      {app_default,  "http://www.erlang.org/doc/man"}]}
     ]),
     lists:keysort(1, CONFIG)).
