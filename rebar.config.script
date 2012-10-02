@@ -23,9 +23,12 @@ lists:keymerge(1,
                     {"CXX", "g++"}
                    ]},
 
-        {port_specs, [{filename:join(["priv", Arch, "exec-port"]), ["c_src/*.cpp"]}]},
-        {edoc_opts, [{overview, "src/overview.edoc"}, {title, "The exec application"},
-                     {includes, ["include"]}, {def, {vsn, Vsn}}]}
+        {port_specs,[{filename:join(["priv", Arch, "exec-port"]), ["c_src/*.cpp"]}]},
+        {edoc_opts, [{overview,     "src/overview.edoc"},
+                     {title,        "The exec application"},
+                     {includes,     ["include"]},
+                     {def,          {vsn, Vsn}},
+                     {app_default,  "http://www.erlang.org/doc/man"}]}
     ]),
     lists:keysort(1, CONFIG)).
 
