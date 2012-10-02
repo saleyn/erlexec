@@ -46,7 +46,7 @@
 #include <unistd.h>
 #include <signal.h>
 
-#ifdef USE_PRCTL
+#ifdef HAVE_CAP
 #include <sys/prctl.h>
 #include <sys/capability.h>
 #endif
@@ -109,7 +109,10 @@ class CmdOptions {
 
 public:
 
-    CmdOptions() : m_tmp(0, 256), m_nice(INT_MAX), m_size(0), m_count(0), m_user(INT_MAX), m_cenv(NULL) {}
+    CmdOptions()
+        : m_tmp(0, 256), m_nice(INT_MAX), m_size(0)
+        , m_count(0), m_user(INT_MAX), m_cenv(NULL)
+    {}
     ~CmdOptions() { delete [] m_cenv; m_cenv = NULL; }
 
     const char*  strerror() const { return m_err.str().c_str(); }
@@ -319,7 +322,7 @@ int main(int argc, char* argv[])
                 char* run_as_user = argv[++res];
                 struct passwd *pw = NULL;
                 if ((pw = getpwnam(run_as_user)) == NULL) {
-                    fprintf(stderr, "User %s not found!\n", run_as_user);
+                    fprintf(stderr, "User %s not found!\r\n", run_as_user);
                     exit(3);
                 }
                 userid = pw->pw_uid;
@@ -332,15 +335,17 @@ int main(int argc, char* argv[])
     if (getuid() == 0) {
         superuser = true;
         if (userid == 0) {
-            fprintf(stderr, "When running as root, \"-user User\" option must be provided!");
+            fprintf(stderr, "When running as root, \"-user User\" option must be provided!\r\n");
             exit(4);
         }
 
-        #ifdef USE_PRCTL
+        #ifdef HAVE_CAP
        	if (prctl(PR_SET_KEEPCAPS, 1) < 0) {
     		perror("Failed to call prctl to keep capabilities");
 	    	exit(5);
     	}
+        #endif
+
         if (setresuid(userid, userid, userid) < 0) {
             perror("Failed to set userid");
             exit(6);
@@ -348,16 +353,23 @@ int main(int argc, char* argv[])
 
         struct passwd* pw;
         if (debug && (pw = getpwuid(geteuid())) != NULL)
-            fprintf(stderr, "exec: running as: %s (uid=%d)\r\n", pw->pw_name, getuid());
+            fprintf(stderr, "exec: running as: %s (euid=%d)\r\n", pw->pw_name, geteuid());
 
+        if (geteuid() == 0) {
+            fprintf(stderr, "Failed to set effective userid to a non-root user %s (uid=%d)\r\n",
+                pw ? pw->pw_name : "", geteuid());
+            exit(7);
+        }
+
+        #ifdef HAVE_CAP
         cap_t cur;
         if ((cur = cap_from_text("cap_setuid=eip cap_kill=eip cap_sys_nice=eip")) == 0) {
             perror("Failed to convert cap_setuid & cap_sys_nice from text");
-            exit(7);
+            exit(8);
         }
         if (cap_set_proc(cur) < 0) {
             perror("Failed to set cap_setuid & cap_sys_nice");
-            exit(8);
+            exit(9);
         }
         cap_free(cur);
 
@@ -365,12 +377,10 @@ int main(int argc, char* argv[])
             fprintf(stderr, "exec: current capabilities: %s\r\n",  cap_to_text(cur, NULL));
             cap_free(cur);
         }
-        #elif defined(__CYGWIN__) || defined(__WIN32)
-        fprintf(stderr, "setuid is not supported on Windows!\r\n");
-        exit(9);
         #else
-        fprintf(stderr, "setuid feature is not implemented for this plaform!\r\n");
-        exit(9);
+        if (debug)
+            fprintf(stderr, "capability feature is not implemented for this plaform!\r\n");
+        //exit(10);
         #endif
     }
 
@@ -416,7 +426,8 @@ int main(int argc, char* argv[])
                 break;
             } 
                 
-            /* Our marshalling spec is that we are expecting a tuple {TransId, {Cmd::atom(), Arg1, Arg2, ...}} */
+            /* Our marshalling spec is that we are expecting a tuple
+             * TransId, {Cmd::atom(), Arg1, Arg2, ...}} */
             if (eis.decodeTupleSize() != 2 || 
                 (eis.decodeInt(transId)) < 0 || 
                 (arity = eis.decodeTupleSize()) < 1)

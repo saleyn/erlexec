@@ -5,7 +5,7 @@ Vsn  = binary_to_list(binary:replace(I, <<"\n">>, <<"">>)),
 Cap  =  case file:read_file_info("/usr/include/sys/capability.h") of
         {ok, _} ->
             io:put_chars("INFO:  Detected support of linux capabilities.\n"),
-            [{"linux", "CXXFLAGS", "$CXXFLAGS -DUSE_PRCTL"},
+            [{"linux", "CXXFLAGS", "$CXXFLAGS -DHAVE_CAP"},
              {"linux", "LDFLAGS", "$LDFLAGS -lcap"}];
         _ ->
             []
