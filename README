@@ -16,10 +16,24 @@ erlexec
 
     See [http://saleyn.github.com/erlexec] for more information.
 
+SUPPORTED OS's
+==============
+    Linux, Solaris
+
 BUILDING
 ========
     Make sure you have rebar (http://github.com/basho/rebar) installed
     locally and the rebar script is in the path.
+
+    If you are deploying the application on Linux and would like to
+    take advantage of exec-port running tasks using effective user IDs
+    different from the real user ID that started exec-port, then
+    make sure that libcap-dev[el] library is installed.
+
+        OS-specific libcap-dev installation instructions:
+
+        Fedora, CentOS: "yum install libcap-devel"
+        Ubuntu:         "apt-get install libcap-dev"
 
     $ git clone git@github.com:saleyn/erlexec.git
     $ make
