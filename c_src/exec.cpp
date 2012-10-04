@@ -346,7 +346,15 @@ int main(int argc, char* argv[])
     	}
         #endif
 
-        if (setresuid(userid, userid, userid) < 0) {
+        if (
+            #ifdef HAVE_SETRESUID
+            setresuid(-1, userid, geteuid()) // glibc, FreeBSD, OpenBSD, HP-UX
+            #elif HAVE_SETREUID
+            setreuid(-1, userid)             // MacOSX, NetBSD, AIX, IRIX, Solaris>=2.5, OSF/1, Cygwin
+            #else
+            #error setresuid(3) not supported!
+            #endif
+        < 0) {
             perror("Failed to set userid");
             exit(6);
         }
