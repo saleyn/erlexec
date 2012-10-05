@@ -1,7 +1,6 @@
 # See LICENSE for licensing information.
 
-include vsn.mk
-
+VSN     = $(shell git describe --always --tags --abbrev=0 | sed 's/^v//')
 PROJECT = $(notdir $(PWD))
 TARBALL = $(PROJECT)-$(VSN)
 
