@@ -1,7 +1,7 @@
 {application, exec,
  [
   {description, "OS Process Manager"},
-  {vsn, "1.0"},
+  {vsn, git},
   {id, "exec"},
   {modules, []},
   {registered, [ exec ] },
