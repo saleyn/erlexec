@@ -1,6 +1,5 @@
 Arch = erlang:system_info(system_architecture),
-{ok, <<"VSN=", I/binary>>} = file:read_file("vsn.mk"),
-Vsn  = binary_to_list(binary:replace(I, <<"\n">>, <<"">>)),
+Vsn  = string:strip(os:cmd("git describe --always --tags --abbrev=0 | sed 's/^v//'"), right, $\n),
 %% Check for Linux capability API.
 Cap  =  case file:read_file_info("/usr/include/sys/capability.h") of
         {ok, _} ->
