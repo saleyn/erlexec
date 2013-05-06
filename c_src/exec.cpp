@@ -831,12 +831,12 @@ int CmdOptions::ei_decode(ei::Serializer& ei)
 
     // getting the environment of the caller process
     int orig_env_sz = 0;
-    for (char **env_ptr = environ; *env_ptr; env++ )
+    for (char **env_ptr = environ; *env_ptr; env_ptr++ )
     {
 	m_env.push_back(*env_ptr);
 	orig_env_sz++;
     }
-    m_stdout << "Imported from caller environment " << orig_env_sz << " env vars";
+    m_err << "imported from caller total env vars: " << orig_env_sz;
 
     m_nice = INT_MAX;
     
@@ -902,7 +902,7 @@ int CmdOptions::ei_decode(ei::Serializer& ei)
                     }
                     m_env.push_back(s);
                 }
-                m_stdout << "Imported from options " << opt_env_sz << " env vars";
+                m_err << "imported from options total env vars: " << opt_env_sz;
                 orig_env_sz += opt_env_sz;
                 break;
             }
@@ -955,7 +955,7 @@ int CmdOptions::ei_decode(ei::Serializer& ei)
           m_cenv[i] = m_env.back().c_str();
       }
       m_cenv[orig_env_sz] = NULL;
-      m_stdout << "Allocated buffer for " << orig_env_sz << " env vars";
+      m_err << "allocated buffer for total env vars: " << orig_env_sz;
     }
 
     if (m_stdout == "1>&2" && m_stderr != "2>&1") {
