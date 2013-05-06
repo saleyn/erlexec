@@ -151,6 +151,11 @@ struct CmdInfo {
 };
 
 //-------------------------------------------------------------------------
+// External definitions
+//-------------------------------------------------------------------------
+extern char **environ; // getting the whole environment
+
+//-------------------------------------------------------------------------
 // Global variables
 //-------------------------------------------------------------------------
 
@@ -819,9 +824,20 @@ int CmdOptions::ei_decode(ei::Serializer& ei)
     std::string op, val;
     
     m_err.str("");
+
     delete [] m_cenv;
     m_cenv = NULL;
     m_env.clear();
+
+    // getting the environment of the caller process
+    int orig_env_sz = 0;
+    for (char **env_ptr = environ; *env_ptr; env++ )
+    {
+	m_env.push_back(*env_ptr);
+	orig_env_sz++;
+    }
+    m_stdout << "Imported from caller environment " << orig_env_sz << " env vars";
+
     m_nice = INT_MAX;
     
     if (eis.decodeString(m_cmd) < 0) {
@@ -873,22 +889,21 @@ int CmdOptions::ei_decode(ei::Serializer& ei)
 
             case ENV: {
                 // {env, [NameEqualsValue::string()]}
-                int env_sz = eis.decodeListSize();
-                if (env_sz < 0) {
+                // passed in env variables are appended to the existing ones obtained from environ global var
+                int opt_env_sz = eis.decodeListSize();
+                if (opt_env_sz < 0) {
                     m_err << "env list expected"; return -1;
-                } else if ((m_cenv = (const char**) new char* [env_sz+1]) == NULL) {
-                    m_err << "out of memory"; return -1;
                 }
 
-                for (int i=0; i < env_sz; i++) {
+                for (int i=0; i < opt_env_sz; i++) {
                     std::string s;
                     if (eis.decodeString(s) < 0) {
                         m_err << "invalid env argument #" << i; return -1;
                     }
                     m_env.push_back(s);
-                    m_cenv[i] = m_env.back().c_str();
                 }
-                m_cenv[env_sz] = NULL;
+                m_stdout << "Imported from options " << opt_env_sz << " env vars";
+                orig_env_sz += opt_env_sz;
                 break;
             }
 
@@ -932,8 +947,19 @@ int CmdOptions::ei_decode(ei::Serializer& ei)
         }
     }
 
+    if ((m_cenv = (const char**) new char* [orig_env_sz+1]) == NULL) {
+        m_err << "out of memory"; return -1;
+    }
+    else {
+      for (int i=0; i < orig_env_sz; i++) {
+          m_cenv[i] = m_env.back().c_str();
+      }
+      m_cenv[orig_env_sz] = NULL;
+      m_stdout << "Allocated buffer for " << orig_env_sz << " env vars";
+    }
+
     if (m_stdout == "1>&2" && m_stderr != "2>&1") {
-        m_err << "cirtular reference of stdout and stderr";
+        m_err << "circular reference of stdout and stderr";
         return -1;
     } else if (!m_stdout.empty() || !m_stderr.empty()) {
         std::stringstream ss;
