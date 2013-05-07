@@ -836,7 +836,7 @@ int CmdOptions::ei_decode(ei::Serializer& ei)
 	m_env.push_back(*env_ptr);
 	orig_env_sz++;
     }
-    m_err << "imported from caller total env vars: " << orig_env_sz;
+    printf("imported from caller %i env vars\n", orig_env_sz);
 
     m_nice = INT_MAX;
     
@@ -902,7 +902,7 @@ int CmdOptions::ei_decode(ei::Serializer& ei)
                     }
                     m_env.push_back(s);
                 }
-                m_err << "imported from options total env vars: " << opt_env_sz;
+                printf("imported from options %i env vars\n", opt_env_sz);
                 orig_env_sz += opt_env_sz;
                 break;
             }
@@ -952,10 +952,11 @@ int CmdOptions::ei_decode(ei::Serializer& ei)
     }
     else {
       for (int i=0; i < orig_env_sz; i++) {
-          m_cenv[i] = m_env.back().c_str();
+          m_cenv[i] = m_env.front().c_str();
+	      m_env.pop_front();
       }
       m_cenv[orig_env_sz] = NULL;
-      m_err << "allocated buffer for total env vars: " << orig_env_sz;
+      printf("allocated buffer for %i total env vars\n", orig_env_sz);
     }
 
     if (m_stdout == "1>&2" && m_stderr != "2>&1") {
