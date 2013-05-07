@@ -21,10 +21,10 @@ clean-docs:
 
 github-docs:
 	git checkout gh-pages
-	git checkout master src include c_src Makefile vsn.mk rebar.*
+	git checkout master src include c_src Makefile rebar.*
 	make docs
 	make clean
-	rm -fr ebin src include c_src Makefile priv erl_crash.dump vsn.mk rebar.*
+	rm -fr ebin src include c_src Makefile priv erl_crash.dump rebar.*
 	mv doc/* .
 	rmdir doc
 	sh -c "ret=0; set +e; \
