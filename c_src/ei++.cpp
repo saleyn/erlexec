@@ -63,7 +63,7 @@ int ei::Serializer::print (std::ostream& os, const std::string& header)
         return -1;
     if (!header.empty())
         os << header << s << std::endl;
-    else 
+    else
         os << s << std::endl;
 
     if (s)
@@ -85,10 +85,10 @@ TimeVal ei::operator+ (const TimeVal& t1, const TimeVal& t2) {
 }
 
 //-----------------------------------------------------------------------------
-TimeVal::TimeVal(TimeType tp, int _s, int _us) 
+TimeVal::TimeVal(TimeType tp, int _s, int _us)
 {
     switch (tp) {
-        case NOW: 
+        case NOW:
             gettimeofday(&m_tv, NULL);
             break;
         case RELATIVE:
@@ -100,10 +100,10 @@ TimeVal::TimeVal(TimeType tp, int _s, int _us)
 //-----------------------------------------------------------------------------
 int Serializer::set_handles(int in, int out, bool non_blocking)
 {
-    m_fin = in; 
+    m_fin = in;
     m_fout = out;
     if (non_blocking) {
-        return fcntl(m_fin,  F_SETFL, fcntl(m_fin,  F_GETFL) | O_NONBLOCK) 
+        return fcntl(m_fin,  F_SETFL, fcntl(m_fin,  F_GETFL) | O_NONBLOCK)
             || fcntl(m_fout, F_SETFL, fcntl(m_fout, F_GETFL) | O_NONBLOCK);
     } else
         return 0;
@@ -119,14 +119,14 @@ int Serializer::read()
 
         m_readPacketSz = m_rbuf.read_header();
         m_readOffset   = 0;
-    
+
         if (m_debug)
             std::cerr << "Serializer::read() - message size: " << m_readPacketSz << std::endl;
 
         if (!m_rbuf.resize(m_readPacketSz))
             return -2;
     }
-    
+
     int total = m_readPacketSz - m_readOffset;
     if (read_exact(m_fin, &m_rbuf, m_readPacketSz, m_readOffset) < total)
         return -3;
@@ -139,7 +139,7 @@ int Serializer::read()
     int len = m_readPacketSz;
     m_readOffset = m_readPacketSz = 0;
 
-    /* Ensure that we are receiving the binary term by reading and 
+    /* Ensure that we are receiving the binary term by reading and
      * stripping the version byte */
     int version;
     if (ei_decode_version(&m_rbuf, &m_rIdx, &version))
@@ -159,7 +159,7 @@ int Serializer::write()
         m_writePacketSz = m_wIdx+m_wbuf.headerSize();
         m_writeOffset = 0;
     }
-    
+
     int total = m_writePacketSz - m_writeOffset;
     if (write_exact(m_fout, m_wbuf.header(), m_writePacketSz, m_writeOffset) < total)
         return -1;
@@ -196,7 +196,7 @@ int Serializer::write_exact(int fd, const char *buf, size_t len, size_t& wrote)
 
     while (wrote < len) {
         int size = len-wrote;
-        while ((i = ::write(fd, buf+wrote, size)) < size && errno == EINTR) 
+        while ((i = ::write(fd, buf+wrote, size)) < size && errno == EINTR)
             if (i > 0)
                 wrote += i;
 
@@ -210,7 +210,7 @@ int Serializer::write_exact(int fd, const char *buf, size_t len, size_t& wrote)
 
 
 #define get8(s)    ((s) += 1, ((unsigned char *)(s))[-1] & 0xff)
-#define put8(s,n) do { (s)[0] = (char)((n) & 0xff); (s) += 1; } while (0) 
+#define put8(s,n) do { (s)[0] = (char)((n) & 0xff); (s) += 1; } while (0)
 
 #define put64be(s,n) do {  \
       (s)[0] = ((n) >>  56) & 0xff; \
@@ -254,7 +254,7 @@ int Serializer::ei_decode_double(const char *buf, int *index, double *p)
       unsigned long long i = get64be(s);
       long long shift;
       unsigned bias;
-      
+
       if (!p)
         break;
       else if (i == 0)
@@ -286,24 +286,24 @@ int Serializer::ei_decode_double(const char *buf, int *index, double *p)
 }
 
 int Serializer::ei_encode_double(char *buf, int *index, double p)
-{   
+{
   char *s = buf + *index;
   char *s0 = s;
-    
-  if (!buf) 
+
+  if (!buf)
     s = s+9;
   else { /* use IEEE 754 format */
     const unsigned int  bits    = 64;
     const unsigned int  expbits = 11;
     const unsigned int  significantbits = bits - expbits - 1; // -1 for sign bit
     long long           sign, exp, significant;
-    long double         norm;    
+    long double         norm;
     int                 shift;
 
     put8(s, NEW_FLOAT_EXT);
     memset(s, 0, 8);
 
-    if (p == 0.0) 
+    if (p == 0.0)
       s += 8;
     else {
       // check sign and begin normalization
