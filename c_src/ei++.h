@@ -20,8 +20,8 @@
       1. Redistributions of source code must retain the above copyright notice,
          this list of conditions and the following disclaimer.
 
-      2. Redistributions in binary form must reproduce the above copyright 
-         notice, this list of conditions and the following disclaimer in 
+      2. Redistributions in binary form must reproduce the above copyright
+         notice, this list of conditions and the following disclaimer in
          the documentation and/or other materials provided with the distribution.
 
       3. The names of the authors may not be used to endorse or promote products
@@ -65,12 +65,12 @@ namespace ei {
     /// @param <firstIdx> the mapping of the first element in the array. If != 0, then the return
     ///                   value will be based on this starting index.
     /// @param <size> optional size of the <cmds> array.
-    /// @return an offset <cmd> in the cmds array starting with <firstIdx> value. On failure 
+    /// @return an offset <cmd> in the cmds array starting with <firstIdx> value. On failure
     ///         returns <firstIdx>-1.
     int stringIndex(const char** cmds, const std::string& cmd, int firstIdx = 0, int size = INT_MAX);
 
     /// Class for stack-based (and on-demand heap based) memory allocation
-    /// of string buffers.  It's very efficient for strings not exceeding <N> 
+    /// of string buffers.  It's very efficient for strings not exceeding <N>
     /// bytes as it doesn't allocate heap memory.
     template < int N, class Allocator = std::allocator<char> >
     class StringBuffer
@@ -90,22 +90,22 @@ namespace ei {
             vsnprintf(s, sizeof(s), fmt, vargs);
             return copy( s, pos );
         }
-        
+
     public:
         enum { DEF_QUANTUM = 512 };
 
         StringBuffer(int _headerSz = 0, int _quantumSz = DEF_QUANTUM)
             : m_buffer(m_buff), m_size(N), m_minAlloc(_quantumSz)
         { m_buff[0] = '\0'; packetHeaderSize(_headerSz); }
-        
+
         StringBuffer( const char (&s)[N] )
             : m_buffer(m_buff), m_size(N), m_minAlloc(DEF_QUANTUM), m_headerSize(0), m_maxMsgSize(0)
         { copy(s); }
-        
+
         StringBuffer( const std::string& s)
             : m_buffer(m_buff), m_size(N), m_minAlloc(DEF_QUANTUM), m_headerSize(0), m_maxMsgSize(0)
         { copy(s.c_str()); }
-        
+
         ~StringBuffer() { reset(); }
 
         /// Buffer allocation quantum
@@ -113,9 +113,9 @@ namespace ei {
         void   quantum(int n)                   { m_minAlloc = n; }
         /// Defines a prefix space in the buffer used for encoding packet size.
         int    packetHeaderSize()               { return m_headerSize; }
-        void   packetHeaderSize(size_t sz) { 
-            assert(sz == 0 || sz == 1 || sz == 2 || sz == 4); 
-            m_headerSize = sz; 
+        void   packetHeaderSize(size_t sz) {
+            assert(sz == 0 || sz == 1 || sz == 2 || sz == 4);
+            m_headerSize = sz;
             m_maxMsgSize = (1u << (8*m_headerSize)) - 1;
         }
         /// Does the buffer have memory allocated on heap?
@@ -146,7 +146,7 @@ namespace ei {
         bool  operator== ( const std::string& rhs ) const { return  operator== ( rhs.c_str() ); }
         bool  operator!= ( const std::string& rhs ) const { return !operator== ( rhs.c_str() ); }
         bool  operator!= ( const char* rhs )        const { return !operator== ( rhs ); }
-        
+
         size_t      headerSize()                    const { return m_headerSize; }
         const char* header()                              { return m_buffer; }
 
@@ -156,8 +156,8 @@ namespace ei {
                 sz |= (byte)m_buffer[i] << (8*(m_headerSize-i-1));
             return sz;
         }
-        
-        int write_header(size_t sz) { 
+
+        int write_header(size_t sz) {
             if (sz > m_maxMsgSize)
                 return -1;
             byte b[4] = { (sz >> 24) & 0xff, (sz >> 16) & 0xff, (sz >> 8) & 0xff, sz & 0xff };
@@ -173,7 +173,7 @@ namespace ei {
             return ret;
         }
 
-        char* copy( const char* s, size_t pos=0 ) 
+        char* copy( const char* s, size_t pos=0 )
         {
             if ( resize( strlen(s) + pos + 1, pos != 0 ) == NULL )
                 return NULL;
@@ -182,11 +182,11 @@ namespace ei {
             return base();
         }
         char* copy( const std::string& s, size_t pos=0 )
-        { 
+        {
             if ( resize( length(s) + pos + 1, pos != 0 ) == NULL )
                 return NULL;
             assert( pos < m_size );
-            strcpy( base() + pos, s.c_str() ); 
+            strcpy( base() + pos, s.c_str() );
             return base();
         }
 
@@ -195,11 +195,11 @@ namespace ei {
             assert( pos > 0 && len > 0 && (pos+len) < m_size );
             if ( resize( len + pos + 1, pos != 0 ) == NULL )
                 return NULL;
-            memcpy( base() + pos, s, len ); 
+            memcpy( base() + pos, s, len );
             return base();
         }
-        
-        char* resize( size_t size, bool reallocate = false ) 
+
+        char* resize( size_t size, bool reallocate = false )
         {
             char*           old    = m_buffer;
             const size_t    old_sz = m_size;
@@ -239,7 +239,7 @@ namespace ei {
 
     /// A helper class for dealing with 'struct timeval' structure. This class adds ability
     /// to perform arithmetic with the structure leaving the same footprint.
-    class TimeVal 
+    class TimeVal
     {
         struct timeval m_tv;
 
@@ -249,10 +249,10 @@ namespace ei {
             else if (m_tv.tv_usec <= -1000000)
                 do { --m_tv.tv_sec; m_tv.tv_usec += 1000000; } while (m_tv.tv_usec <= -1000000);
 
-            if      (m_tv.tv_sec >= 1 && m_tv.tv_usec < 0) { --m_tv.tv_sec; m_tv.tv_usec += 1000000; } 
+            if      (m_tv.tv_sec >= 1 && m_tv.tv_usec < 0) { --m_tv.tv_sec; m_tv.tv_usec += 1000000; }
             else if (m_tv.tv_sec <  0 && m_tv.tv_usec > 0) { ++m_tv.tv_sec; m_tv.tv_usec -= 1000000; }
         }
-        
+
     public:
         enum TimeType { NOW, RELATIVE };
 
@@ -271,19 +271,19 @@ namespace ei {
         void microsec(uint32_t _m)  { m_tv.tv_sec = _m / 1000000ull; m_tv.tv_usec = _m % 1000000ull; }
 
         void set(const TimeVal& tv, int _s=0, int _us=0) {
-            m_tv.tv_sec = tv.sec() + _s; m_tv.tv_usec = tv.usec() + _us; normalize(); 
+            m_tv.tv_sec = tv.sec() + _s; m_tv.tv_usec = tv.usec() + _us; normalize();
         }
 
         double diff(const TimeVal& t) {
             TimeVal tv(this->timeval());
             tv -= t;
-            return (double)tv.sec() + (double)tv.usec() / 1000000.0; 
+            return (double)tv.sec() + (double)tv.usec() / 1000000.0;
         }
-        
+
         bool zero()                 { return sec() == 0 && usec() == 0; }
         void add(int _sec, int _us) { m_tv.tv_sec += _sec; m_tv.tv_usec += _us; if (_sec || _us) normalize(); }
         TimeVal& now(int addS=0, int addUS=0)   { gettimeofday(&m_tv, NULL); add(addS, addUS); return *this; }
-        
+
         void operator-= (const TimeVal& tv) {
             m_tv.tv_sec -= tv.sec(); m_tv.tv_usec -= tv.usec(); normalize();
         }
@@ -291,8 +291,8 @@ namespace ei {
             m_tv.tv_sec += tv.sec(); m_tv.tv_usec += tv.usec(); normalize();
         }
         void operator+= (int32_t _sec)      { m_tv.tv_sec += _sec; }
-        void operator+= (int64_t _microsec) { 
-            m_tv.tv_sec  += (_microsec / 1000000ll); 
+        void operator+= (int64_t _microsec) {
+            m_tv.tv_sec  += (_microsec / 1000000ll);
             m_tv.tv_usec += (_microsec % 1000000ll);
             normalize();
         }
@@ -300,17 +300,17 @@ namespace ei {
         struct timeval* operator& ()              { return &m_tv; }
         bool operator== (const TimeVal& tv) const { return sec() == tv.sec() && usec() == tv.usec(); }
         bool operator!= (const TimeVal& tv) const { return !operator== (tv); }
-        bool operator<  (const TimeVal& tv) const { 
-            return sec() < tv.sec() || (sec() == tv.sec() && usec() < tv.usec()); 
+        bool operator<  (const TimeVal& tv) const {
+            return sec() < tv.sec() || (sec() == tv.sec() && usec() < tv.usec());
         }
-        bool operator<= (const TimeVal& tv) const { 
-            return sec() <= tv.sec() && usec() <= tv.usec(); 
+        bool operator<= (const TimeVal& tv) const {
+            return sec() <= tv.sec() && usec() <= tv.usec();
         }
     };
-    
+
     TimeVal operator- (const TimeVal& t1, const TimeVal& t2);
     TimeVal operator+ (const TimeVal& t1, const TimeVal& t2);
-    
+
     struct atom_t: public std::string {
         typedef std::string BaseT;
         atom_t()                    : BaseT() {}
@@ -343,7 +343,7 @@ namespace ei {
         , etAtomCached  = ERL_CACHED_ATOM       // 'C'
     };
 
-    /// Erlang term serializer/deserializer C++ wrapper around C ei library included in 
+    /// Erlang term serializer/deserializer C++ wrapper around C ei library included in
     /// Erlang distribution.
     class Serializer
     {
@@ -365,7 +365,7 @@ namespace ei {
         static int read_exact (int fd, char *buf, size_t len, size_t& offset);
         static int write_exact(int fd, const char *buf, size_t len, size_t& offset);
     public:
-        
+
         Serializer(int _headerSz = 2)
             : m_wbuf(_headerSz), m_rbuf(_headerSz)
             , m_readOffset(0), m_writeOffset(0)
@@ -374,9 +374,9 @@ namespace ei {
             , m_fin(0), m_fout(1), m_debug(false)
             , tuple(*this)
         {
-            ei_encode_version(&m_wbuf, &m_wIdx); 
+            ei_encode_version(&m_wbuf, &m_wIdx);
         }
-        
+
         void reset_rbuf(bool _saveVersion=true) {
             m_rIdx = _saveVersion ? 1 : 0;
             m_readPacketSz = m_readOffset = 0;
@@ -399,7 +399,7 @@ namespace ei {
         //
         class Tuple {
             Serializer& m_parent;
-            
+
             class Temp {
                 Tuple& m_tuple;
                 mutable int    m_idx;  // offset to the tuple's size in m_parent.m_wbuf
@@ -407,21 +407,21 @@ namespace ei {
                 mutable bool   m_last;
             public:
                 template<typename T>
-                Temp(Tuple& t, const T& v) 
+                Temp(Tuple& t, const T& v)
                     : m_tuple(t), m_idx(m_tuple.m_parent.m_wIdx+1), m_size(1), m_last(true)
                 {
                     m_tuple.m_parent.encodeTupleSize(1);
                     m_tuple.m_parent.encode(v);
                 }
-                
+
                 Temp(const Temp& o)
                     : m_tuple(o.m_tuple), m_idx(o.m_idx), m_size(o.m_size+1), m_last(o.m_last)
                 {
                     o.m_last = false;
                 }
-                
+
                 ~Temp() {
-                    if (m_last) { 
+                    if (m_last) {
                         // This is the end of the tuple being streamed to this class. Update tuple size.
                         if (m_size > 255)
                             throw "Use of operator<< only allowed for tuples with less than 256 items!";
@@ -441,17 +441,17 @@ namespace ei {
 
         public:
             Tuple(Serializer& s) : m_parent(s) {}
-            
+
             template<typename T>
             Temp operator<< (const T& v) {
                 Temp t(*this, v);
                 return t;
             }
         };
-        
+
         /// Helper class for encoding/decoding tuples using streaming operator.
-        Tuple tuple;  
-        
+        Tuple tuple;
+
         void encode(const char* s)          { wcheck(strlen(s)+1); ei_encode_string(&m_wbuf, &m_wIdx, s); }
         void encode(char v)                 { wcheck(2);           ei_encode_char(&m_wbuf, &m_wIdx, v);   }
         void encode(int i)                  { wcheck(sizeof(i));   ei_encode_long(&m_wbuf, &m_wIdx, i);   }
@@ -468,12 +468,12 @@ namespace ei {
         void encodeTupleSize(int sz)        { wcheck(5);           ei_encode_tuple_header(&m_wbuf, &m_wIdx, sz); }
         void encodeListSize(int sz)         { wcheck(5);           ei_encode_list_header(&m_wbuf, &m_wIdx, sz); }
         void encodeListEnd()                { wcheck(1);           ei_encode_empty_list(&m_wbuf, &m_wIdx); }
-        
+
         int  encodeListBegin()              { wcheck(5); int n=m_wIdx; ei_encode_list_header(&m_wbuf, &m_wIdx, 1); return n; }
-        /// This function for encoding the list size after all elements are encoded. 
+        /// This function for encoding the list size after all elements are encoded.
         /// @param sz is the number of elements in the list.
         /// @param idx is the index position of the beginning of the list.
-        // E.g. 
+        // E.g.
         // Serializer se;
         // int n = 0;
         // int idx = se.encodeListBegin();
@@ -481,7 +481,7 @@ namespace ei {
         // se.encode("abc"); n++;
         // se.encodeListEnd(n, idx);
         void encodeListEnd(int sz,int idx)  { ei_encode_list_header(&m_wbuf, &idx, sz); encodeListEnd(); }
-        
+
         ErlTypeT decodeType(int& size)      { int t;  return (ErlTypeT)(ei_get_type(&m_rbuf, &m_rIdx, &t, &size) < 0 ? -1 : t); }
         int  decodeInt(int&  v)             { long l, ret = decodeInt(l); v = l; return ret; }
         int  decodeInt(long& v)             { return (ei_decode_long(&m_rbuf, &m_rIdx, &v) < 0) ? -1 : 0; }
@@ -491,7 +491,7 @@ namespace ei {
         int  decodeListSize()               { int v;  return (ei_decode_list_header(&m_rbuf,&m_rIdx,&v) < 0) ? -1 : v; }
         int  decodeListEnd()                { bool b = *(m_rbuf.c_str()+m_rIdx) == ERL_NIL_EXT; if (b) { m_rIdx++; return 0; } else return -1; }
         int  decodeAtom(std::string& a)     { char s[MAXATOMLEN]; if (ei_decode_atom(&m_rbuf,&m_rIdx,s) < 0) return -1; a=s; return 0; }
-        int  decodeString(std::string& a) { 
+        int  decodeString(std::string& a) {
             StringBuffer<256> s;
             if (decodeString(s) < 0)
                 return -1;
@@ -499,7 +499,7 @@ namespace ei {
             return 0;
         }
         template <int N>
-        int  decodeString(StringBuffer<N>& s) { 
+        int  decodeString(StringBuffer<N>& s) {
             int size;
             if (decodeType(size) != etString || !s.resize(size) || ei_decode_string(&m_rbuf, &m_rIdx, s.c_str()))
                 return -1;
@@ -508,7 +508,7 @@ namespace ei {
 
         /// Print input buffer to stream to stream.
         int print(std::ostream& os, const std::string& header = "");
-        
+
         /// Assumes the command is encoded as an atom. This function takes an
         /// array of strings and matches the atom to it. The index of the matched
         /// string in the <cmds> array is returned.
@@ -518,17 +518,17 @@ namespace ei {
                 return firstIdx-2;
             return stringIndex(cmds, cmd, firstIdx, M);
         }
-        
+
         /// Same as previous version but <cmds> array must have the last element being NULL
         int decodeAtomIndex(const char** cmds, std::string& cmd, int firstIdx = 0) {
             if (decodeAtom(cmd) < 0)
                 return firstIdx-2;
             return stringIndex(cmds, cmd, firstIdx);
         }
-        
+
         int  set_handles(int in, int out, bool non_blocking = false);
         void close_handles()                { ::close(m_fin); ::close(m_fout); }
- 
+
         int  read_handle()                  { return m_fin; }
         int  write_handle()                 { return m_fout; }
 
@@ -548,7 +548,7 @@ namespace ei {
         int  wcopy( const Serializer& ser)  { return m_wbuf.copy( ser.write_buffer(), 0, ser.write_idx()) != 0 ? 0 : -1; }
         /// Copy the content of read buffer from another serializer
         int  rcopy( const Serializer& ser)  { return m_rbuf.copy( ser.read_buffer(), 0, ser.read_idx() ) != 0 ? 0 : -1; }
-        
+
         /// dump read/write buffer's content to stream
         std::ostream& dump(std::ostream& os, bool outWriteBuffer);
     };
