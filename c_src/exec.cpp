@@ -849,6 +849,18 @@ int CmdOptions::ei_decode(ei::Serializer& ei)
     } else if (sz == 0) {
         m_cd  = "";
         m_kill_cmd = "";
+       
+        if ((m_cenv = (const char**) new char* [orig_env_sz+1]) == NULL) {
+           m_err << "out of memory"; return -1;
+        }
+        else {
+           for (int i=0; i < orig_env_sz; i++) {
+                m_cenv[i] = m_env.front().c_str();
+                m_env.pop_front();
+            }
+            m_cenv[orig_env_sz] = NULL;
+            printf("allocated buffer for %i total env vars\n", orig_env_sz);
+        }
         return 0;
     }
 
