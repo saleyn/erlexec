@@ -559,7 +559,7 @@ check_cmd_options([{nice, I}|T], State) when is_integer(I), I >= -20, I =< 20 ->
     check_cmd_options(T, State);
 check_cmd_options([{Std, I}|T], State) when Std=:=stderr, I=/=Std; Std=:=stdout, I=/=Std ->
     if I=:=null; I=:=stderr; I=:=stdout; is_list(I); 
-       is_tuple(I), size(I)=:=2, element(1,I)=:="append", is_list(element(2,I))
+       is_tuple(I), size(I)=:=2, element(1,I)=:=append, is_list(element(2,I))
     ->  check_cmd_options(T, State);
     true -> 
         throw({error, ?FMT("Invalid ~w option ~p", [Std, I])})
