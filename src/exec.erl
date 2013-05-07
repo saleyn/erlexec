@@ -464,7 +464,10 @@ ospid_loop({Pid, OsPid, Parent, Debug} = State) ->
     {'DOWN', OsPid, {exit_status, Status}} ->
         debug(Debug, "~w ~w got down message (~w)\n", [self(), OsPid, status(Status)]),
         % OS process died
-        exit({exit_status, Status});
+        case Status of
+        0 -> exit(normal);
+        _ -> exit({exit_status, Status})
+        end;
     {'EXIT', Pid, Reason} ->
         % Pid died
         debug(Debug, "~w ~w got exit from linked ~w: ~p\n", [self(), OsPid, Pid, Reason]),
