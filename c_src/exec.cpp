@@ -905,10 +905,12 @@ int CmdOptions::ei_decode(ei::Serializer& ei)
                 else if (type == ERL_STRING_EXT)
                     eis.decodeString(s);
                 else if (type == ERL_SMALL_TUPLE_EXT && sz == 2 && 
-                         eis.decodeAtom(fop) == 0 && eis.decodeString(s) == 0 && fop == "append") {
+                    eis.decodeTupleSize() == 2 &&
+                    eis.decodeAtom(fop) == 0 &&
+                    eis.decodeString(s) == 0 && fop == "append") {
                     ;
                 } else {
-                    m_err << "Atom, string or {'append', Name} tuple required for option " << op;
+                    m_err << "Atom, string or {append, Name} tuple required for option " << op;
                     return -1;
                 }
 
