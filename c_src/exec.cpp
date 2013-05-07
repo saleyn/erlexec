@@ -706,7 +706,9 @@ int check_children(int& isTerminated, bool notify)
             MapChildrenT::iterator i = children.find(it->first);
             MapKillPidT::iterator j;
             if (i != children.end()) {
-                if (notify && send_pid_status_term(*it) < 0) {
+                // Override status code if termination was requested by Erlang
+                PidStatusT ps(it->first, i->second.sigterm ? 0 : it->second);
+                if (notify && send_pid_status_term(ps) < 0) {
                     isTerminated = 1;
                     return -1;
                 }
