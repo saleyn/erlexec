@@ -711,7 +711,9 @@ int check_children(int& isTerminated, bool notify)
             MapChildrenT::iterator i = children.find(it->first);
             MapKillPidT::iterator j;
             if (i != children.end()) {
-                if (notify && send_pid_status_term(*it) < 0) {
+                // Override status code if termination was requested by Erlang
+                PidStatusT ps(it->first, i->second.sigterm ? 0 : it->second);
+                if (notify && send_pid_status_term(ps) < 0) {
                     isTerminated = 1;
                     return -1;
                 }
@@ -926,17 +928,13 @@ int CmdOptions::ei_decode(ei::Serializer& ei)
                     eis.decodeAtom(s);
                 else if (type == ERL_STRING_EXT)
                     eis.decodeString(s);
-                else if (type == ERL_SMALL_TUPLE_EXT && sz == 2) {
-		    /* This is necessary because it "consumes" the
-		     * tuple and leaves the buffer pointing to the
-		     * next element, which is now the first element of
-		     * the tupe. */
-		    eis.decodeTupleSize();
-		    if (eis.decodeAtom(fop) == 0 && eis.decodeString(s) == 0 && fop == "append") {
-			;
-		    }
+                else if (type == ERL_SMALL_TUPLE_EXT && sz == 2 && 
+                    eis.decodeTupleSize() == 2 &&
+                    eis.decodeAtom(fop) == 0 &&
+                    eis.decodeString(s) == 0 && fop == "append") {
+                    ;
                 } else {
-                    m_err << "Atom, string or {'append', Name} tuple required for option " << op;
+                    m_err << "Atom, string or {append, Name} tuple required for option " << op;
                     return -1;
                 }
 
