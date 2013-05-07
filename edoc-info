@@ -1,3 +1,4 @@
+%% encoding: UTF-8
 {application,exec}.
 {packages,[]}.
 {modules,[exec,exec_app]}.
