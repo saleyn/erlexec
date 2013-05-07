@@ -929,9 +929,15 @@ int CmdOptions::ei_decode(ei::Serializer& ei)
                     eis.decodeAtom(s);
                 else if (type == ERL_STRING_EXT)
                     eis.decodeString(s);
-                else if (type == ERL_SMALL_TUPLE_EXT && sz == 2 && 
-                         eis.decodeAtom(fop) == 0 && eis.decodeString(s) == 0 && fop == "append") {
-                    ;
+                else if (type == ERL_SMALL_TUPLE_EXT && sz == 2) {
+		    /* This is necessary because it "consumes" the
+		     * tuple and leaves the buffer pointing to the
+		     * next element, which is now the first element of
+		     * the tupe. */
+		    eis.decodeTupleSize();
+		    if (eis.decodeAtom(fop) == 0 && eis.decodeString(s) == 0 && fop == "append") {
+			;
+		    }
                 } else {
                     m_err << "Atom, string or {'append', Name} tuple required for option " << op;
                     return -1;
