@@ -265,10 +265,16 @@ ospid(Pid) when is_pid(Pid) ->
 %%-------------------------------------------------------------------------
 -spec status(integer()) -> {status, integer()} | {signal, integer(), boolean()}.
 status(Status) when is_integer(Status) ->
-    case {Status band 16#FF00 bsr 8, Status band 16#7F, (Status band 16#80) =:= 16#80} of
-    {Stat, 0, _}      -> {status, Stat};
-    {_, Stat, false}  -> {status, Stat};
-    {_, Signal, Core} -> {signal, Signal, Core}
+    TermSignal = Status band 16#7F,
+    %IfExited   = TermSignal =:= 0,
+    IfSignaled = ((TermSignal + 1) bsr 1) > 0,
+    ExitStatus = (Status band 16#FF00) bsr 8,
+    case IfSignaled of
+    true ->
+        CoreDump = (Status band 16#80) =:= 16#80,
+        {signal, TermSignal, CoreDump};
+    false ->
+        {status, ExitStatus}
     end.
 
 %%-------------------------------------------------------------------------
