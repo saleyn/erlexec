@@ -65,20 +65,57 @@ Currently the project supports Linux and Solaris operating systems.
 See description of types in {@link exec:exec_options()}.
 
 <h3><a name="ex">Examples</a></h3>
+
+<h4>Starting/stopping a OS process</h4>
 ```
 1> exec:start([]).                                      % Start the port program.
 {ok,<0.32.0>}
-2> {ok, _, I} = exec:run_link("exec sleep 1000", []).   % Run a shell command to sleep for 1000s.
+2> {ok, _, I} = exec:run_link("sleep 1000", []).        % Run a shell command to sleep for 1000s.
 {ok,<0.34.0>,23584}
 3> exec:stop(I).                                        % Kill the shell command.
 ok                                                      % Note that this could also be accomplished
                                                         % by doing exec:stop(pid(0,34,0)).
+'''
 
+<h4>Killing an OS process</h4>
+
+Note that killing a process can be accomplished by running kill(3) command
+in an external shell, or by executing exec:kill/2.
+```
+4> f(I), {ok, _, I} = exec:run_link("sleep 1000", []).
+{ok,<0.37.0>,2350}
+5> exec:kill(I, 15).
+ok
 ** exception error: {exit_status,15}                    % Our shell died because we linked to the 
-                                                        % shell process via exec:run_link/2.
+                                                        % killed shell process via exec:run_link/2.
 
-4> exec:status(15).                                     % Examine the exit status.
+6> exec:status(15).                                     % Examine the exit status.
 {signal,15,false}                                       % The program got SIGTERM signal and produced
                                                         % no core file.
 '''
+
+<h4>Redirecting OS process stdout to a file</h4>
+```
+7> f(I), {ok, _, I} = exec:run_link("for i in 1 2 3; do echo \"Test$i\"; done",
+    [{stdout, "/tmp/output"}]).
+8> io:format("~s", [binary_to_list(element(2, file:read_file("/tmp/output")))]).
+Test1
+Test2
+Test3
+ok
+9> file:delete("/tmp/output").
+'''
+
+<h4>Appending OS process stdout to a file</h4>
+```
+10> f(I), {ok, _, I} = exec:run_link("for i in 1 2 3; do echo \"$RANDOM\"; done",
+    [{stdout, {append, "/tmp/random"}]).
+11> io:format("~s", [binary_to_list(element(2, file:read_file("/tmp/random")))]).
+6093
+17318
+23135
+ok
+12> file:delete("/tmp/random").
+'''
+
 @end
