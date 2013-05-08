@@ -6,10 +6,10 @@
 
     Description:
     ============
-    
-    Erlang port program for spawning and controlling OS tasks. 
-    It listens for commands sent from Erlang and executes them until 
-    the pipe connecting it to Erlang VM is closed or the program 
+
+    Erlang port program for spawning and controlling OS tasks.
+    It listens for commands sent from Erlang and executes them until
+    the pipe connecting it to Erlang VM is closed or the program
     receives SIGINT or SIGTERM. At that point it kills all processes
     it forked by issuing SIGTERM followed by SIGKILL in 6 seconds.
 
@@ -20,11 +20,12 @@
 
     Instruction = {run,   Cmd::string(), Options}   |
                   {shell, Cmd::string(), Options}   |
-                  {list}                            | 
+                  {list}                            |
                   {stop, OsPid::integer()}          |
                   {kill, OsPid::integer(), Signal::integer()}
     Options = [Option]
-    Option  = {cd, Dir::string()} | {env, [string()]} | {kill, Cmd::string()} |
+    Option  = {cd, Dir::string()} | {env, [string() | {string(), string()}]} |
+              {kill, Cmd::string()} |
               {user, User::string()} | {nice, Priority::integer()} |
               {stdout, Device::string()} | {stderr, Device::string()}
     Device  = null | stderr | stdout | File::string() | {append, File::string()}
@@ -32,7 +33,7 @@
     Reply = ok                      |       // For kill/stop commands
             {ok, OsPid}             |       // For run/shell command
             {ok, [OsPid]}           |       // For list command
-            {error, Reason}         | 
+            {error, Reason}         |
             {exit_status, OsPid, Status}    // OsPid terminated with Status
 
     Reason = atom() | string()
@@ -122,12 +123,12 @@ public:
     const char*  kill_cmd() const { return m_kill_cmd.c_str(); }
     int          user()     const { return m_user; }
     int          nice()     const { return m_nice; }
-    
+
     int ei_decode(ei::Serializer& ei);
 };
 
 /// Contains run-time info of a child OS process.
-/// When a user provides a custom command to kill a process this 
+/// When a user provides a custom command to kill a process this
 /// structure will contain its run-time information.
 struct CmdInfo {
     std::string     cmd;            // Executed command
@@ -216,7 +217,7 @@ int process_child_signal(pid_t pid)
         signaled = true;
         return 0;
     }
-}   
+}
 
 void gotsignal(int signal)
 {
@@ -238,7 +239,7 @@ void gotsigchild(int signal, siginfo_t* si, void* context)
     if (debug)
         fprintf(stderr, "Process %d exited (sig=%d)\r\n", si->si_pid, signal);
     process_child_signal(si->si_pid);
-    
+
     if (oktojump) siglongjmp(jbuf, 1);
 }
 
@@ -264,7 +265,7 @@ void check_pending()
 }
 
 void usage(char* progname) {
-    fprintf(stderr, 
+    fprintf(stderr,
         "Usage:\n"
         "   %s [-n] [-alarm N] [-debug] [-user User]\n"
         "Options:\n"
@@ -301,13 +302,13 @@ int main(int argc, char* argv[])
     sigaction(SIGTERM, &sterm, NULL);
     sigaction(SIGHUP,  &sterm, NULL);
     sigaction(SIGPIPE, &sterm, NULL);
-    
+
     sact.sa_handler = NULL;
     sact.sa_sigaction = gotsigchild;
     sigemptyset(&sact.sa_mask);
     sact.sa_flags = SA_SIGINFO | SA_RESTART | SA_NOCLDSTOP | SA_NODEFER;
     sigaction(SIGCHLD, &sact, NULL);
-    
+
     if (argc > 1) {
         int res;
         for(res = 1; res < argc; res++) {
@@ -317,7 +318,7 @@ int main(int argc, char* argv[])
                 debug = true;
                 eis.debug(true);
             } else if (strcmp(argv[res], "-alarm") == 0 && res+1 < argc) {
-                if (argv[res+1][0] != '-') 
+                if (argv[res+1][0] != '-')
                     alarm_max_time = atoi(argv[++res]);
                 else
                     usage(argv[0]);
@@ -345,10 +346,10 @@ int main(int argc, char* argv[])
         }
 
         #ifdef HAVE_CAP
-       	if (prctl(PR_SET_KEEPCAPS, 1) < 0) {
-    		perror("Failed to call prctl to keep capabilities");
-	    	exit(5);
-    	}
+        if (prctl(PR_SET_KEEPCAPS, 1) < 0) {
+            perror("Failed to call prctl to keep capabilities");
+            exit(5);
+        }
         #endif
 
         if (
@@ -411,7 +412,7 @@ int main(int argc, char* argv[])
             check_children(terminated);
 
         check_pending(); // Check for pending signals arrived while we were in the signal handler
-        
+
         if (terminated) break;
 
         oktojump = 1;
@@ -419,12 +420,12 @@ int main(int argc, char* argv[])
         int cnt = select (maxfd, &readfds, (fd_set *)0, (fd_set *) 0, &timeout.timeval());
         int interrupted = (cnt < 0 && errno == EINTR);
         oktojump = 0;
-        
+
         if (interrupted || cnt == 0) {
             if (check_children(terminated) < 0)
                 break;
         } else if (cnt < 0) {
-            perror("select"); 
+            perror("select");
             exit(9);
         } else if ( FD_ISSET (eis.read_handle(), &readfds) ) {
             /* Read from fin a command sent by Erlang */
@@ -437,17 +438,17 @@ int main(int argc, char* argv[])
             if ((err = eis.read()) < 0) {
                 terminated = 90-err;
                 break;
-            } 
-                
+            }
+
             /* Our marshalling spec is that we are expecting a tuple
              * TransId, {Cmd::atom(), Arg1, Arg2, ...}} */
-            if (eis.decodeTupleSize() != 2 || 
-                (eis.decodeInt(transId)) < 0 || 
+            if (eis.decodeTupleSize() != 2 ||
+                (eis.decodeInt(transId)) < 0 ||
                 (arity = eis.decodeTupleSize()) < 1)
             {
                 terminated = 10; break;
             }
-            
+
             enum CmdTypeT        { EXECUTE, SHELL,   STOP,   KILL,   LIST } cmd;
             const char* cmds[] = {"run",   "shell", "stop", "kill", "list"};
 
@@ -520,7 +521,7 @@ int main(int argc, char* argv[])
 
     int old_terminated = terminated;
     terminated = 0;
-    
+
     kill(0, SIGTERM); // Kill all children in our process group
 
     TimeVal now(TimeVal::NOW);
@@ -528,7 +529,7 @@ int main(int argc, char* argv[])
 
     while (children.size() > 0) {
         sigsetjmp(jbuf, 1);
-        
+
         while (exited_children.size() > 0 || signaled) {
             int term = 0;
             check_children(term, pipe_valid);
@@ -536,25 +537,25 @@ int main(int argc, char* argv[])
 
         for(MapChildrenT::iterator it=children.begin(), end=children.end(); it != end; ++it)
             stop_child(it->first, 0, now);
-    
+
         for(MapKillPidT::iterator it=transient_pids.begin(), end=transient_pids.end(); it != end; ++it) {
             kill(it->first, SIGKILL);
             transient_pids.erase(it);
         }
-        
+
         if (children.size() == 0)
             break;
-    
+
         TimeVal timeout(TimeVal::NOW);
         if (timeout < deadline) {
             timeout = deadline - timeout;
-        
+
             oktojump = 1;
             select (0, (fd_set *)0, (fd_set *)0, (fd_set *) 0, &timeout);
             oktojump = 0;
         }
     }
-    
+
     if (debug)
         fprintf(stderr, "Exiting (%d)\r\n", old_terminated);
     return old_terminated;
@@ -599,15 +600,15 @@ pid_t start_child(const char* cmd, const char* cd, char* const* env, int user, i
     }
 }
 
-pid_t start_child(const CmdOptions& op) 
+pid_t start_child(const CmdOptions& op)
 {
     return start_child(op.cmd(), op.cd(), op.env(), op.user(), op.nice());
 }
 
-int stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify) 
+int stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify)
 {
     bool use_kill = false;
-    
+
     if (ci.kill_cmd_pid > 0 || ci.sigterm) {
         double diff = ci.deadline.diff(now);
         if (debug)
@@ -638,7 +639,7 @@ int stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify)
         // This is the first attempt to kill this pid and no kill command is provided.
         use_kill = true;
     }
-    
+
     if (use_kill) {
         // Use SIGTERM / SIGKILL to nuke the pid
         int n;
@@ -652,7 +653,7 @@ int stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify)
             // Failed to send SIGTERM & SIGKILL to the process - give up
             ci.sigkill = true;
             MapChildrenT::iterator it = children.find(ci.cmd_pid);
-            if (it != children.end()) 
+            if (it != children.end())
                 children.erase(it);
         }
         ci.sigterm = true;
@@ -722,7 +723,7 @@ int check_children(int& isTerminated, bool notify)
                 // the pid is one of the custom 'kill' commands started by us.
                 transient_pids.erase(j);
             }
-            
+
             exited_children.erase(it);
         }
         // Signaled flag indicates that there are more processes signaled SIGCHLD then
@@ -732,9 +733,9 @@ int check_children(int& isTerminated, bool notify)
             process_child_signal(-1);
         }
     } while (signaled && !isTerminated);
-    
+
     TimeVal now(TimeVal::NOW);
-    
+
     for (MapChildrenT::iterator it=children.begin(), end=children.end(); it != end; ++it) {
         int   status = ECHILD;
         pid_t pid = it->first;
@@ -746,13 +747,13 @@ int check_children(int& isTerminated, bool notify)
                     kill(it->second.kill_cmd_pid, SIGKILL);
                 it->second.deadline.set(now, 5, 0);
             }
-            
+
             while ((n = waitpid(pid, &status, WNOHANG)) < 0 && errno == EINTR);
             if (n > 0)
                 exited_children.push_back(std::make_pair(pid <= 0 ? n : pid, status));
             continue;
         } else if (n < 0 && errno == ESRCH) {
-            if (notify) 
+            if (notify)
                 send_pid_status_term(std::make_pair(it->first, status));
             children.erase(it);
         }
@@ -781,7 +782,7 @@ int send_error_str(int transId, bool asAtom, const char* fmt, ...)
     va_start (vargs, fmt);
     vsnprintf(str, sizeof(str), fmt, vargs);
     va_end   (vargs);
-    
+
     eis.reset();
     eis.encodeTupleSize(2);
     eis.encode(transId);
@@ -824,7 +825,7 @@ int CmdOptions::ei_decode(ei::Serializer& ei)
     //      Option = {env, Strings} | {cd, Dir} | {kill, Cmd}
     int sz;
     std::string op, val;
-    
+
     m_err.str("");
 
     delete [] m_cenv;
@@ -833,14 +834,13 @@ int CmdOptions::ei_decode(ei::Serializer& ei)
 
     // getting the environment of the caller process
     int orig_env_sz = 0;
-    for (char **env_ptr = environ; *env_ptr; env_ptr++ )
-    {
-	m_env.push_back(*env_ptr);
-	orig_env_sz++;
+    for (char **env_ptr = environ; *env_ptr; env_ptr++) {
+        m_env.push_back(*env_ptr);
+        orig_env_sz++;
     }
 
     m_nice = INT_MAX;
-    
+
     if (eis.decodeString(m_cmd) < 0) {
         m_err << "badarg: cmd string expected or string size too large";
         return -1;
@@ -850,7 +850,7 @@ int CmdOptions::ei_decode(ei::Serializer& ei)
     } else if (sz == 0) {
         m_cd  = "";
         m_kill_cmd = "";
-       
+
         if ((m_cenv = (const char**) new char* [orig_env_sz+1]) == NULL) {
            m_err << "out of memory"; return -1;
         }
@@ -867,11 +867,11 @@ int CmdOptions::ei_decode(ei::Serializer& ei)
     for(int i=0; i < sz; i++) {
         enum OptionT            { CD,   ENV,   KILL,   NICE,   USER,   STDOUT,   STDERR } opt;
         const char* options[] = {"cd", "env", "kill", "nice", "user", "stdout", "stderr"};
-        
+
         if (eis.decodeTupleSize() != 2 || (int)(opt = (OptionT)eis.decodeAtomIndex(options, op)) < 0) {
             m_err << "badarg: cmd option must be an atom"; return -1;
         }
-        
+
         switch (opt) {
             case CD:
             case KILL:
@@ -894,23 +894,39 @@ int CmdOptions::ei_decode(ei::Serializer& ei)
 
             case NICE:
                 if (eis.decodeInt(m_nice) < 0 || m_nice < -20 || m_nice > 20) {
-                    m_err << "nice option must be an integer between -20 and 20"; 
+                    m_err << "nice option must be an integer between -20 and 20";
                     return -1;
                 }
                 break;
 
             case ENV: {
                 // {env, [NameEqualsValue::string()]}
-                // passed in env variables are appended to the existing ones obtained from environ global var
+                // passed in env variables are appended to the existing ones
+                // obtained from environ global var
                 int opt_env_sz = eis.decodeListSize();
                 if (opt_env_sz < 0) {
                     m_err << "env list expected"; return -1;
                 }
 
                 for (int i=0; i < opt_env_sz; i++) {
+                    int sz, type = eis.decodeType(sz);
+                    bool res = false;
                     std::string s;
-                    if (eis.decodeString(s) < 0) {
-                        m_err << "invalid env argument #" << i; return -1;
+
+                    if (type == ERL_STRING_EXT) {
+                        res = !eis.decodeString(s);
+                    } else if (type == ERL_SMALL_TUPLE_EXT && sz == 2) {
+                        eis.decodeTupleSize();
+                        std::string s1, s2;
+                        if (eis.decodeString(s1) == 0 && eis.decodeString(s2) == 0) {
+                            res = true;
+                            s = s1 + "=" + s2;
+                        }
+                    }
+
+                    if (!res) {
+                        m_err << "invalid env argument #" << i;
+                        return -1;
                     }
                     m_env.push_back(s);
                 }
@@ -923,12 +939,12 @@ int CmdOptions::ei_decode(ei::Serializer& ei)
                 int type = 0, sz;
                 std::string s, fop;
                 type = eis.decodeType(sz);
-                    
+
                 if (type == ERL_ATOM_EXT)
                     eis.decodeAtom(s);
                 else if (type == ERL_STRING_EXT)
                     eis.decodeString(s);
-                else if (type == ERL_SMALL_TUPLE_EXT && sz == 2 && 
+                else if (type == ERL_SMALL_TUPLE_EXT && sz == 2 &&
                     eis.decodeTupleSize() == 2 &&
                     eis.decodeAtom(fop) == 0 &&
                     eis.decodeString(s) == 0 && fop == "append") {
@@ -941,7 +957,7 @@ int CmdOptions::ei_decode(ei::Serializer& ei)
                 std::string& rs = (opt == STDOUT) ? m_stdout : m_stderr;
                 std::stringstream ss;
                 int fd = (opt == STDOUT) ? 1 : 2;
-                
+
                 if (s == "null") {
                     ss << fd << ">/dev/null";
                     rs = ss.str();
@@ -966,7 +982,7 @@ int CmdOptions::ei_decode(ei::Serializer& ei)
     else {
       for (int i=0; i < orig_env_sz; i++) {
           m_cenv[i] = m_env.front().c_str();
-	      m_env.pop_front();
+          m_env.pop_front();
       }
       m_cenv[orig_env_sz] = NULL;
     }
@@ -985,7 +1001,7 @@ int CmdOptions::ei_decode(ei::Serializer& ei)
 }
 
 /*
-int CmdOptions::init(const std::list<std::string>& list) 
+int CmdOptions::init(const std::list<std::string>& list)
 {
     int i, size=0;
     for(std::list<std::string>::iterator it=list.begin(), end=list.end(); it != end; ++it)
