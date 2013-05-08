@@ -67,13 +67,15 @@
 %%%                       {user, RunAsUser::string()} |
 %%%                       {nice, Priority::integer()} |
 %%%                       {stdout, Device} | {stderr, Device}
-%%%         Env         = [VarEqVal::string()]
+%%%         Env         = [VarEqVal]
+%%%         VarEqVal    = string() | {string(), string()}
 %%%         Device      = null | stdout | stderr | File | {append, File}
 %%%         File        = string().
 %%%     Command-line options:
 %%%     <dl>
 %%%     <dt>{cd, WorkDir}</dt><dd>Working directory</dd>
-%%%     <dt>{env, Env}</dt><dd>List of "VAR=VALUE" environment variables</dd>
+%%%     <dt>{env, Env}</dt><dd>List of "VAR=VALUE" environment variables or
+%%%                            list of {Var, Value} tuples.</dd>
 %%%     <dt>{kill, Cmd}</dt>
 %%%         <dd>This command will be used for killing the process. After
 %%%             a 5-sec timeout if the process is still alive, it'll be
@@ -552,7 +554,10 @@ is_port_command({kill, Pid, Sig}, _State) when is_pid(Pid),is_integer(Sig) ->
 check_cmd_options([{cd, Dir}|T], State) when is_list(Dir) ->
     check_cmd_options(T, State);
 check_cmd_options([{env, Env}|T], State) when is_list(Env) ->
-    case lists:filter(fun(S) -> is_list(S) =:= false end, Env) of
+    case lists:filter(fun(S) when is_list(S) -> false;
+                         ({S1,S2}) when is_list(S1), is_list(S2) -> false;
+                         (_) -> true
+                      end, Env) of
     [] -> check_cmd_options(T, State);
     L  -> throw({error, {invalid_env_value, L}})
     end;
