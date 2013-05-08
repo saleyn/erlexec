@@ -10,39 +10,51 @@
 <div class="navbar"><a name="#navbar_top"></a><table width="100%" border="0" cellspacing="0" cellpadding="2" summary="navigation bar"><tr><td><a href="overview-summary.html" target="overviewFrame">Overview</a></td><td><a href="http://www.erlang.org/"><img src="erlang.png" align="right" border="0" alt="erlang logo"></a></td></tr></table></div>
 <h1>Exec - OS Process Manager for Erlang VM.
 </h1>
-<p><b>Version:</b> 4dbe8255136131f37a68d9664fbcef3525189248</p>
-<p><b>Authors:</b> Serge Aleynikov (<a href="mailto:saleyn@gmail.com"><tt>saleyn@gmail.com</tt></a>).</p>
+<p><b>Version:</b> 9d14a258be80a7fff49b3970b9874853bda47329</p>
+<p><b>Authors:</b> Serge Aleynikov (<a href="mailto:saleyn at gmail dot com"><tt>saleyn at gmail dot com</tt></a>).</p>
 <p>This application implements a manager of OS processes.</p>
 
-<h3><a name="contents">Contents</a></h3>
+<h3><a name="Contents">Contents</a></h3>
 <ol>
-  <li><a href="#fs">Features</a></li>
-  <li><a href="#sp">Supported Platforms</a></li>
-  <li><a href="#ar">Architecture</a></li>
-  <li><a href="#sc">Configuration Options</a></li>
-  <li><a href="#ex">Examples</a></li>
+  <li><a href="#Download">Download</a></li>
+  <li><a href="#Features">Features</a></li>
+  <li><a href="#Supported_Platforms">Supported Platforms</a></li>
+  <li><a href="#Architecture">Architecture</a></li>
+  <li><a href="#Configuration_Options">Configuration Options</a></li>
+  <li><a href="#Examples">Examples</a></li>
 </ol>
 
 
-<h3><a name="fs">Features</a></h3>
+<h3><a name="Download">Download</a></h3>
 
-<ul>
+    <p>Project's repository:
+        <a href="https://github.com/saleyn/erlexec" target="_top"><tt>https://github.com/saleyn/erlexec</tt></a></p>
+
+    <p>Git clone command:
+        <code>git clone https://github.com/saleyn/erlexec.git</code></p>
+
+<h3><a name="Features">Features</a></h3>
+
+<ol>
 <li>Starting, stopping OS commands and getting their OS process IDs.</li>
-<li>Providing versatile OS command options, including working directory, 
-    environment settings, alternative termination command, effective 
+<li>Providing versatile OS command options, including working directory,
+    environment settings, alternative termination command, effective
     user, process priority options, custom redirection of their
-    stdout and stderr output.</li>
+    stdin/stdout/stderr streams.</li>
 <li>Ability to link Erlang processes to OS processes (via intermediate
     Erlang Pids that are linked to an associated OS process).</li>
 <li>Proper cleanup of OS processes at port program termination time.</li>
-</ul>
-<p> </p>
+<li>Communicating with an OS process via its STDIN.</li> 
+<li>Redirecting STDOUT and STDERR of an OS process to a file, erlang process,
+  or a custom function. When redirected to a file, the file can be
+  open in append/truncate mode, and given creation access mask.</li>
+</ol>
 
-<h3><a name="sp">Supported Platforms</a></h3>
+<h3><a name="Supported_Platforms">Supported Platforms</a></h3>
 
 <p>Currently the project supports Linux and Solaris operating systems.</p>
 
-<h3><a name="ar">Architecture</a></h3>
+<h3><a name="Architecture">Architecture</a></h3>
 <pre>  *-------------------------*
   |   +----+ +----+ +----+  |
   |   |Pid1| |Pid2| |PidN|  |   Erlang light-weight Pids associated
@@ -53,39 +65,150 @@
   |         +------+        |
   |         | exec |        |   Exec application running in Erlang VM
   |         +------+        |
-   Erlang VM    |           |
+  | Erlang VM   |           |
   *-------------+-----------*
                 |
           +-----------+
           | exec-port |         Port program (separate OS process)
           +-----------+
            /    |    \
-          /     |     \
+ (optional stdin/stdout/stderr pipes)
+         /      |      \
     +------+ +------+ +------+
     |OsPid1| |OsPid2| |OsPidN|  Managed Child OS processes
     +------+ +------+ +------+</pre>
 
-<h3><a name="sc">Configuration Options</a></h3>
+<h3><a name="Configuration_Options">Configuration Options</a></h3>
 
 <p>See description of types in <a href="exec.html#type-exec_options"><code>exec:exec_options()</code></a>.</p>
 
-<h3><a name="ex">Examples</a></h3>
+<h3><a name="Examples">Examples</a></h3>
+
+<h4><a name="Starting/stopping_an_OS_process">Starting/stopping an OS process</a></h4>
 <pre>1&gt; exec:start([]).                                      % Start the port program.
 {ok,&lt;0.32.0&gt;}
-2&gt; {ok, _, I} = exec:run_link("exec sleep 1000", []).   % Run a shell command to sleep for 1000s.
+2&gt; {ok, _, I} = exec:run_link("sleep 1000", []).        % Run a shell command to sleep for 1000s.
 {ok,&lt;0.34.0&gt;,23584}
 3&gt; exec:stop(I).                                        % Kill the shell command.
 ok                                                      % Note that this could also be accomplished
-                                                        % by doing exec:stop(pid(0,34,0)).
+                                                        % by doing exec:stop(pid(0,34,0)).</pre>
 
-** exception error: {exit_status,15}                    % Our shell died because we linked to the 
-                                                        % shell process via exec:run_link/2.
+<h4><a name="Killing_an_OS_process">Killing an OS process</a></h4>
 
-4&gt; exec:status(15).                                     % Examine the exit status.
+Note that killing a process can be accomplished by running kill(3) command
+in an external shell, or by executing exec:kill/2.
+<pre>4&gt; f(I), {ok, _, I} = exec:run_link("sleep 1000", []).
+{ok,&lt;0.37.0&gt;,2350}
+5&gt; exec:kill(I, 15).
+ok
+** exception error: {exit_status,15}                    % Our shell died because we linked to the
+                                                        % killed shell process via exec:run_link/2.
+
+6&gt; exec:status(15).                                     % Examine the exit status.
 {signal,15,false}                                       % The program got SIGTERM signal and produced
                                                         % no core file.</pre>
+
+<h4><a name="Redirecting_OS_process_stdout_to_a_file">Redirecting OS process stdout to a file</a></h4>
+<pre>7&gt; f(I), {ok, _, I} = exec:run_link("for i in 1 2 3; do echo \"Test$i\"; done",
+    [{stdout, "/tmp/output"}]).
+8&gt; io:format("~s", [binary_to_list(element(2, file:read_file("/tmp/output")))]),
+   file:delete("/tmp/output").
+Test1
+Test2
+Test3
+ok</pre>
+
+<h4><a name="Redirecting_OS_process_stdout_to_screen,_an_Erlang_process_or_a_custom_function">Redirecting OS process stdout to screen, an Erlang process or a custom function</a></h4>
+<pre>9&gt; exec:run("echo Test", [{stdout, print}]).
+{ok,&lt;0.119.0&gt;,29651}
+Got stdout from 29651: &lt;&lt;"Test\n"&gt;&gt;
+
+10&gt; exec:run("for i in 1 2 3; do sleep 1; echo \"Iter$i\"; done",
+            [{stdout, fun(S,OsPid,D) -&gt; io:format("Got ~w from ~w: ~p\n", [S,OsPid,D]) end}]).
+{ok,&lt;0.121.0&gt;,29652}
+Got stdout from 29652: &lt;&lt;"Iter1\n"&gt;&gt;
+Got stdout from 29652: &lt;&lt;"Iter2\n"&gt;&gt;
+Got stdout from 29652: &lt;&lt;"Iter3\n"&gt;&gt;
+
+11&gt; exec:run("echo Hello World!; echo ERR!! 1&gt;&amp;2", [stdout, stderr]).
+{ok,&lt;0.244.0&gt;,18382}
+12&gt; flush().
+Shell got {stdout,18382,&lt;&lt;"Hello World!\n"&gt;&gt;}
+Shell got {stderr,18382,&lt;&lt;"ERR!!\n"&gt;&gt;}
+ok</pre>
+
+<h4><a name="Appending_OS_process_stdout_to_a_file">Appending OS process stdout to a file</a></h4>
+<pre>13&gt; exec:run("for i in 1 2 3; do echo TEST$i; done",
+        [{stdout, "/tmp/out", [append, {mode, 8#600}]}, sync]),
+    file:read_file("/tmp/out").
+{ok,&lt;&lt;"TEST1\nTEST2\nTEST3\n"&gt;&gt;}
+14&gt; exec:run("echo Test4; done", [{stdout, "/tmp/out", [append, {mode, 8#600}]}, sync]),
+    file:read_file("/tmp/out").
+{ok,&lt;&lt;"TEST1\nTEST2\nTEST3\nTest4\n"&gt;&gt;}
+15&gt; file:delete("/tmp/out").</pre>
+
+<h4><a name="Setting_up_a_monitor_for_the_OS_process">Setting up a monitor for the OS process</a></h4>
+<pre>&gt; f(I), f(P), {ok, P, I} = exec:run("echo ok", [{stdout, self()}, monitor]).
+{ok,&lt;0.263.0&gt;,18950}
+16&gt; flush().                                                                  
+Shell got {stdout,18950,&lt;&lt;"ok\n"&gt;&gt;}
+Shell got {'DOWN',#Ref&lt;0.0.0.1651&gt;,process,&lt;0.263.0&gt;,normal}
+ok</pre>
+
+<h4><a name="Managing_an_externally_started_OS_process">Managing an externally started OS process</a></h4>
+This command allows to instruct erlexec to begin monitoring given OS process
+and notify Erlang when the process exits. It is also able to send signals to
+the process and kill it.
+<pre>% Start an externally managed OS process and retrieve its OS PID:
+17&gt; spawn(fun() -&gt; os:cmd("echo $$ &gt; /tmp/pid; sleep 15") end).
+&lt;0.330.0&gt;  
+18&gt; f(P), P = list_to_integer(lists:reverse(tl(lists:reverse(binary_to_list(element(2,
+file:read_file("/tmp/pid"))))))).
+19355
+
+% Manage the process and get notified by a monitor when it exits:
+19&gt; exec:manage(P, [monitor]).
+{ok,&lt;0.334.0&gt;,19355}
+
+% Wait for monitor notification
+20&gt; f(M), receive M -&gt; M end.
+{'DOWN',#Ref&lt;0.0.0.2205&gt;,process,&lt;0.334.0&gt;,{exit_status,10}}
+ok
+21&gt; file:delete("/tmp/pid").
+ok</pre>
+
+<h4><a name="Specifying_custom_process_shutdown_delay_in_seconds">Specifying custom process shutdown delay in seconds</a></h4>
+<pre>% Execute an OS process (script) that blocks SIGTERM with custom kill timeout, and monitor
+22&gt; f(I), {ok, _, I} = exec:run("trap '' SIGTERM; sleep 30", [{kill_timeout, 3}, monitor]).
+{ok,&lt;0.399.0&gt;,26347}
+% Attempt to stop the OS process
+23&gt; exec:stop(I).
+ok
+% Wait for its completion
+24&gt; f(M), receive M -&gt; M after 10000 -&gt; timeout end.                                          
+{'DOWN',#Ref&lt;0.0.0.1671&gt;,process,&lt;0.403.0&gt;,normal}</pre>
+
+<h4><a name="Communicating_with_an_OS_process_via_STDIN">Communicating with an OS process via STDIN</a></h4>
+<pre>% Execute an OS process (script) that reads STDIN and echoes it back to Erlang
+25&gt; f(I), {ok, _, I} = exec:run("read x; echo \"Got: $x\"", [stdin, stdout, monitor]).
+{ok,&lt;0.427.0&gt;,26431}
+% Send the OS process some data via its `stdin'
+26&gt; exec:send(I, &lt;&lt;"Test data\n"&gt;&gt;).                                                  
+ok
+% Get the response written to processes `stdout'
+27&gt; f(M), receive M -&gt; M after 10000 -&gt; timeout end.
+{stdout,26431,&lt;&lt;"Got: Test data\n"&gt;&gt;}
+% Confirm that the process exited
+28&gt; f(M), receive M -&gt; M after 10000 -&gt; timeout end.
+{'DOWN',#Ref&lt;0.0.0.1837&gt;,process,&lt;0.427.0&gt;,normal}</pre>
+
+<h4><a name="Running_OS_commands_synchronously">Running OS commands synchronously</a></h4>
+<pre>% Execute an shell script that blocks for 1 second and return its termination code
+29&gt; exec:run("sleep 1", [sync]).                                                       
+{ok,0}</pre>
+
 <hr>
 <div class="navbar"><a name="#navbar_bottom"></a><table width="100%" border="0" cellspacing="0" cellpadding="2" summary="navigation bar"><tr><td><a href="overview-summary.html" target="overviewFrame">Overview</a></td><td><a href="http://www.erlang.org/"><img src="erlang.png" align="right" border="0" alt="erlang logo"></a></td></tr></table></div>
-<p><i>Generated by EDoc, May 7 2013, 12:42:02.</i></p>
+<p><i>Generated by EDoc, Aug 12 2013, 10:13:49.</i></p>
 </body>
 </html>
