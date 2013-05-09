@@ -68,14 +68,17 @@
 %%%                       {nice, Priority::integer()} |
 %%%                       {stdout, Device} | {stderr, Device}
 %%%         Env         = [VarEqVal]
-%%%         VarEqVal    = string() | {string(), string()}
+%%%         VarEqVal    = string() | {Var::string(), Value::string()}
 %%%         Device      = null | stdout | stderr | File | {append, File}
 %%%         File        = string().
 %%%     Command-line options:
 %%%     <dl>
 %%%     <dt>{cd, WorkDir}</dt><dd>Working directory</dd>
-%%%     <dt>{env, Env}</dt><dd>List of "VAR=VALUE" environment variables or
-%%%                            list of {Var, Value} tuples.</dd>
+%%%     <dt>{env, Env}</dt>
+%%%         <dd>List of "VAR=VALUE" environment variables or
+%%%             list of {Var, Value} tuples. Both representations are
+%%%             used in other parts of Erlang/OTP
+%%%             (e.g. os:getenv/0, erlang:open_port/2)</dd>
 %%%     <dt>{kill, Cmd}</dt>
 %%%         <dd>This command will be used for killing the process. After
 %%%             a 5-sec timeout if the process is still alive, it'll be
@@ -119,7 +122,7 @@
 %% External exports
 -export([
     start/1, start_link/1, run/2, run_link/2,
-    which_children/0, kill/2, stop/1, ospid/1, status/1
+    which_children/0, kill/2, stop/1, ospid/1, pid/1, status/1
 ]).
 
 %% Internal exports
@@ -136,7 +139,7 @@
     last_trans  = 0,            % Last transaction number sent to port
     trans       = queue:new(),  % Queue of outstanding transactions sent to port
     limit_users = [],           % Restricted list of users allowed to run commands
-    registry    = ets:new(exec_mon, [protected,named_table]), % Pids to notify when an OsPid exits
+    registry,                   % Pids to notify when an OsPid exits
     debug       = false
 }).
 
@@ -153,14 +156,16 @@
 -type cmd_options() :: [cmd_option()].
 -type cmd_option()  ::
       {cd, string()}
-    | {env, [string(), ...]}
+    | {env, [string() | {Name :: string(), Value :: string()}, ...]}
     | {user, string()}
     | {nice, integer()}
     | {stdout, null | stdout | stderr | string() | {append, string()}}
     | {stderr, null | stdout | stderr | string() | {append, string()}}.
 
+-type ospid() :: integer().
+%% Representation of OS process ID.
+
 %%-------------------------------------------------------------------------
-%% @spec (Options::exec_options()) -> {ok, Pid::pid()} | {error, Reason}
 %% @doc Supervised start an external program manager.
 %% @end
 %%-------------------------------------------------------------------------
@@ -178,13 +183,12 @@ start(Options) when is_list(Options) ->
     gen_server:start({local, ?MODULE}, ?MODULE, [Options], []).
 
 %%-------------------------------------------------------------------------
-%% @spec (Exe::string(), Options::cmd_options()) -> Result
-%%          Result  = {ok, Pid::pid(), OsPid::integer()} | {error, Reason}
 %% @doc Run an external program. `OsPid' is the OS process identifier of
 %%      the new process.
 %% @end
 %%-------------------------------------------------------------------------
--spec run(string(), cmd_options()) -> {ok, pid(), integer()} | {error, any()}.
+-spec run(Exe::string(), Options::cmd_options()) ->
+    {ok, pid(), ospid()} | {error, any()}.
 run(Exe, Options) when is_list(Exe), is_list(Options) ->
     gen_server:call(?MODULE, {port, {start, {run, Exe, Options}, nolink}}, 30000).
 
@@ -201,29 +205,22 @@ run_link(Exe, Options) when is_list(Exe), is_list(Options) ->
     gen_server:call(?MODULE, {port, {start, {run, Exe, Options}, link}}).
 
 %%-------------------------------------------------------------------------
-%% @spec () -> [OsPid::integer()]
 %% @doc Get a list of children managed by port program.
 %% @end
 %%-------------------------------------------------------------------------
--spec which_children() -> [integer(), ...].
+-spec which_children() -> [ospid(), ...].
 which_children() ->
     gen_server:call(?MODULE, {port, {list}}).
 
 %%-------------------------------------------------------------------------
-%% @spec (Pid, Signal::integer()) -> ok | {error, Reason}
-%%          Pid   = pid() | OsPid
-%%          OsPid = integer()
 %% @doc Send a `Signal' to a child `Pid' or `OsPid'.
 %% @end
 %%-------------------------------------------------------------------------
--spec kill(pid() | integer(), integer()) -> ok | {error, any()}.
+-spec kill(pid() | ospid(), integer()) -> ok | {error, any()}.
 kill(Pid, Signal) when is_pid(Pid); is_integer(Pid) ->
     gen_server:call(?MODULE, {port, {kill, Pid, Signal}}).
 
 %%-------------------------------------------------------------------------
-%% @spec (Pid) -> ok | {error, Reason}
-%%          Pid   = pid() | OsPid
-%%          OsPid = integer()
 %% @doc Terminate a managed `Pid' or `OsPid' process. The OS process is
 %%      terminated gracefully.  If it was given a `{kill, Cmd}' option at
 %%      startup, that command is executed and a timer is started.  If
@@ -233,17 +230,16 @@ kill(Pid, Signal) when is_pid(Pid); is_integer(Pid) ->
 %%      killed.
 %% @end
 %%-------------------------------------------------------------------------
--spec stop(pid() | integer()) -> ok | {error, any()}.
+-spec stop(pid() | ospid()) -> ok | {error, any()}.
 stop(Pid) when is_pid(Pid); is_integer(Pid) ->
     gen_server:call(?MODULE, {port, {stop, Pid}}, 30000).
 
 %%-------------------------------------------------------------------------
-%% @spec (Pid::pid()) -> OsPid::integer() | {error, Reason}
 %% @doc Get `OsPid' of the given Erlang `Pid'.  The `Pid' must be created
 %%      previously by running the run/2 or run_link/2 commands.
 %% @end
 %%-------------------------------------------------------------------------
--spec ospid(pid()) -> integer() | {error, timeout}.
+-spec ospid(pid()) -> ospid() | {error, Reason::any()}.
 ospid(Pid) when is_pid(Pid) ->
     Ref = make_ref(),
     Pid ! {{self(), Ref}, ospid},
@@ -252,6 +248,15 @@ ospid(Pid) when is_pid(Pid) ->
     Other        -> Other
     after 5000   -> {error, timeout}
     end.
+
+%%-------------------------------------------------------------------------
+%% @doc Get `Pid' of the given `OsPid'.  The `OsPid' must be created
+%%      previously by running the run/2 or run_link/2 commands.
+%% @end
+%%-------------------------------------------------------------------------
+-spec pid(OsPid::ospid()) -> pid() | undefined | {error, timeout}.
+pid(OsPid) when is_integer(OsPid) ->
+    gen_server:call(?MODULE, {pid, OsPid}).
 
 %%-------------------------------------------------------------------------
 %% @spec (Status::integer()) -> 
@@ -331,7 +336,8 @@ init([Options]) ->
     try
         debug(Debug, "exec: port program: ~s\n", [Exe]),
         Port = erlang:open_port({spawn, Exe}, [binary, exit_status, {packet, 2}, nouse_stdio, hide]),
-        {ok, #state{port=Port, limit_users=Users, debug=Debug}}
+        Tab  = ets:new(exec_mon, [protected,named_table]),
+        {ok, #state{port=Port, limit_users=Users, debug=Debug, registry=Tab}}
     catch _:Reason ->
         {stop, ?FMT("Error starting port '~s': ~200p", [Exe, Reason])}
     end.
@@ -354,6 +360,12 @@ handle_call({port, Instruction}, From, #state{last_trans=Last} = State) ->
         {noreply, State#state{trans = queue:in({Next, From, Link}, State#state.trans)}}
     catch _:{error, Why} ->
         {reply, {error, Why}, State}
+    end;
+
+handle_call({pid, OsPid}, _From, State) ->
+    case ets:lookup(exec_mon, OsPid) of
+    [{_, Pid}] -> {reply, Pid, State};
+    _          -> {reply, undefined, State}
     end;
 
 handle_call(Request, _From, _State) ->
@@ -467,7 +479,7 @@ ospid_init(Pid, OsPid, LinkType, Parent, Debug) ->
 ospid_loop({Pid, OsPid, Parent, Debug} = State) ->
     receive
     {{From, Ref}, ospid} ->
-        From ! {Ref, {ok, OsPid}},
+        From ! {Ref, OsPid},
         ospid_loop(State);
     {'DOWN', OsPid, {exit_status, Status}} ->
         debug(Debug, "~w ~w got down message (~w)\n", [self(), OsPid, status(Status)]),
