@@ -51,6 +51,7 @@
 #include <algorithm>
 #include <iostream>
 #include <sys/time.h>
+#include <sys/resource.h>
 #include <limits.h>
 #include <assert.h>
 
