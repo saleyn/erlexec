@@ -461,8 +461,8 @@ int main(int argc, char* argv[])
                 terminated = 10; break;
             }
 
-            enum CmdTypeT        { EXECUTE, SHELL,   STOP,   KILL,   LIST } cmd;
-            const char* cmds[] = {"run",   "shell", "stop", "kill", "list"};
+            enum CmdTypeT        { EXECUTE, SHELL,   STOP,   KILL,  LIST, SHUTDOWN } cmd;
+            const char* cmds[] = {"run",   "shell", "stop", "kill", "list", "shutdown" };
 
             /* Determine the command */
             if ((int)(cmd = (CmdTypeT) eis.decodeAtomIndex(cmds, command)) < 0) {
@@ -473,6 +473,10 @@ int main(int argc, char* argv[])
             }
 
             switch (cmd) {
+                case SHUTDOWN: {
+                    terminated = 200;
+                    break;
+                }
                 case EXECUTE:
                 case SHELL: {
                     // {shell, Cmd::string(), Options::list()}
