@@ -467,7 +467,7 @@ int main(int argc, char* argv[])
 
                     long pid;
                     pid_t realpid;
-                    if (arity != 2 || (eis.decodeInt(pid)) < 0) {
+                    if (arity != 3 || (eis.decodeInt(pid)) < 0 || po.ei_decode(eis) < 0) {
                         send_error_str(transId, true, "badarg");
                         continue;
                     }

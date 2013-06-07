@@ -121,7 +121,7 @@
 
 %% External exports
 -export([
-    start/1, start_link/1, run/2, run_link/2, manage/1,
+    start/1, start_link/1, run/2, run_link/2, manage/2,
     which_children/0, kill/2, stop/1, ospid/1, pid/1, status/1
 ]).
 
@@ -197,10 +197,10 @@ run(Exe, Options) when is_list(Exe), is_list(Options) ->
 %%      the external process.
 %% @end
 %%-------------------------------------------------------------------------
--spec manage(ospid()) ->
+-spec manage(ospid(), Options::cmd_options()) ->
     {ok, pid(), ospid()} | {error, any()}.
-manage(Pid) ->
-    gen_server:call(?MODULE, {port, {manage, Pid}}).
+manage(Pid, Options) ->
+    gen_server:call(?MODULE, {port, {manage, Pid, Options}}).
 
 %%-------------------------------------------------------------------------
 %% @equiv run/2
@@ -571,7 +571,8 @@ is_port_command({stop, Pid}, _State) when is_pid(Pid) ->
     [{Pid, OsPid}]  -> {ok, {stop, OsPid}, undefined};
     []              -> throw({error, no_process})
     end;
-is_port_command({manage, OsPid} = T, _State) when is_integer(OsPid) ->
+is_port_command({manage, OsPid, Options} = T, State) when is_integer(OsPid) ->
+    check_cmd_options(Options, State),
     {ok, T, undefined};
 is_port_command({kill, OsPid, Sig}=T, _State) when is_integer(OsPid),is_integer(Sig) -> 
     {ok, T, undefined};
