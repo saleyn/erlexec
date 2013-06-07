@@ -438,9 +438,19 @@ code_change(_OldVsn, State, _Extra) ->
 %% Returns: any (ignored by gen_server)
 %% @private
 %%----------------------------------------------------------------------
-terminate(_Reason, #state{}) ->
+terminate(_Reason, State) ->
+    erlang:port_command(State#state.port, term_to_binary({-1, {shutdown}})),
+    wait_on_exit(State#state.port),
     error_logger:warning_msg("~w - exec process terminated\n", [self()]),
     ok.
+
+wait_on_exit(Port) ->
+    receive
+        {Port,{exit_status,Status}} ->
+            error_logger:info_msg("exec-port has stopped ~p", [Status]);
+        _ ->
+            wait_on_exit(Port)
+    end.
 
 %%%---------------------------------------------------------------------
 %%% Internal functions
