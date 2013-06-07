@@ -536,10 +536,9 @@ int main(int argc, char* argv[])
 
     erl_exec_kill(0, SIGTERM); // Kill all children in our process group
 
-    TimeVal now(TimeVal::NOW);
-    TimeVal deadline(now, 6, 0);
-
     while (children.size() > 0) {
+        TimeVal now(TimeVal::NOW);
+
         sigsetjmp(jbuf, 1);
 
         while (exited_children.size() > 0 || signaled) {
@@ -547,8 +546,9 @@ int main(int argc, char* argv[])
             check_children(term, pipe_valid);
         }
 
-        for(MapChildrenT::iterator it=children.begin(), end=children.end(); it != end; ++it)
-            stop_child(it->first, 0, now);
+        for(MapChildrenT::iterator it=children.begin(), end=children.end(); it != end; ++it) {
+            stop_child(it->second, 0, now, false);
+        }
 
         for(MapKillPidT::iterator it=transient_pids.begin(), end=transient_pids.end(); it != end; ++it) {
             erl_exec_kill(it->first, SIGKILL);
@@ -558,18 +558,12 @@ int main(int argc, char* argv[])
         if (children.size() == 0)
             break;
 
-        TimeVal timeout(TimeVal::NOW);
-        if (timeout < deadline) {
-            timeout = deadline - timeout;
-
-            oktojump = 1;
-            select (0, (fd_set *)0, (fd_set *)0, (fd_set *) 0, &timeout);
-            oktojump = 0;
-        }
+        sleep(1);
     }
 
     if (debug)
         fprintf(stderr, "Exiting (%d)\r\n", old_terminated);
+
     return old_terminated;
 }
 
@@ -629,7 +623,9 @@ int stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify)
         if (ci.sigterm && ci.deadline.diff(now) < 0) {
             // More than WAIT_KILL_SECONDS secs elapsed since the last kill attempt
             erl_exec_kill(ci.cmd_pid, SIGKILL);
-            erl_exec_kill(ci.kill_cmd_pid, SIGKILL);
+            if (ci.kill_cmd_pid > 0) {
+                erl_exec_kill(ci.kill_cmd_pid, SIGKILL);
+            }
             ci.sigkill = true;
         }
         if (notify) send_ok(transId);
