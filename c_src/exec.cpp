@@ -461,8 +461,8 @@ int main(int argc, char* argv[])
                 terminated = 10; break;
             }
 
-            enum CmdTypeT        { EXECUTE, SHELL,   STOP,   KILL,   LIST } cmd;
-            const char* cmds[] = {"run",   "shell", "stop", "kill", "list"};
+            enum CmdTypeT        { MANAGE, EXECUTE, SHELL,   STOP,   KILL,   LIST } cmd;
+            const char* cmds[] = { "manage", "run", "shell", "stop", "kill", "list"};
 
             /* Determine the command */
             if ((int)(cmd = (CmdTypeT) eis.decodeAtomIndex(cmds, command)) < 0) {
@@ -473,6 +473,24 @@ int main(int argc, char* argv[])
             }
 
             switch (cmd) {
+                case MANAGE: {
+                    // {manage, Cmd::string(), Options::list()}
+                    CmdOptions po;
+
+                    long pid;
+                    pid_t realpid;
+                    if (arity != 3 || (eis.decodeInt(pid)) < 0 || po.ei_decode(eis) < 0) {
+                        send_error_str(transId, true, "badarg");
+                        continue;
+                    }
+                    realpid = pid;
+
+                    CmdInfo ci("managed pid", po.kill_cmd(), realpid);
+                    children[realpid] = ci;
+                    send_ok(transId, pid);
+                    break;
+                }
+
                 case EXECUTE:
                 case SHELL: {
                     // {shell, Cmd::string(), Options::list()}
