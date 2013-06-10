@@ -78,6 +78,14 @@ using namespace ei;
 
 #define BUF_SIZE 2048
 
+/* In the event we have tried to kill something, wait this many
+ * seconds and then *really* kill it with SIGKILL if needs be.  */
+#define WAIT_KILL_SECONDS 5
+
+/* During the final cleanup, wait this many seconds for subprocesses
+ * to die before SIGKILL'ing them. */
+#define FINAL_WAIT_SECONDS 6
+
 //-------------------------------------------------------------------------
 // Types
 //-------------------------------------------------------------------------
@@ -124,7 +132,7 @@ public:
     int          user()     const { return m_user; }
     int          nice()     const { return m_nice; }
 
-    int ei_decode(ei::Serializer& ei);
+    int ei_decode(ei::Serializer& ei, bool getCmd = false);
 };
 
 /// Contains run-time info of a child OS process.
@@ -139,7 +147,9 @@ struct CmdInfo {
     bool            sigterm;        // <true> if sigterm was issued.
     bool            sigkill;        // <true> if sigkill was issued.
 
-    CmdInfo() : cmd_pid(-1), kill_cmd_pid(-1), sigterm(false), sigkill(false) {}
+    CmdInfo() : cmd_pid(-1), kill_cmd_pid(-1), sigterm(false), sigkill(false) {
+        deadline = TimeVal();
+    }
     CmdInfo(const CmdInfo& ci) {
         new (this) CmdInfo(ci.cmd.c_str(), ci.kill_cmd.c_str(), ci.cmd_pid);
     }
@@ -192,6 +202,8 @@ int   check_children(int& isTerminated, bool notify = true);
 void  stop_child(pid_t pid, int transId, const TimeVal& now);
 int   stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify = true);
 
+int erl_exec_kill(pid_t pid, int signal);
+
 int process_child_signal(pid_t pid)
 {
     if (exited_children.size() < exited_children.max_size()) {
@@ -201,7 +213,7 @@ int process_child_signal(pid_t pid)
 
         if (ret < 0 && errno == ECHILD) {
             int status = ECHILD;
-            if (kill(pid, 0) == 0) // process likely forked and is alive
+            if (erl_exec_kill(pid, 0) == 0) // process likely forked and is alive
                 status = 0;
             if (status != 0)
                 exited_children.push_back(std::make_pair(pid <= 0 ? ret : pid, status));
@@ -416,7 +428,7 @@ int main(int argc, char* argv[])
         if (terminated) break;
 
         oktojump = 1;
-        ei::TimeVal timeout(5, 0);
+        ei::TimeVal timeout(WAIT_KILL_SECONDS, 0);
         int cnt = select (maxfd, &readfds, (fd_set *)0, (fd_set *) 0, &timeout.timeval());
         int interrupted = (cnt < 0 && errno == EINTR);
         oktojump = 0;
@@ -484,7 +496,7 @@ int main(int argc, char* argv[])
                     // {shell, Cmd::string(), Options::list()}
                     CmdOptions po;
 
-                    if (arity != 3 || po.ei_decode(eis) < 0) {
+                    if (arity != 3 || po.ei_decode(eis, true) < 0) {
                         send_error_str(transId, false, po.strerror());
                         continue;
                     }
@@ -540,7 +552,7 @@ int main(int argc, char* argv[])
     int old_terminated = terminated;
     terminated = 0;
 
-    kill(0, SIGTERM); // Kill all children in our process group
+    erl_exec_kill(0, SIGTERM); // Kill all children in our process group
 
     TimeVal now(TimeVal::NOW);
     TimeVal deadline(now, 6, 0);
@@ -557,7 +569,7 @@ int main(int argc, char* argv[])
             stop_child(it->first, 0, now);
 
         for(MapKillPidT::iterator it=transient_pids.begin(), end=transient_pids.end(); it != end; ++it) {
-            kill(it->first, SIGKILL);
+            erl_exec_kill(it->first, SIGKILL);
             transient_pids.erase(it);
         }
 
@@ -633,9 +645,9 @@ int stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify)
             fprintf(stderr, "Deadline: %.3f\r\n", diff);
         // There was already an attempt to kill it.
         if (ci.sigterm && ci.deadline.diff(now) < 0) {
-            // More than 5 secs elapsed since the last kill attempt
-            kill(ci.cmd_pid, SIGKILL);
-            kill(ci.kill_cmd_pid, SIGKILL);
+            // More than WAIT_KILL_SECONDS secs elapsed since the last kill attempt
+            erl_exec_kill(ci.cmd_pid, SIGKILL);
+            erl_exec_kill(ci.kill_cmd_pid, SIGKILL);
             ci.sigkill = true;
         }
         if (notify) send_ok(transId);
@@ -645,7 +657,7 @@ int stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify)
         ci.kill_cmd_pid = start_child(ci.kill_cmd.c_str(), NULL, NULL, INT_MAX, INT_MAX);
         if (ci.kill_cmd_pid > 0) {
             transient_pids[ci.kill_cmd_pid] = ci.cmd_pid;
-            ci.deadline.set(now, 5);
+            ci.deadline.set(now, WAIT_KILL_SECONDS);
             if (notify) send_ok(transId);
             return 0;
         } else {
@@ -662,7 +674,7 @@ int stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify)
         // Use SIGTERM / SIGKILL to nuke the pid
         int n;
         if (!ci.sigterm && (n = kill_child(ci.cmd_pid, SIGTERM, transId, notify)) == 0) {
-            ci.deadline.set(now, 5);
+            ci.deadline.set(now, WAIT_KILL_SECONDS);
         } else if (!ci.sigkill && (n = kill_child(ci.cmd_pid, SIGKILL, 0, false)) == 0) {
             ci.deadline = now;
             ci.sigkill  = true;
@@ -688,7 +700,7 @@ void stop_child(pid_t pid, int transId, const TimeVal& now)
     if (it == children.end()) {
         send_error_str(transId, false, "pid not alive");
         return;
-    } else if ((n = kill(pid, 0)) < 0) {
+    } else if ((n = erl_exec_kill(pid, 0)) < 0) {
         send_error_str(transId, false, "pid not alive (err: %d)", n);
         return;
     }
@@ -699,7 +711,7 @@ int kill_child(pid_t pid, int signal, int transId, bool notify)
 {
     // We can't use -pid here to kill the whole process group, because our process is
     // the group leader.
-    int err = kill(pid, signal);
+    int err = erl_exec_kill(pid, signal);
     switch (err) {
         case 0:
             if (notify) send_ok(transId);
@@ -757,13 +769,13 @@ int check_children(int& isTerminated, bool notify)
     for (MapChildrenT::iterator it=children.begin(), end=children.end(); it != end; ++it) {
         int   status = ECHILD;
         pid_t pid = it->first;
-        int n = kill(pid, 0);
+        int n = erl_exec_kill(pid, 0);
+
         if (n == 0) { // process is alive
-            if (it->second.kill_cmd_pid > 0 && now.diff(it->second.deadline) > 0) {
-                kill(pid, SIGTERM);
-                if ((n = kill(it->second.kill_cmd_pid, 0)) == 0)
-                    kill(it->second.kill_cmd_pid, SIGKILL);
-                it->second.deadline.set(now, 5, 0);
+
+            /* If a deadline has been set, and we're over it, wack it. */
+            if (!it->second.deadline.zero() && now.diff(it->second.deadline) > 0) {
+                stop_child(it->second, 0, now, false);
             }
 
             while ((n = waitpid(pid, &status, WNOHANG)) < 0 && errno == EINTR);
@@ -837,7 +849,7 @@ int send_pid_status_term(const PidStatusT& stat)
     return eis.write();
 }
 
-int CmdOptions::ei_decode(ei::Serializer& ei)
+int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
 {
     // {Cmd::string(), [Option]}
     //      Option = {env, Strings} | {cd, Dir} | {kill, Cmd}
@@ -859,7 +871,7 @@ int CmdOptions::ei_decode(ei::Serializer& ei)
 
     m_nice = INT_MAX;
 
-    if (eis.decodeString(m_cmd) < 0) {
+    if (getCmd && eis.decodeString(m_cmd) < 0) {
         m_err << "badarg: cmd string expected or string size too large";
         return -1;
     } else if ((sz = eis.decodeListSize()) < 0) {
@@ -1016,6 +1028,23 @@ int CmdOptions::ei_decode(ei::Serializer& ei)
         m_cmd = ss.str();
     }
     return 0;
+}
+
+/* This exists just to make sure that we don't inadvertently do a
+ * kill(-1, SIGKILL), which will cause all kinds of bad things to
+ * happen. */
+
+int erl_exec_kill(pid_t pid, int signal) {
+    if (pid < 0) {
+        if (debug) {
+            fprintf(stderr, "attempted a kill(-1, %d)\r\n", signal);
+        }
+        return -1;
+    }
+    if (debug) {
+        fprintf(stderr, "erl_exec_kill %d with %d\r\n", pid, signal);
+    }
+    return kill(pid, signal);
 }
 
 /*
