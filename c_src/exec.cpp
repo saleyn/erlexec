@@ -1037,12 +1037,12 @@ int CmdOptions::ei_decode(ei::Serializer& ei)
 int erl_exec_kill(pid_t pid, int signal) {
     if (pid < 0) {
         if (debug) {
-            fprintf(stderr, "attempted a kill(-1, %d)\n", signal);
+            fprintf(stderr, "attempted a kill(-1, %d)\r\n", signal);
         }
         return -1;
     }
     if (debug) {
-        fprintf(stderr, "erl_exec_kill %d with %d\n", pid, signal);
+        fprintf(stderr, "erl_exec_kill %d with %d\r\n", pid, signal);
     }
     return kill(pid, signal);
 }
