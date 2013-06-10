@@ -124,7 +124,7 @@ public:
     int          user()     const { return m_user; }
     int          nice()     const { return m_nice; }
 
-    int ei_decode(ei::Serializer& ei);
+    int ei_decode(ei::Serializer& ei, bool getCmd = false);
 };
 
 /// Contains run-time info of a child OS process.
@@ -484,7 +484,7 @@ int main(int argc, char* argv[])
                     // {shell, Cmd::string(), Options::list()}
                     CmdOptions po;
 
-                    if (arity != 3 || po.ei_decode(eis) < 0) {
+                    if (arity != 3 || po.ei_decode(eis, true) < 0) {
                         send_error_str(transId, false, po.strerror());
                         continue;
                     }
@@ -837,7 +837,7 @@ int send_pid_status_term(const PidStatusT& stat)
     return eis.write();
 }
 
-int CmdOptions::ei_decode(ei::Serializer& ei)
+int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
 {
     // {Cmd::string(), [Option]}
     //      Option = {env, Strings} | {cd, Dir} | {kill, Cmd}
@@ -859,7 +859,7 @@ int CmdOptions::ei_decode(ei::Serializer& ei)
 
     m_nice = INT_MAX;
 
-    if (eis.decodeString(m_cmd) < 0) {
+    if (getCmd && eis.decodeString(m_cmd) < 0) {
         m_err << "badarg: cmd string expected or string size too large";
         return -1;
     } else if ((sz = eis.decodeListSize()) < 0) {
