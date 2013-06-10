@@ -563,7 +563,7 @@ int main(int argc, char* argv[])
 
         sigsetjmp(jbuf, 1);
 
-        while (exited_children.size() > 0 || signaled) {
+        while (children.size() > 0 || exited_children.size() > 0 || signaled) {
             int term = 0;
             check_children(term, pipe_valid);
         }
