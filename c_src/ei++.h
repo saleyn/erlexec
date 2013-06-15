@@ -257,7 +257,7 @@ namespace ei {
     public:
         enum TimeType { NOW, RELATIVE };
 
-        TimeVal()                   { m_tv.tv_usec=0; m_tv.tv_usec=0; }
+        TimeVal()                   { m_tv.tv_sec=0; m_tv.tv_usec=0; }
         TimeVal(int _s, int _us)    { m_tv.tv_sec=_s; m_tv.tv_usec=_us; normalize(); }
         TimeVal(const TimeVal& tv, int _s=0, int _us=0) { set(tv, _s, _us); }
         TimeVal(const struct timeval& tv) { m_tv.tv_sec=tv.tv_sec; m_tv.tv_usec=tv.tv_usec; normalize(); }
