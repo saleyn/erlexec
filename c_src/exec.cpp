@@ -18,7 +18,8 @@
           | ---- {TransId::integer(), Instruction::tuple()} ---> |
           | <----------- {TransId::integer(), Reply} ----------- |
 
-    Instruction = {run,   Cmd::string(), Options}   |
+    Instruction = {manage, OsPid::integer(), Options} |
+                  {run,   Cmd::string(), Options}   |
                   {shell, Cmd::string(), Options}   |
                   {list}                            |
                   {stop, OsPid::integer()}          |
@@ -462,8 +463,8 @@ int main(int argc, char* argv[])
             }
 
 
-            enum CmdTypeT        { MANAGE, EXECUTE, SHELL,   STOP,   KILL,  LIST, SHUTDOWN } cmd;
-            const char* cmds[] = { "manage", "run",   "shell", "stop", "kill", "list", "shutdown" };
+            enum CmdTypeT        {  MANAGE,  RUN,  SHELL,  STOP,  KILL,  LIST,  SHUTDOWN  } cmd;
+            const char* cmds[] = { "manage","run","shell","stop","kill","list","shutdown" };
 
             /* Determine the command */
             if ((int)(cmd = (CmdTypeT) eis.decodeAtomIndex(cmds, command)) < 0) {
@@ -495,7 +496,7 @@ int main(int argc, char* argv[])
                     send_ok(transId, pid);
                     break;
                 }
-                case EXECUTE:
+                case RUN:
                 case SHELL: {
                     // {shell, Cmd::string(), Options::list()}
                     CmdOptions po;
@@ -558,9 +559,10 @@ int main(int argc, char* argv[])
 
     erl_exec_kill(0, SIGTERM); // Kill all children in our process group
 
-    while (children.size() > 0) {
-        TimeVal now(TimeVal::NOW);
+    TimeVal now(TimeVal::NOW);
+    TimeVal deadline(now, 6, 0);
 
+    while (children.size() > 0) {
         sigsetjmp(jbuf, 1);
 
         if (children.size() > 0 || exited_children.size() > 0 || signaled) {
@@ -568,9 +570,8 @@ int main(int argc, char* argv[])
             check_children(term, pipe_valid);
         }
 
-        for(MapChildrenT::iterator it=children.begin(), end=children.end(); it != end; ++it) {
+        for(MapChildrenT::iterator it=children.begin(), end=children.end(); it != end; ++it)
             stop_child(it->second, 0, now, false);
-        }
 
         for(MapKillPidT::iterator it=transient_pids.begin(), end=transient_pids.end(); it != end; ++it) {
             erl_exec_kill(it->first, SIGKILL);
@@ -580,7 +581,14 @@ int main(int argc, char* argv[])
         if (children.size() == 0)
             break;
 
-        sleep(1);
+        TimeVal timeout(TimeVal::NOW);
+        if (timeout < deadline) {
+            timeout = deadline - timeout;
+
+            oktojump = 1;
+            select (0, (fd_set *)0, (fd_set *)0, (fd_set *) 0, &timeout);
+            oktojump = 0;
+        }
     }
 
     if (debug)
@@ -645,9 +653,9 @@ int stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify)
         if (ci.sigterm && ci.deadline.diff(now) < 0) {
             // More than WAIT_KILL_SECONDS secs elapsed since the last kill attempt
             erl_exec_kill(ci.cmd_pid, SIGKILL);
-            if (ci.kill_cmd_pid > 0) {
+            if (ci.kill_cmd_pid > 0)
                 erl_exec_kill(ci.kill_cmd_pid, SIGKILL);
-            }
+
             ci.sigkill = true;
         }
         if (notify) send_ok(transId);
