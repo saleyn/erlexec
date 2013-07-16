@@ -450,14 +450,15 @@ code_change(_OldVsn, State, _Extra) ->
 %%----------------------------------------------------------------------
 terminate(_Reason, State) ->
     erlang:port_command(State#state.port, term_to_binary({-1, {shutdown}})),
-    wait_on_exit(State#state.port),
-    error_logger:warning_msg("~w - exec process terminated\n", [self()]),
+    Status = wait_on_exit(State#state.port),
+    error_logger:warning_msg("~w - exec process terminated (status: ~w)\n",
+        [self(), Status]),
     ok.
 
 wait_on_exit(Port) ->
     receive
         {Port,{exit_status,Status}} ->
-            error_logger:info_msg("exec-port has stopped ~p", [Status]);
+            Status;
         _ ->
             wait_on_exit(Port)
     end.
