@@ -161,7 +161,8 @@ namespace ei {
         int write_header(size_t sz) {
             if (sz > m_maxMsgSize)
                 return -1;
-            byte b[4] = { (sz >> 24) & 0xff, (sz >> 16) & 0xff, (sz >> 8) & 0xff, sz & 0xff };
+            byte b[4] = { (byte)((sz >> 24) & 0xff), (byte)((sz >> 16) & 0xff),
+                          (byte)((sz >> 8)  & 0xff), (byte)(sz & 0xff) };
             memcpy(m_buffer, b + 4 - m_headerSize, m_headerSize);
             return 0;
         }
