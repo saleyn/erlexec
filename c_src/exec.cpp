@@ -631,7 +631,7 @@ int main(int argc, char* argv[])
             for(MapChildrenT::iterator it=children.begin(), end=children.end(); it != end; ++it) {
                 if ((it->second.stdout_fd >= 0 && FD_ISSET(it->second.stdout_fd, &readfds)) ||
                     (it->second.stderr_fd >= 0 && FD_ISSET(it->second.stderr_fd, &readfds)))
-                    process_pid_output(it);
+                    process_pid_output(it, 4096);
             }
         }
     }
@@ -938,7 +938,7 @@ int kill_child(pid_t pid, int signal, int transId, bool notify)
 
 void process_pid_output(MapChildrenT::iterator& it, int maxsize)
 {
-    char buf[1024];
+    char buf[4096];
 
     if (it->second.stdout_fd >= 0) {
         for(int got = 0, n = sizeof(buf); got < maxsize && n == sizeof(buf); got += n) {
@@ -970,7 +970,7 @@ int check_children(int& isTerminated, bool notify)
             MapChildrenT::iterator i = children.find(it->first);
             MapKillPidT::iterator j;
             if (i != children.end()) {
-                process_pid_output(i);
+                process_pid_output(i, INT_MAX);
                 // Override status code if termination was requested by Erlang
                 PidStatusT ps(it->first, i->second.sigterm ? 0 : it->second);
                 if (notify && send_pid_status_term(ps) < 0) {
