@@ -157,7 +157,7 @@ the process and kill it.
 file:read_file("/tmp/pid"))))))).
 19355
 
-% Manage and process and get notified by a monitor when it exits:
+% Manage the process and get notified by a monitor when it exits:
 19> exec:manage(P, [monitor]).
 {ok,<0.334.0>,19355}
 
