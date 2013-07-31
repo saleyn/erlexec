@@ -21,13 +21,15 @@
 
 <ul>
 <li>Starting, stopping OS commands and getting their OS process IDs.</li>
-<li>Providing versatile OS command options, including working directory, 
-    environment settings, alternative termination command, effective 
+<li>Providing versatile OS command options, including working directory,
+    environment settings, alternative termination command, effective
     user, process priority options, custom redirection of their
     stdout and stderr output.</li>
 <li>Ability to link Erlang processes to OS processes (via intermediate
     Erlang Pids that are linked to an associated OS process).</li>
 <li>Proper cleanup of OS processes at port program termination time.</li>
+<li>Redirecting STDOUT and STDERR of a process to a file, erlang process,
+    or a custom function</li>
 </ul>
 <p/>
 
@@ -86,7 +88,7 @@ in an external shell, or by executing exec:kill/2.
 {ok,<0.37.0>,2350}
 5> exec:kill(I, 15).
 ok
-** exception error: {exit_status,15}                    % Our shell died because we linked to the 
+** exception error: {exit_status,15}                    % Our shell died because we linked to the
                                                         % killed shell process via exec:run_link/2.
 
 6> exec:status(15).                                     % Examine the exit status.
@@ -106,16 +108,30 @@ ok
 9> file:delete("/tmp/output").
 '''
 
+<h4>Redirecting OS process stdout to an Erlang process or a custom function</h4>
+```
+10> exec:run("for i in 1 2 3; do sleep 1; echo \"Iter$i\"; done",
+            [{stdout, fun(S,OsPid,D) -> io:format("Got ~w from ~w: ~p\n", [S,OsPid,D]) end}]).
+{ok,<0.242.0>,18378}
+Got stdout from 18378: <<"Iter1\nIter2\nIter3\n">>
+
+11> > exec:run("echo Hello World!", [{stdout, self()}]).
+{ok,<0.244.0>,18382}
+12> flush().
+Shell got {stdout,18382,<<"Hello World!\n">>}
+ok
+'''
+
 <h4>Appending OS process stdout to a file</h4>
 ```
-10> f(I), {ok, _, I} = exec:run_link("for i in 1 2 3; do echo \"$RANDOM\"; done",
+13> f(I), {ok, _, I} = exec:run_link("for i in 1 2 3; do echo \"$RANDOM\"; done",
     [{stdout, {append, "/tmp/random"}]).
-11> io:format("~s", [binary_to_list(element(2, file:read_file("/tmp/random")))]).
+14> io:format("~s", [binary_to_list(element(2, file:read_file("/tmp/random")))]).
 6093
 17318
 23135
 ok
-12> file:delete("/tmp/random").
+15> file:delete("/tmp/random").
 '''
 
 @end

@@ -467,6 +467,7 @@ namespace ei {
         void encode(const std::string& s)   { wcheck(s.size()+1);  ei_encode_string(&m_wbuf, &m_wIdx, s.c_str()); }
         void encode(const atom_t& a)        { wcheck(a.size()+1);  ei_encode_atom(&m_wbuf, &m_wIdx, a.c_str()); }
         void encode(const erlang_pid& p)    { int n=0; ei_encode_pid(NULL, &n, &p); wcheck(n); ei_encode_pid(&m_wbuf, &m_wIdx, &p); }
+        void encode(const void* p, int sz)  { wcheck(sz+4);        ei_encode_binary(&m_wbuf, &m_wIdx, p, sz); }
         void encodeTupleSize(int sz)        { wcheck(5);           ei_encode_tuple_header(&m_wbuf, &m_wIdx, sz); }
         void encodeListSize(int sz)         { wcheck(5);           ei_encode_list_header(&m_wbuf, &m_wIdx, sz); }
         void encodeListEnd()                { wcheck(1);           ei_encode_empty_list(&m_wbuf, &m_wIdx); }

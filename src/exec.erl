@@ -159,8 +159,10 @@
     | {env, [string() | {Name :: string(), Value :: string()}, ...]}
     | {user, string()}
     | {nice, integer()}
-    | {stdout, null | stdout | stderr | string() | {append, string()}}
-    | {stderr, null | stdout | stderr | string() | {append, string()}}.
+    | {stdout, null | close | stdout | stderr | fun((stdout, integer(), binary()) -> none()) | pid() |
+               string() | {append, string()}}
+    | {stderr, null | close | stdout | stderr | fun((stderr, integer(), binary()) -> none()) | pid() |
+               string() | {append, string()}}.
 
 -type ospid() :: integer().
 %% Representation of OS process ID.
@@ -193,8 +195,8 @@ run(Exe, Options) when is_list(Exe), is_list(Options) ->
     gen_server:call(?MODULE, {port, {start, {run, Exe, Options}, nolink}}, 30000).
 
 %%-------------------------------------------------------------------------
-%% @doc Manage an existing external process. `OsPid' is the OS process identifier of
-%%      the external process.
+%% @doc Manage an existing external process. `OsPid' is the OS process
+%%      identifier of the external OS process.
 %% @end
 %%-------------------------------------------------------------------------
 -spec manage(ospid(), Options::cmd_options()) ->
@@ -281,7 +283,6 @@ pid(OsPid) when is_integer(OsPid) ->
 -spec status(integer()) -> {status, integer()} | {signal, integer(), boolean()}.
 status(Status) when is_integer(Status) ->
     TermSignal = Status band 16#7F,
-    %IfExited   = TermSignal =:= 0,
     IfSignaled = ((TermSignal + 1) bsr 1) > 0,
     ExitStatus = (Status band 16#FF00) bsr 8,
     case IfSignaled of
@@ -364,10 +365,10 @@ init([Options]) ->
 %%----------------------------------------------------------------------
 handle_call({port, Instruction}, From, #state{last_trans=Last} = State) ->
     try is_port_command(Instruction, State) of
-    {ok, Term, Link} ->
+    {ok, Term, Link, PidOpts} ->
         Next = next_trans(Last),
         erlang:port_command(State#state.port, term_to_binary({Next, Term})),
-        {noreply, State#state{trans = queue:in({Next, From, Link}, State#state.trans)}}
+        {noreply, State#state{trans = queue:in({Next, From, Link, PidOpts}, State#state.trans)}}
     catch _:{error, Why} ->
         {reply, {error, Why}, State}
     end;
@@ -399,22 +400,25 @@ handle_cast(_Msg, State) ->
 %% @private
 %%----------------------------------------------------------------------
 handle_info({Port, {data, Bin}}, #state{port=Port, debug=Debug} = State) ->
-    Term = binary_to_term(Bin),
-    %io:format("Msg from port: ~p\n", [Term]),
-    case Term of
-    {0, {exit_status, OsPid, Status}} ->
-        debug(Debug, "Pid ~w exited with status: {~w,~w}\n", [OsPid, (Status band 16#FF00 bsr 8), Status band 127]),
-        notify_ospid_owner(OsPid, Status),
-        {noreply, State};
+    case binary_to_term(Bin) of
     {N, Reply} when N =/= 0 ->
         case get_transaction(State#state.trans, N) of
-        {true, {Pid,_} = From, MonType, Q} ->
-            NewReply = maybe_add_monitor(Reply, Pid, MonType, Debug),
+        {true, {Pid,_} = From, MonType, PidOpts, Q} ->
+            NewReply = maybe_add_monitor(Reply, Pid, MonType, PidOpts, Debug),
             gen_server:reply(From, NewReply);
         {false, Q} ->
             ok
         end,
         {noreply, State#state{trans=Q}};
+    {0, {Stream, OsPid, Data}} when Stream =:= stdout; Stream =:= stderr ->
+        send_to_ospid_owner(OsPid, {Stream, Data}),
+        {noreply, State};
+    {0, {exit_status, OsPid, Status}} ->
+        debug(Debug, "Pid ~w exited with status: ~s{~w,~w}\n",
+            [OsPid, if (((Status band 16#7F)+1) bsr 1) > 0 -> "signaled "; true -> "" end,
+             (Status band 16#FF00 bsr 8), Status band 127]),
+        notify_ospid_owner(OsPid, Status),
+        {noreply, State};
     {0, _Ignore} ->
         {noreply, State}
     end;
@@ -449,11 +453,14 @@ code_change(_OldVsn, State, _Extra) ->
 %% @private
 %%----------------------------------------------------------------------
 terminate(_Reason, State) ->
-    erlang:port_command(State#state.port, term_to_binary({-1, {shutdown}})),
-    Status = wait_on_exit(State#state.port),
-    error_logger:warning_msg("~w - exec process terminated (status: ~w)\n",
-        [self(), Status]),
-    ok.
+    try
+        erlang:port_command(State#state.port, term_to_binary({-1, {shutdown}})),
+        Status = wait_on_exit(State#state.port),
+        error_logger:warning_msg("~w - exec process terminated (status: ~w)\n",
+            [self(), Status])
+    catch _:_ ->
+        ok
+    end.
 
 wait_on_exit(Port) ->
     receive
@@ -468,19 +475,20 @@ wait_on_exit(Port) ->
 %%%---------------------------------------------------------------------
 
 %% Add a link for Pid to OsPid if requested.
-maybe_add_monitor({ok, OsPid}, Pid, MonType, Debug) when is_integer(OsPid) ->
+maybe_add_monitor({ok, OsPid}, Pid, MonType, PidOpts, Debug) when is_integer(OsPid) ->
     % This is a reply to a run/run_link command. The port program indicates
     % of creating a new OsPid process.
     % Spawn a light-weight process responsible for monitoring this OsPid
     Self = self(),
-    LWP  = spawn_link(fun() -> ospid_init(Pid, OsPid, MonType, Self, Debug) end),
+    LWP  = spawn_link(fun() -> ospid_init(Pid, OsPid, MonType, Self, PidOpts, Debug) end),
     ets:insert(exec_mon, [{OsPid, LWP}, {LWP, OsPid}]),
     {ok, LWP, OsPid};
-maybe_add_monitor(Reply, _Pid, _MonType, _Debug) ->
+maybe_add_monitor(Reply, _Pid, _MonType, _PidOpts, _Debug) ->
     Reply.
 
 %%----------------------------------------------------------------------
-%% @spec (Pid, OsPid::integer(), LinkType, Parent, Debug::boolean()) -> void()
+%% @spec (Pid, OsPid::integer(), LinkType, Parent, PidOpts::list(), Debug::boolean()) ->
+%%          void()
 %% @doc Every OsPid is associated with an Erlang process started with
 %%      this function. The `Parent' is the ?MODULE port manager that
 %%      spawned this process and linked to it. `Pid' is the process
@@ -489,18 +497,26 @@ maybe_add_monitor(Reply, _Pid, _MonType, _Debug) ->
 %% @end
 %% @private
 %%----------------------------------------------------------------------
-ospid_init(Pid, OsPid, LinkType, Parent, Debug) ->
+ospid_init(Pid, OsPid, LinkType, Parent, PidOpts, Debug) ->
     process_flag(trap_exit, true),
+    StdOut = proplists:get_value(stdout, PidOpts),
+    StdErr = proplists:get_value(stderr, PidOpts),
     case LinkType of
     link -> link(Pid); % The caller pid that requested to run the OsPid command & link to it. 
     _    -> ok
     end,
-    ospid_loop({Pid, OsPid, Parent, Debug}).
+    ospid_loop({Pid, OsPid, Parent, StdOut, StdErr, Debug}).
 
-ospid_loop({Pid, OsPid, Parent, Debug} = State) ->
+ospid_loop({Pid, OsPid, Parent, StdOut, StdErr, Debug} = State) ->
     receive
     {{From, Ref}, ospid} ->
         From ! {Ref, OsPid},
+        ospid_loop(State);
+    {stdout, Data} when is_binary(Data) ->
+        ospid_deliver_output(StdOut, {stdout, OsPid, Data}),
+        ospid_loop(State);
+    {stderr, Data} when is_binary(Data) ->
+        ospid_deliver_output(StdErr, {stderr, OsPid, Data}),
         ospid_loop(State);
     {'DOWN', OsPid, {exit_status, Status}} ->
         debug(Debug, "~w ~w got down message (~w)\n", [self(), OsPid, status(Status)]),
@@ -521,7 +537,12 @@ ospid_loop({Pid, OsPid, Parent, Debug} = State) ->
         error_logger:warning_msg("~w - unknown msg: ~p\n", [self(), Other]),
         ospid_loop(State)
     end.
-    
+
+ospid_deliver_output(DestPid, Msg) when is_pid(DestPid) ->
+    DestPid ! Msg;
+ospid_deliver_output(DestFun, {Stream, OsPid, Data}) when is_function(DestFun) ->
+    DestFun(Stream, OsPid, Data).
+
 notify_ospid_owner(OsPid, Status) ->
     % See if there is a Pid owner of this OsPid. If so, sent the 'DOWN' message.
     case ets:lookup(exec_mon, OsPid) of
@@ -533,6 +554,12 @@ notify_ospid_owner(OsPid, Status) ->
     [] ->
         %error_logger:warning_msg("Owner ~w not found\n", [OsPid]),
         ok
+    end.
+
+send_to_ospid_owner(OsPid, Msg) ->
+    case ets:lookup(exec_mon, OsPid) of
+    [{_, Pid}] -> Pid ! Msg;
+    _ -> ok
     end.
 
 debug(false, _, _) ->
@@ -562,65 +589,75 @@ get_transaction(Q, I) ->
     get_transaction(Q, I, Q).
 get_transaction(Q, I, OldQ) ->
     case queue:out(Q) of
-    {{value, {I, From, LinkType}}, Q2} ->
-        {true, From, LinkType, Q2};
+    {{value, {I, From, LinkType, PidOpts}}, Q2} ->
+        {true, From, LinkType, PidOpts, Q2};
     {empty, _} ->
         {false, OldQ};
     {_, Q2} ->
         get_transaction(Q2, I, OldQ)
     end.
     
-is_port_command({start, {run, _Cmd, Options} = T, Link}, State) ->
-    check_cmd_options(Options, State),
-    {ok, T, Link};
+is_port_command({start, {run, Cmd, Options}, Link}, State) ->
+    {PortOpts, Other} = check_cmd_options(Options, State, [], []),
+    {ok, {run, Cmd, PortOpts}, Link, Other};
 is_port_command({list} = T, _State) -> 
-    {ok, T, undefined};
+    {ok, T, undefined, []};
 is_port_command({stop, OsPid}=T, _State) when is_integer(OsPid) -> 
-    {ok, T, undefined};
+    {ok, T, undefined, []};
 is_port_command({stop, Pid}, _State) when is_pid(Pid) ->
     case ets:lookup(exec_mon, Pid) of
-    [{Pid, OsPid}]  -> {ok, {stop, OsPid}, undefined};
+    [{_Pid, OsPid}] -> {ok, {stop, OsPid}, undefined, []};
     []              -> throw({error, no_process})
     end;
-is_port_command({manage, OsPid, Options} = T, State) when is_integer(OsPid) ->
-    check_cmd_options(Options, State),
-    {ok, T, undefined};
+is_port_command({manage, OsPid, Options}, State) when is_integer(OsPid) ->
+    {PortOpts, _Other} = check_cmd_options(Options, State, [], []),
+    {ok, {manage, OsPid, PortOpts}, undefined, []};
 is_port_command({kill, OsPid, Sig}=T, _State) when is_integer(OsPid),is_integer(Sig) -> 
-    {ok, T, undefined};
+    {ok, T, undefined, []};
 is_port_command({kill, Pid, Sig}, _State) when is_pid(Pid),is_integer(Sig) -> 
     case ets:lookup(exec_mon, Pid) of
-    [{Pid, OsPid}]  -> {ok, {kill, OsPid, Sig}, undefined};
+    [{Pid, OsPid}]  -> {ok, {kill, OsPid, Sig}, undefined, []};
     []              -> throw({error, no_process})
     end.
 
-check_cmd_options([{cd, Dir}|T], State) when is_list(Dir) ->
-    check_cmd_options(T, State);
-check_cmd_options([{env, Env}|T], State) when is_list(Env) ->
+check_cmd_options([{cd, Dir}=H|T], State, PortOpts, OtherOpts) when is_list(Dir) ->
+    check_cmd_options(T, State, [H|PortOpts], OtherOpts);
+check_cmd_options([{env, Env}=H|T], State, PortOpts, OtherOpts) when is_list(Env) ->
     case lists:filter(fun(S) when is_list(S) -> false;
                          ({S1,S2}) when is_list(S1), is_list(S2) -> false;
                          (_) -> true
                       end, Env) of
-    [] -> check_cmd_options(T, State);
+    [] -> check_cmd_options(T, State, [H|PortOpts], OtherOpts);
     L  -> throw({error, {invalid_env_value, L}})
     end;
-check_cmd_options([{kill, Cmd}|T], State) when is_list(Cmd) ->
-    check_cmd_options(T, State);
-check_cmd_options([{nice, I}|T], State) when is_integer(I), I >= -20, I =< 20 ->
-    check_cmd_options(T, State);
-check_cmd_options([{Std, I}|T], State) when Std=:=stderr, I=/=Std; Std=:=stdout, I=/=Std ->
-    if I=:=null; I=:=stderr; I=:=stdout; is_list(I); 
-       is_tuple(I), size(I)=:=2, element(1,I)=:=append, is_list(element(2,I))
-    ->  check_cmd_options(T, State);
-    true -> 
-        throw({error, ?FMT("Invalid ~w option ~p", [Std, I])})
+check_cmd_options([{kill, Cmd}=H|T], State, PortOpts, OtherOpts) when is_list(Cmd) ->
+    check_cmd_options(T, State, [H|PortOpts], OtherOpts);
+check_cmd_options([{nice, I}=H|T], State, PortOpts, OtherOpts) when is_integer(I), I >= -20, I =< 20 ->
+    check_cmd_options(T, State, [H|PortOpts], OtherOpts);
+check_cmd_options([{Std, I}=H|T], State, PortOpts, OtherOpts)
+        when Std=:=stderr, I=/=Std; Std=:=stdout, I=/=Std ->
+    if
+        I=:=null; I=:=true; I=:=close; I=:=stderr; I=:=stdout; is_list(I); 
+        is_tuple(I), size(I)=:=2, element(1,I)=:=append, is_list(element(2,I)) ->
+            check_cmd_options(T, State, [H|PortOpts], OtherOpts);
+        is_pid(I) ->
+            check_cmd_options(T, State, [{Std, true} | PortOpts], [H|OtherOpts]);
+        is_function(I) ->
+            {arity, 3} =:= erlang:fun_info(I, arity)
+                orelse throw({error, ?FMT("Invalid ~w option ~p: expected Fun/3", [Std, I])}),
+            check_cmd_options(T, State, [{Std, true} | PortOpts], [H|OtherOpts]);
+        true -> 
+            throw({error, ?FMT("Invalid ~w option ~p", [Std, I])})
     end;
-check_cmd_options([{user, U}|T], State) when is_list(U), U =/= "" ->
+check_cmd_options([{user, U}=H|T], State, PortOpts, OtherOpts) when is_list(U), U =/= "" ->
     case lists:member(U, State#state.limit_users) of
-    true  -> check_cmd_options(T, State);
+    true  -> check_cmd_options(T, State, [H|PortOpts], OtherOpts);
     false -> throw({error, ?FMT("User ~s is not allowed to run commands!", [U])})
     end;
-check_cmd_options([Other|_], _State) -> throw({error, {invalid_option, Other}});
-check_cmd_options([], _State)        -> ok.
+check_cmd_options([Other|_], _State, _PortOpts, _OtherOpts) ->
+    throw({error, {invalid_option, Other}});
+check_cmd_options([], _State, PortOpts, OtherOpts) ->
+    {PortOpts, OtherOpts}.
     
 next_trans(I) when I =< 134217727 ->
     I+1;
