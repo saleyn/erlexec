@@ -135,4 +135,37 @@ ok
 15> file:delete("/tmp/random").
 '''
 
+<h4>Setting up a monitor for the OS process</h4>
+```
+> f(I), f(P), {ok, P, I} = exec:run("echo ok", [{stdout, self()}, monitor]).
+{ok,<0.263.0>,18950}
+16> flush().                                                                  
+Shell got {stdout,18950,<<"ok\n">>}
+Shell got {'DOWN',#Ref<0.0.0.1651>,process,<0.263.0>,normal}
+ok
+'''
+
+<h4>Managing an externally started OS process</h4>
+This command allows to instruct erlexec to begin monitoring given OS process
+and notify Erlang when the process exits. It is also able to send signals to
+the process and kill it.
+```
+% Start an externally managed OS process and retrieve its OS PID:
+17> spawn(fun() -> os:cmd("echo $$ > /tmp/pid; sleep 15") end).
+<0.330.0>  
+18> f(P), P = list_to_integer(lists:reverse(tl(lists:reverse(binary_to_list(element(2,
+file:read_file("/tmp/pid"))))))).
+19355
+
+% Manage and process and get notified by a monitor when it exits:
+19> exec:manage(P, [monitor]).
+{ok,<0.334.0>,19355}
+
+% Wait for monitor notification
+20> f(M), receive M -> M end.
+{'DOWN',#Ref<0.0.0.2205>,process,<0.334.0>,{exit_status,10}}
+ok
+21> file:delete("/tmp/pid").
+ok
+'''
 @end
