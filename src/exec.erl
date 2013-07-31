@@ -66,13 +66,15 @@
 %%%                       {kill, Cmd::string()} |
 %%%                       {user, RunAsUser::string()} |
 %%%                       {nice, Priority::integer()} |
-%%%                       {stdout, Device} | {stderr, Device}
+%%%                       {stdout, Device} | {stderr, Device} |
+%%%                       monitor
 %%%         Env         = [VarEqVal]
 %%%         VarEqVal    = string() | {Var::string(), Value::string()}
 %%%         Device      = null | stdout | stderr | File | {append, File}
 %%%         File        = string().
-%%%     Command-line options:
+%%%     Command options:
 %%%     <dl>
+%%%     <dt>monitor</dt><dd>Set up a monitor for the spawned process</dd>
 %%%     <dt>{cd, WorkDir}</dt><dd>Working directory</dd>
 %%%     <dt>{env, Env}</dt>
 %%%         <dd>List of "VAR=VALUE" environment variables or
@@ -99,13 +101,19 @@
 %%%     <dt>{stderr, output_device()}</dt>
 %%%         <dd>Option for redirecting process's standard error stream</dd>
 %%%     </dl>
-%%% @type output_device() = null | stdout | stderr | Filename | {append, Filename}
-%%%         Filename = string().
+%%% @type output_device() = null | close | stdout | stderr | pid() |
+%%%         OutputFun | Filename | {append, Filename}
+%%%         OutputFun = fun((stdout | stderr, integer(), binary()) -> none())
+%%%         Filename  = string().
 %%%     Output device option:
 %%%     <dl>
 %%%     <dt>null</dt><dd>Suppress output.</dd>
+%%%     <dt>close</dt><dd>Close file descriptor for writing.</dd>
 %%%     <dt>stdout</dt><dd>Redirect output to stdout.</dd>
 %%%     <dt>stderr</dt><dd>Redirect output to stderr.</dd>
+%%%     <dt>pid()</dt><dd>Redirect output to this pid.</dd>
+%%%     <dt>fun((Stream, OsPid, Data) -> none())</dt>
+%%%         <dd>Execute this callback on receiving output data</dd>
 %%%     <dt>Filename</dt><dd>Save output to file by overwriting it.</dd>
 %%%     <dt>{append, Filename}</dt><dd>Append output to file.</dd>
 %%%     </dl>
@@ -192,17 +200,7 @@ start(Options) when is_list(Options) ->
 -spec run(Exe::string(), Options::cmd_options()) ->
     {ok, pid(), ospid()} | {error, any()}.
 run(Exe, Options) when is_list(Exe), is_list(Options) ->
-    gen_server:call(?MODULE, {port, {start, {run, Exe, Options}, nolink}}, 30000).
-
-%%-------------------------------------------------------------------------
-%% @doc Manage an existing external process. `OsPid' is the OS process
-%%      identifier of the external OS process.
-%% @end
-%%-------------------------------------------------------------------------
--spec manage(ospid(), Options::cmd_options()) ->
-    {ok, pid(), ospid()} | {error, any()}.
-manage(Pid, Options) ->
-    gen_server:call(?MODULE, {port, {manage, Pid, Options}}).
+    do_run({run, Exe, Options}, Options).
 
 %%-------------------------------------------------------------------------
 %% @equiv run/2
@@ -214,7 +212,34 @@ manage(Pid, Options) ->
 %%-------------------------------------------------------------------------
 -spec run_link(string(), cmd_options()) -> {ok, pid(), integer()} | {error, any()}.
 run_link(Exe, Options) when is_list(Exe), is_list(Options) ->
-    gen_server:call(?MODULE, {port, {start, {run, Exe, Options}, link}}).
+    do_run({run, Exe, Options}, [link | Options]).
+
+-spec do_run(Cmd::any(), Options::cmd_options()) ->
+    {ok, pid(), ospid()} | {error, any()}.
+do_run(Cmd, Options) ->
+    Mon = proplists:get_value(monitor, Options),
+    Link= case proplists:get_value(link, Options) of
+          true -> link;
+          _    -> nolink
+          end,
+    Cmd2 = {port, {Cmd, Link}},
+    case {Mon, gen_server:call(?MODULE, Cmd2, 30000)} of
+    {true, {ok, Pid, _} = R} ->
+        monitor(process, Pid),
+        R;
+    {_, R} ->
+        R
+    end.
+
+%%-------------------------------------------------------------------------
+%% @doc Manage an existing external process. `OsPid' is the OS process
+%%      identifier of the external OS process.
+%% @end
+%%-------------------------------------------------------------------------
+-spec manage(ospid(), Options::cmd_options()) ->
+    {ok, pid(), ospid()} | {error, any()}.
+manage(Pid, Options) ->
+    do_run({manage, Pid, Options}, Options).
 
 %%-------------------------------------------------------------------------
 %% @doc Get a list of children managed by port program.
@@ -597,7 +622,7 @@ get_transaction(Q, I, OldQ) ->
         get_transaction(Q2, I, OldQ)
     end.
     
-is_port_command({start, {run, Cmd, Options}, Link}, State) ->
+is_port_command({{run, Cmd, Options}, Link}, State) ->
     {PortOpts, Other} = check_cmd_options(Options, State, [], []),
     {ok, {run, Cmd, PortOpts}, Link, Other};
 is_port_command({list} = T, _State) -> 
@@ -609,9 +634,9 @@ is_port_command({stop, Pid}, _State) when is_pid(Pid) ->
     [{_Pid, OsPid}] -> {ok, {stop, OsPid}, undefined, []};
     []              -> throw({error, no_process})
     end;
-is_port_command({manage, OsPid, Options}, State) when is_integer(OsPid) ->
+is_port_command({{manage, OsPid, Options}, Link}, State) when is_integer(OsPid) ->
     {PortOpts, _Other} = check_cmd_options(Options, State, [], []),
-    {ok, {manage, OsPid, PortOpts}, undefined, []};
+    {ok, {manage, OsPid, PortOpts}, Link, []};
 is_port_command({kill, OsPid, Sig}=T, _State) when is_integer(OsPid),is_integer(Sig) -> 
     {ok, T, undefined, []};
 is_port_command({kill, Pid, Sig}, _State) when is_pid(Pid),is_integer(Sig) -> 
@@ -620,6 +645,10 @@ is_port_command({kill, Pid, Sig}, _State) when is_pid(Pid),is_integer(Sig) ->
     []              -> throw({error, no_process})
     end.
 
+check_cmd_options([monitor|T], State, PortOpts, OtherOpts) ->
+    check_cmd_options(T, State, PortOpts, OtherOpts);
+check_cmd_options([link|T], State, PortOpts, OtherOpts) ->
+    check_cmd_options(T, State, PortOpts, OtherOpts);
 check_cmd_options([{cd, Dir}=H|T], State, PortOpts, OtherOpts) when is_list(Dir) ->
     check_cmd_options(T, State, [H|PortOpts], OtherOpts);
 check_cmd_options([{env, Env}=H|T], State, PortOpts, OtherOpts) when is_list(Env) ->
