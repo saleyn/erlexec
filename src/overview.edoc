@@ -68,7 +68,7 @@ See description of types in {@link exec:exec_options()}.
 
 <h3><a name="ex">Examples</a></h3>
 
-<h4>Starting/stopping a OS process</h4>
+<h4>Starting/stopping an OS process</h4>
 ```
 1> exec:start([]).                                      % Start the port program.
 {ok,<0.32.0>}
