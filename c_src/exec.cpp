@@ -28,7 +28,7 @@
     Option  = {cd, Dir::string()} | {env, [string() | {string(), string()}]} |
               {kill, Cmd::string()} |
               {user, User::string()} | {nice, Priority::integer()} |
-              {stdout, Device::string()} | {stderr, Device::string()}
+              {stdout, Device::string() | true} | {stderr, Device::string() | true}
     Device  = null | stderr | stdout | File::string() | {append, File::string()}
 
     Reply = ok                      |       // For kill/stop commands
@@ -53,12 +53,14 @@
 #include <sys/capability.h>
 #endif
 
+#include <assert.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/time.h>
 #include <setjmp.h>
 #include <limits.h>
 #include <pwd.h>
+#include <fcntl.h>
 #include <map>
 #include <list>
 #include <deque>
@@ -102,6 +104,14 @@ typedef std::map <pid_t, CmdInfo>           MapChildrenT;
 typedef std::pair<kill_cmd_pid_t, pid_t>    KillPidStatusT;
 typedef std::map <kill_cmd_pid_t, pid_t>    MapKillPidT;
 
+enum RedirectType {
+    REDIRECT_NONE = -1,     // No output redirection
+    REDIRECT_NULL = -2,     // Redirect output to /dev/null
+    REDIRECT_CLOSE= -3,     // Close output file descriptor
+    REDIRECT_ERL  = -4,     // Redirect output back to Erlang
+    REDIRECT_FILE = -5      // Redirect output to file
+};
+
 class CmdOptions {
     ei::StringBuffer<256>   m_tmp;
     std::stringstream       m_err;
@@ -116,22 +126,60 @@ class CmdOptions {
     size_t                  m_count;
     int                     m_user;     // run as
     const char**            m_cenv;
+    int                     m_stdout_fd;
+    int                     m_stderr_fd;
+    bool                    m_stdout_append;
+    bool                    m_stderr_append;
 
 public:
 
     CmdOptions()
         : m_tmp(0, 256), m_nice(INT_MAX), m_size(0)
         , m_count(0), m_user(INT_MAX), m_cenv(NULL)
+        , m_stdout_fd(REDIRECT_NONE), m_stderr_fd(REDIRECT_NONE)
+        , m_stdout_append(false), m_stderr_append(false)
     {}
-    ~CmdOptions() { delete [] m_cenv; m_cenv = NULL; }
+    CmdOptions(const char* cmd, const char* cd = NULL, const char** env = NULL,
+               int user = INT_MAX, int nice = INT_MAX)
+        : m_cmd(cmd), m_cd(cd ? cd : ""), m_nice(nice), m_size(0), m_count(0)
+        , m_user(user), m_cenv(env)
+        , m_stdout_fd(REDIRECT_NONE), m_stderr_fd(REDIRECT_NONE)
+        , m_stdout_append(false), m_stderr_append(false)
+    {}
+    ~CmdOptions() {
+        delete [] m_cenv;
+        m_cenv = NULL;
+    }
 
-    const char*  strerror() const { return m_err.str().c_str(); }
-    const char*  cmd()      const { return m_cmd.c_str(); }
-    const char*  cd()       const { return m_cd.c_str(); }
-    char* const* env()      const { return (char* const*)m_cenv; }
-    const char*  kill_cmd() const { return m_kill_cmd.c_str(); }
-    int          user()     const { return m_user; }
-    int          nice()     const { return m_nice; }
+    const char*  strerror()         const { return m_err.str().c_str(); }
+    const char*  cmd()              const { return m_cmd.c_str(); }
+    const char*  cd()               const { return m_cd.c_str(); }
+    char* const* env()              const { return (char* const*)m_cenv; }
+    const char*  kill_cmd()         const { return m_kill_cmd.c_str(); }
+    int          user()             const { return m_user; }
+    int          nice()             const { return m_nice; }
+    const char*  stdout_file()      const { return m_stdout.c_str(); }
+    const char*  stderr_file()      const { return m_stderr.c_str(); }
+    bool         stdout_append()    const { return m_stdout_append; }
+    bool         stderr_append()    const { return m_stderr_append; }
+    int          stdout_fd()        const { return m_stdout_fd; }
+    int          stderr_fd()        const { return m_stderr_fd; }
+
+    void stdout_fd(int fd) { m_stdout_fd = fd; }
+    void stderr_fd(int fd) { m_stderr_fd = fd; }
+
+    void stdout_file(const std::string& file, bool append) {
+        m_stdout_fd = REDIRECT_FILE; m_stdout = file; m_stdout_append = append;
+    }
+
+    void stderr_file(const std::string& file, bool append) {
+        m_stderr_fd = REDIRECT_FILE; m_stderr = file; m_stderr_append = append;
+    }
+
+    void output_file(bool is_stdout, const std::string& file, bool append) {
+        if (is_stdout)  stdout_file(file, append);
+        else            stderr_file(file, append);
+    }
 
     int ei_decode(ei::Serializer& ei, bool getCmd = false);
 };
@@ -140,6 +188,8 @@ public:
 /// When a user provides a custom command to kill a process this
 /// structure will contain its run-time information.
 struct CmdInfo {
+    static const int REDIRECT_FD = -2;
+
     std::string     cmd;            // Executed command
     pid_t           cmd_pid;        // Pid of the custom kill command
     std::string     kill_cmd;       // Kill command to use (if provided - otherwise use SIGTERM)
@@ -147,19 +197,23 @@ struct CmdInfo {
     ei::TimeVal     deadline;       // Time when the <cmd_pid> is supposed to be killed using SIGTERM.
     bool            sigterm;        // <true> if sigterm was issued.
     bool            sigkill;        // <true> if sigkill was issued.
+    bool            managed;        // <true> if this pid is started externally, but managed by erlexec
+    int             stdout_fd;      // Pipe fd receiving process's stdout
+    int             stderr_fd;      // Pipe fd receiving process's stderr
 
-    CmdInfo() : cmd_pid(-1), kill_cmd_pid(-1), sigterm(false), sigkill(false) {
-        deadline = TimeVal();
+    CmdInfo() {
+        new (this) CmdInfo("", "", 0);
     }
     CmdInfo(const CmdInfo& ci) {
-        new (this) CmdInfo(ci.cmd.c_str(), ci.kill_cmd.c_str(), ci.cmd_pid);
+        new (this) CmdInfo(ci.cmd.c_str(), ci.kill_cmd.c_str(), ci.cmd_pid, ci.managed,
+                           ci.stdout_fd, ci.stderr_fd);
     }
-    CmdInfo(const char* _cmd, const char* _kill_cmd, pid_t _cmd_pid) {
-        new (this) CmdInfo();
-        cmd      = _cmd;
-        cmd_pid  = _cmd_pid;
-        kill_cmd = _kill_cmd;
-    }
+    CmdInfo(const char* _cmd, const char* _kill_cmd, pid_t _cmd_pid, bool _managed = false,
+            int _stdout_fd = REDIRECT_NONE, int _stderr_fd = REDIRECT_NONE)
+        : cmd(_cmd), cmd_pid(_cmd_pid), kill_cmd(_kill_cmd), kill_cmd_pid(-1)
+        , sigterm(false), sigkill(false), managed(_managed)
+        , stdout_fd(_stdout_fd), stderr_fd(_stderr_fd)
+    {}
 };
 
 //-------------------------------------------------------------------------
@@ -196,10 +250,12 @@ int   send_ok(int transId, pid_t pid = -1);
 int   send_pid_status_term(const PidStatusT& stat);
 int   send_error_str(int transId, bool asAtom, const char* fmt, ...);
 int   send_pid_list(int transId, const MapChildrenT& children);
+int   send_ospid_output(int pid, const char* type, const char* data, int len);
 
-pid_t start_child(const CmdOptions& op);
+pid_t start_child(CmdOptions& op, std::string& err);
 int   kill_child(pid_t pid, int sig, int transId, bool notify=true);
 int   check_children(int& isTerminated, bool notify = true);
+void  process_pid_output(MapChildrenT::iterator& it, int maxsize = 4096);
 void  stop_child(pid_t pid, int transId, const TimeVal& now);
 int   stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify = true);
 
@@ -210,6 +266,7 @@ int process_child_signal(pid_t pid)
     if (exited_children.size() < exited_children.max_size()) {
         int status;
         pid_t ret;
+
         while ((ret = waitpid(pid, &status, WNOHANG)) < 0 && errno == EINTR);
 
         if (ret < 0 && errno == ECHILD) {
@@ -225,11 +282,11 @@ int process_child_signal(pid_t pid)
         else
             return -1;
         return 1;
-    } else {
-        // else - defer calling waitpid() for later
-        signaled = true;
-        return 0;
     }
+
+    // defer calling waitpid() for later
+    signaled = true;
+    return 0;
 }
 
 void gotsignal(int signal)
@@ -251,6 +308,7 @@ void gotsigchild(int signal, siginfo_t* si, void* context)
 
     if (debug)
         fprintf(stderr, "Process %d exited (sig=%d)\r\n", si->si_pid, signal);
+
     process_child_signal(si->si_pid);
 
     if (oktojump) siglongjmp(jbuf, 1);
@@ -411,13 +469,30 @@ int main(int argc, char* argv[])
         #endif
     }
 
-    const int maxfd = eis.read_handle()+1;
+    const int MAX_FD = eis.read_handle()+1;
 
     while (!terminated) {
 
-        /* Detect "open" for serial pty slave */
+        // Detect "open" for serial pty slave
         FD_ZERO (&readfds);
         FD_SET (eis.read_handle(), &readfds);
+
+        int maxfd = MAX_FD;
+
+        // Set up all stdout/stderr input streams that we need to monitor and redirect to Erlang
+        for(MapChildrenT::iterator it=children.begin(), end=children.end(); it != end; ++it) {
+            if (it->second.stdout_fd >= 0) {
+                FD_SET(it->second.stdout_fd, &readfds);
+                if (it->second.stdout_fd > maxfd) maxfd = it->second.stdout_fd;
+                if (debug)
+                    fprintf(stderr, "Added pid %d stdout reading (fd=%d)\r\n",
+                        it->first, it->second.stdout_fd);
+            }
+            if (it->second.stderr_fd >= 0) {
+                FD_SET(it->second.stderr_fd, &readfds);
+                if (it->second.stderr_fd > maxfd) maxfd = it->second.stderr_fd;
+            }
+        }
 
         sigsetjmp(jbuf, 1); oktojump = 0;
 
@@ -482,17 +557,18 @@ int main(int argc, char* argv[])
                 case MANAGE: {
                     // {manage, Cmd::string(), Options::list()}
                     CmdOptions po;
-
                     long pid;
                     pid_t realpid;
+
                     if (arity != 3 || (eis.decodeInt(pid)) < 0 || po.ei_decode(eis) < 0) {
                         send_error_str(transId, true, "badarg");
                         continue;
                     }
                     realpid = pid;
 
-                    CmdInfo ci("managed pid", po.kill_cmd(), realpid);
+                    CmdInfo ci("managed pid", po.kill_cmd(), realpid, true);
                     children[realpid] = ci;
+
                     send_ok(transId, pid);
                     break;
                 }
@@ -507,10 +583,12 @@ int main(int argc, char* argv[])
                     }
 
                     pid_t pid;
-                    if ((pid = start_child(po)) < 0)
-                        send_error_str(transId, false, "Couldn't start pid: %s", strerror(errno));
+                    std::string err;
+                    if ((pid = start_child(po, err)) < 0)
+                        send_error_str(transId, false, "Couldn't start pid: %s", err.c_str());
                     else {
-                        CmdInfo ci(po.cmd(), po.kill_cmd(), pid);
+                        CmdInfo ci(po.cmd(), po.kill_cmd(), pid, false,
+                                   po.stdout_fd(), po.stderr_fd());
                         children[pid] = ci;
                         send_ok(transId, pid);
                     }
@@ -547,6 +625,13 @@ int main(int argc, char* argv[])
                     }
                     send_pid_list(transId, children);
                     break;
+            }
+        } else {
+            // Check if any stdout/stderr streams have data
+            for(MapChildrenT::iterator it=children.begin(), end=children.end(); it != end; ++it) {
+                if ((it->second.stdout_fd >= 0 && FD_ISSET(it->second.stdout_fd, &readfds)) ||
+                    (it->second.stderr_fd >= 0 && FD_ISSET(it->second.stderr_fd, &readfds)))
+                    process_pid_output(it);
             }
         }
     }
@@ -597,48 +682,153 @@ int main(int argc, char* argv[])
     return old_terminated;
 }
 
-pid_t start_child(const char* cmd, const char* cd, char* const* env, int user, int nice)
+pid_t start_child(CmdOptions& op, std::string& error)
 {
-    pid_t pid = fork();
+    int stdout_fd[2] = { REDIRECT_NONE, REDIRECT_NONE };
+    int stderr_fd[2] = { REDIRECT_NONE, REDIRECT_NONE };
+
     ei::StringBuffer<128> err;
 
-    switch (pid) {
-        case -1:
-            return -1;
-        case 0: {
-            #if !defined(__CYGWIN__) && !defined(__WIN32)
-            // I am the child
-            if (user != INT_MAX && setresuid(user, user, user) < 0) {
-                err.write("Cannot set effective user to %d", user);
-                perror(err.c_str());
-                return EXIT_FAILURE;
+    switch (op.stdout_fd()) {
+        case REDIRECT_CLOSE:
+        case STDERR_FILENO:
+            stdout_fd[1] = op.stdout_fd();
+            break;
+        case REDIRECT_ERL:
+            if (pipe(stdout_fd) < 0) {
+                err.write("Failed to create a pipe for stdout: %s", strerror(errno));
+                error = err.c_str();
+                return -1;
             }
-            #endif
-            const char* const argv[] = { getenv("SHELL"), "-c", cmd, (char*)NULL };
-            if (cd != NULL && cd[0] != '\0' && chdir(cd) < 0) {
-                err.write("Cannot chdir to '%s'", cd);
-                perror(err.c_str());
-                return EXIT_FAILURE;
+            if (debug)
+                fprintf(stderr, "Created pipe (readfd=%d, writefd=%d)\r\n",
+                    stdout_fd[0], stdout_fd[1]);
+            // Make sure the reading end is non-blocking
+            fcntl(stdout_fd[0], F_SETFD, fcntl(stdout_fd[0], F_GETFL, 0) | O_NONBLOCK);
+            break;
+        case REDIRECT_FILE: {
+            int flags = O_RDWR | O_CREAT | (op.stdout_append() ? O_APPEND : O_TRUNC);
+            stdout_fd[1] = open(op.stdout_file(), flags);
+            if (stdout_fd[1] < 0) {
+                err.write("Failed to redirect stdout to file: %s", strerror(errno));
+                error = err.c_str();
+                return -1;
             }
-            if (execve((const char*)argv[0], (char* const*)argv, env) < 0) {
-                err.write("Cannot execute '%s'", cd);
-                perror(err.c_str());
-                return EXIT_FAILURE;
-            }
+            if (debug)
+                fprintf(stderr, "Redirecting stdout of cmd '%s' to file: '%s' (fd=%d)\r\n",
+                    op.cmd(), op.stdout_file(), stdout_fd[1]);
+            break;
         }
-        default:
-            // I am the parent
-            if (nice != INT_MAX && setpriority(PRIO_PROCESS, pid, nice) < 0) {
-                err.write("Cannot set priority of pid %d to %d", pid, nice);
-                perror(err.c_str());
-            }
-            return pid;
     }
-}
 
-pid_t start_child(const CmdOptions& op)
-{
-    return start_child(op.cmd(), op.cd(), op.env(), op.user(), op.nice());
+    switch (op.stderr_fd()) {
+        case REDIRECT_CLOSE:
+        case STDOUT_FILENO:
+            stderr_fd[1] = op.stderr_fd();
+            break;
+        case REDIRECT_ERL:
+            if (pipe(stderr_fd) < 0) {
+                err.write("Failed to create a pipe for stderr: %s", strerror(errno));
+                error = err.c_str();
+                return -1;
+            }
+            if (debug)
+                fprintf(stderr, "Created pipe (readfd=%d, writefd=%d)\r\n",
+                    stderr_fd[0], stderr_fd[1]);
+            break;
+        case REDIRECT_FILE: {
+            int flags = O_RDWR | O_CREAT | (op.stderr_append() ? O_APPEND : O_TRUNC);
+            stderr_fd[1] = open(op.stderr_file(), flags);
+            if (stderr_fd[1] < 0) {
+                err.write("Failed to redirect stderr to file: %s", strerror(errno));
+                error = err.c_str();
+                return -1;
+            }
+            if (debug)
+                fprintf(stderr, "Redirecting stderr of cmd '%s' to file: '%s' (fd=%d)\r\n",
+                    op.cmd(), op.stderr_file(), stderr_fd[1]);
+            // Make sure the reading end is non-blocking
+            fcntl(stderr_fd[0], F_SETFD, fcntl(stderr_fd[0], F_GETFL, 0) | O_NONBLOCK);
+            break;
+        }
+    }
+
+    if (debug)
+        fprintf(stderr, "Starting child: %s\r\n", op.cmd());
+
+    pid_t pid = fork();
+
+    if (pid < 0) {
+        error = strerror(errno);
+        return pid;
+    } else if (pid == 0) {
+        // I am the child
+
+        // Set up stdout redirect
+        if (stdout_fd[0] >= 0) close(stdout_fd[0]); // Close reading end of the child pipe (if any)
+        if (stdout_fd[1] == REDIRECT_CLOSE)
+            close(STDOUT_FILENO);
+        else if (stdout_fd[1] == STDERR_FILENO)
+            dup2(STDERR_FILENO, STDOUT_FILENO);
+        else if (stdout_fd[1] >= 0) {
+            dup2(stdout_fd[1], STDOUT_FILENO);      // Send stdout to the pipe/file
+            close(stdout_fd[1]);                    // This fd is no longer needed
+        }
+
+        // Set up stdout redirect
+        if (stderr_fd[0] >= 0) close(stderr_fd[0]); // Close reading end of the child pipe (if any)
+        if (stderr_fd[1] == REDIRECT_CLOSE)
+            close(STDERR_FILENO);
+        else if (stderr_fd[1] == STDOUT_FILENO)
+            dup2(STDOUT_FILENO, STDERR_FILENO);
+        else if (stderr_fd[1] >= 0) {
+            dup2(stderr_fd[1], STDERR_FILENO);      // Send stderr to the pipe
+            close(stderr_fd[1]);                    // This fd is no longer needed
+        }
+
+        #if !defined(__CYGWIN__) && !defined(__WIN32)
+        if (op.user() != INT_MAX && setresuid(op.user(), op.user(), op.user()) < 0) {
+            err.write("Cannot set effective user to %d", op.user());
+            if (debug) perror(err.c_str());
+            return EXIT_FAILURE;
+        }
+        #endif
+        const char* const argv[] = { getenv("SHELL"), "-c", op.cmd(), (char*)NULL };
+        if (op.cd() != NULL && op.cd()[0] != '\0' && chdir(op.cd()) < 0) {
+            err.write("Cannot chdir to '%s'", op.cd());
+            if (debug) perror(err.c_str());
+            return EXIT_FAILURE;
+        }
+        if (execve((const char*)argv[0], (char* const*)argv, op.env()) < 0) {
+            err.write("Cannot execute '%s'", op.cmd());
+            if (debug) perror(err.c_str());
+            return EXIT_FAILURE;
+        }
+        // On success execve never returns
+        return EXIT_FAILURE;
+    }
+
+    // I am the parent
+
+    if (stdout_fd[1] >= 0) close(stdout_fd[1]); // Close writing end of the child stdout pipe (if any)
+    if (stdout_fd[0] >= 0) {
+        op.stdout_fd(stdout_fd[0]);
+        if (debug)
+            fprintf(stderr, "Setup pid %d stdout redirection\r\n", pid);
+    }
+    if (stderr_fd[1] >= 0) close(stderr_fd[1]); // Close writing end of the child stderr pipe (if any)
+    if (stderr_fd[0] >= 0) {
+        op.stderr_fd(stderr_fd[0]);
+        if (debug)
+            fprintf(stderr, "Setup pid %d stderr redirection\r\n", pid);
+    }
+
+    if (op.nice() != INT_MAX && setpriority(PRIO_PROCESS, pid, op.nice()) < 0) {
+        err.write("Cannot set priority of pid %d to %d", pid, op.nice());
+        error = err.c_str();
+        if (debug) perror(err.c_str());
+    }
+    return pid;
 }
 
 int stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify)
@@ -662,7 +852,13 @@ int stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify)
         return 0;
     } else if (!ci.kill_cmd.empty()) {
         // This is the first attempt to kill this pid and kill command is provided.
-        ci.kill_cmd_pid = start_child(ci.kill_cmd.c_str(), NULL, NULL, INT_MAX, INT_MAX);
+        CmdOptions co(ci.kill_cmd.c_str());
+        std::string err;
+        ci.kill_cmd_pid = start_child(co, err);
+        if (!err.empty() && debug)
+            fprintf(stderr, "Error executing kill command '%s': %s\r\r",
+                ci.kill_cmd.c_str(), err.c_str());
+
         if (ci.kill_cmd_pid > 0) {
             transient_pids[ci.kill_cmd_pid] = ci.cmd_pid;
             ci.deadline.set(now, WAIT_KILL_SECONDS);
@@ -740,6 +936,30 @@ int kill_child(pid_t pid, int signal, int transId, bool notify)
     return err;
 }
 
+void process_pid_output(MapChildrenT::iterator& it, int maxsize)
+{
+    char buf[1024];
+
+    if (it->second.stdout_fd >= 0) {
+        for(int got = 0, n = sizeof(buf); got < maxsize && n == sizeof(buf); got += n) {
+            n = read(it->second.stdout_fd, buf, sizeof(buf));
+            if (debug)
+                fprintf(stderr, "Read %d bytes from pid %d's stdout\r\n", n, it->first);
+            if (n > 0)
+                send_ospid_output(it->first, "stdout", buf, n);
+        }
+    }
+    if (it->second.stderr_fd >= 0) {
+        for(int got = 0, n = sizeof(buf); got < maxsize && n == sizeof(buf); got += n) {
+            n = read(it->second.stderr_fd, buf, sizeof(buf));
+            if (debug)
+                fprintf(stderr, "Read %d bytes from pid %d's stderr\r\n", n, it->first);
+            if (n > 0)
+                send_ospid_output(it->first, "stderr", buf, n);
+        }
+    }
+}
+
 int check_children(int& isTerminated, bool notify)
 {
     do {
@@ -750,6 +970,7 @@ int check_children(int& isTerminated, bool notify)
             MapChildrenT::iterator i = children.find(it->first);
             MapKillPidT::iterator j;
             if (i != children.end()) {
+                process_pid_output(i);
                 // Override status code if termination was requested by Erlang
                 PidStatusT ps(it->first, i->second.sigterm ? 0 : it->second);
                 if (notify && send_pid_status_term(ps) < 0) {
@@ -787,8 +1008,19 @@ int check_children(int& isTerminated, bool notify)
             }
 
             while ((n = waitpid(pid, &status, WNOHANG)) < 0 && errno == EINTR);
-            if (n > 0)
-                exited_children.push_back(std::make_pair(pid <= 0 ? n : pid, status));
+            if (n > 0) {
+                if (WIFEXITED(status) || WIFSIGNALED(status)) {
+                    exited_children.push_back(std::make_pair(pid <= 0 ? n : pid, status));
+                } else if (WIFSTOPPED(status)) {
+                    if (debug)
+                        fprintf(stderr, "Pid %d %swas stopped by delivery of a signal %d\r\n",
+                            pid, it->second.managed ? "(managed) " : "", WSTOPSIG(status));
+                } else if (WIFCONTINUED(status)) {
+                    if (debug)
+                        fprintf(stderr, "Pid %d %swas resumed by delivery of SIGCONT\r\n",
+                            pid, it->second.managed ? "(managed) " : "");
+                }
+            }
             continue;
         } else if (n < 0 && errno == ESRCH) {
             if (notify)
@@ -854,6 +1086,18 @@ int send_pid_status_term(const PidStatusT& stat)
     eis.encode(atom_t("exit_status"));
     eis.encode(stat.first);
     eis.encode(stat.second);
+    return eis.write();
+}
+
+int send_ospid_output(int pid, const char* type, const char* data, int len)
+{
+    eis.reset();
+    eis.encodeTupleSize(2);
+    eis.encode(0);
+    eis.encodeTupleSize(3);
+    eis.encode(atom_t(type));
+    eis.encode(pid);
+    eis.encode(data, len);
     return eis.write();
 }
 
@@ -982,30 +1226,29 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
                     eis.decodeAtom(s);
                 else if (type == ERL_STRING_EXT)
                     eis.decodeString(s);
-                else if (type == ERL_SMALL_TUPLE_EXT && sz == 2 &&
+                else if (! (type == ERL_SMALL_TUPLE_EXT && sz == 2 &&
                     eis.decodeTupleSize() == 2 &&
                     eis.decodeAtom(fop) == 0 &&
-                    eis.decodeString(s) == 0 && fop == "append") {
-                    ;
-                } else {
+                    eis.decodeString(s) == 0 && fop == "append"))
+                {
                     m_err << "Atom, string or {append, Name} tuple required for option " << op;
                     return -1;
                 }
 
-                std::string& rs = (opt == STDOUT) ? m_stdout : m_stderr;
-                std::stringstream ss;
-                int fd = (opt == STDOUT) ? 1 : 2;
+                int& fdr = (opt == STDOUT) ? m_stdout_fd : m_stderr_fd;
 
                 if (s == "null") {
-                    ss << fd << ">/dev/null";
-                    rs = ss.str();
+                    output_file(opt == STDOUT, "/dev/null", false);
+                } else if (s == "true" || s == "redirect") {
+                    fdr = REDIRECT_ERL;
+                } else if (s == "close") {
+                    fdr = REDIRECT_CLOSE;
                 } else if (s == "stderr" && opt == STDOUT)
-                    rs = "1>&2";
+                    m_stderr_fd = STDOUT_FILENO;
                 else if (s == "stdout" && opt == STDERR)
-                    rs = "2>&1";
+                    m_stdout_fd = STDERR_FILENO;
                 else if (s != "") {
-                    ss << fd << (fop == "append" ? ">" : "") << ">\"" << s << "\"";
-                    rs = ss.str();
+                    output_file(opt == STDOUT, s, fop == "append");
                 }
                 break;
             }
@@ -1025,16 +1268,11 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
       m_cenv[orig_env_sz] = NULL;
     }
 
-    if (m_stdout == "1>&2" && m_stderr != "2>&1") {
+    if (m_stdout_fd == STDERR_FILENO && m_stderr_fd == STDOUT_FILENO) {
         m_err << "circular reference of stdout and stderr";
         return -1;
-    } else if (!m_stdout.empty() || !m_stderr.empty()) {
-        std::stringstream ss;
-        ss << m_cmd;
-        if (!m_stdout.empty()) ss << " " << m_stdout;
-        if (!m_stderr.empty()) ss << " " << m_stderr;
-        m_cmd = ss.str();
     }
+
     return 0;
 }
 
@@ -1044,14 +1282,15 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
 
 int erl_exec_kill(pid_t pid, int signal) {
     if (pid < 0) {
-        if (debug) {
-            fprintf(stderr, "attempted a kill(-1, %d)\r\n", signal);
-        }
+        if (debug)
+            fprintf(stderr, "kill(-1, %d) attempt prohibited!\r\n", signal);
+
         return -1;
     }
-    if (debug) {
-        fprintf(stderr, "erl_exec_kill %d with %d\r\n", pid, signal);
-    }
+
+    if (debug && signal > 0)
+        fprintf(stderr, "Calling kill(pid=%d, sig=%d)\r\n", pid, signal);
+
     return kill(pid, signal);
 }
 

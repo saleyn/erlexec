@@ -121,7 +121,7 @@ int Serializer::read()
         m_readOffset   = 0;
 
         if (m_debug)
-            std::cerr << "Serializer::read() - message size: " << m_readPacketSz << std::endl;
+            std::cerr << "Serializer::read() - message size: " << m_readPacketSz << '\r' << std::endl;
 
         if (!m_rbuf.resize(m_readPacketSz))
             return -2;
