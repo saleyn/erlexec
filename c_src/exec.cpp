@@ -30,7 +30,7 @@
     Option  = {cd, Dir::string()} |
               {env, [string() | {string(), string()}]} |
               {kill, Cmd::string()} |
-              {kill_timeout, MSec::integer()} |
+              {kill_timeout, Sec::integer()} |
               {group, integer() | string()} |
               {user, User::string()} |
               {nice, Priority::integer()} |
@@ -144,7 +144,7 @@ class CmdOptions {
 public:
 
     CmdOptions()
-        : m_tmp(0, 256), m_kill_timeout(KILL_TIMEOUT_SEC*1000)
+        : m_tmp(0, 256), m_kill_timeout(KILL_TIMEOUT_SEC)
         , m_nice(INT_MAX), m_size(0)
         , m_count(0), m_group(INT_MAX), m_user(INT_MAX), m_cenv(NULL)
         , m_stdin_fd(REDIRECT_NONE), m_stdout_fd(REDIRECT_NONE), m_stderr_fd(REDIRECT_NONE)
@@ -152,7 +152,7 @@ public:
     {}
     CmdOptions(const char* cmd, const char* cd = NULL, const char** env = NULL,
                int user = INT_MAX, int nice = INT_MAX, int group = INT_MAX)
-        : m_cmd(cmd), m_cd(cd ? cd : ""), m_kill_timeout(KILL_TIMEOUT_SEC*1000)
+        : m_cmd(cmd), m_cd(cd ? cd : ""), m_kill_timeout(KILL_TIMEOUT_SEC)
         , m_nice(nice), m_size(0), m_count(0)
         , m_group(group), m_user(user), m_cenv(env)
         , m_stdin_fd(REDIRECT_NONE), m_stdout_fd(REDIRECT_NONE), m_stderr_fd(REDIRECT_NONE)
@@ -233,7 +233,7 @@ struct CmdInfo {
     }
     CmdInfo(const char* _cmd, const char* _kill_cmd, pid_t _cmd_pid, bool _managed = false,
             int _stdin_fd = REDIRECT_NONE, int _stdout_fd = REDIRECT_NONE, int _stderr_fd = REDIRECT_NONE,
-            int _kill_timeout = KILL_TIMEOUT_SEC*1000)
+            int _kill_timeout = KILL_TIMEOUT_SEC)
         : cmd(_cmd), cmd_pid(_cmd_pid), kill_cmd(_kill_cmd), kill_cmd_pid(-1)
         , sigterm(false), sigkill(false)
         , kill_timeout(_kill_timeout), managed(_managed)
@@ -989,7 +989,7 @@ int stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify)
 
         if (ci.kill_cmd_pid > 0) {
             transient_pids[ci.kill_cmd_pid] = ci.cmd_pid;
-            ci.deadline.set(now, 0, ci.kill_timeout * 1000);
+            ci.deadline.set(now, ci.kill_timeout);
             if (notify) send_ok(transId);
             return 0;
         } else {
@@ -1008,7 +1008,7 @@ int stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify)
         if (!ci.sigterm && (n = kill_child(ci.cmd_pid, SIGTERM, transId, notify)) == 0) {
             if (debug)
                 fprintf(stderr, "Sent SIGTERM to pid %d (timeout=%dms)\r\n", ci.cmd_pid, ci.kill_timeout);
-            ci.deadline.set(now, 0, ci.kill_timeout * 1000);
+            ci.deadline.set(now, ci.kill_timeout);
         } else if (!ci.sigkill && (n = kill_child(ci.cmd_pid, SIGKILL, 0, false)) == 0) {
             if (debug)
                 fprintf(stderr, "Sent SIGKILL to pid %d\r\n", ci.cmd_pid);

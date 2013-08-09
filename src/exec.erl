@@ -66,7 +66,7 @@
 %%% @type cmd_options() = [Option]
 %%%         Option      = {cd, WorkDir::string()} | {env, Env} |
 %%%                       {kill, Cmd::string()} |
-%%%                       {kill_timeout, MSec::integer()} |
+%%%                       {kill_timeout, Sec::integer()} |
 %%%                       {user, RunAsUser::string()} |
 %%%                       {nice, Priority::integer()} |
 %%%                       stdin | {stdout, Device} | {stderr, Device} |
@@ -90,8 +90,8 @@
 %%%             killed with SIGTERM followed by SIGKILL.  By default
 %%%             SIGTERM/SIGKILL combination is used for process
 %%%             termination.</dd>
-%%%     <dt>{kill_timeout, MSec::integer()}</dt>
-%%%         <dd>Number of milliseconds to wait after issueing a SIGTERM or
+%%%     <dt>{kill_timeout, Sec::integer()}</dt>
+%%%         <dd>Number of seconds to wait after issueing a SIGTERM or
 %%%             executing the custom `kill' command (if specified) before
 %%%             killing the process with the `SIGKILL' signal</dd>
 %%%     <dt>{group, GID}</dt>
