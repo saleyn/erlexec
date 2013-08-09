@@ -173,7 +173,7 @@ ok
 <h4>Specifying custom process shutdown delay</h4>
 ```
 % Execute an OS process (script) that blocks SIGTERM with custom kill timeout, and monitor
-22> f(I), {ok, _, I} = exec:run("trap '' SIGTERM; sleep 30", [{kill_timeout, 3000}, monitor]).
+22> f(I), {ok, _, I} = exec:run("trap '' SIGTERM; sleep 30", [{kill_timeout, 3}, monitor]).
 {ok,<0.399.0>,26347}
 % Attempt to stop the OS process
 23> exec:stop(I).
