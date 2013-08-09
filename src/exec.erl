@@ -69,7 +69,8 @@
 %%%                       {kill_timeout, Sec::integer()} |
 %%%                       {user, RunAsUser::string()} |
 %%%                       {nice, Priority::integer()} |
-%%%                       stdin | {stdout, Device} | {stderr, Device} |
+%%%                       stdin | stdout | stderr |
+%%%                       {stdout, Device} | {stderr, Device} |
 %%%                       monitor
 %%%         Env         = [VarEqVal]
 %%%         VarEqVal    = string() | {Var::string(), Value::string()}
@@ -105,6 +106,13 @@
 %%%         <dd>Set process priority between -20 and 20. Note that
 %%%             negative values can be specified only when `exec-port'
 %%%             is started with a root suid bit set.</dd>
+%%%     <dt>stdin</dt>
+%%%         <dd>Enable communication with an OS process via its `stdin'. The
+%%%             input to the process is sent by `exec:send(OsPid, Data)'.</dd>
+%%%     <dt>stdout</dt>
+%%%         <dd>Same as `{stdout, self()}'.</dd>
+%%%     <dt>stderr</dt>
+%%%         <dd>Same as `{stderr, self()}'.</dd>
 %%%     <dt>{stdout, output_device()}</dt>
 %%%         <dd>Option for redirecting process's standard output stream</dd>
 %%%     <dt>{stderr, output_device()}</dt>
