@@ -28,7 +28,8 @@
 <li>Ability to link Erlang processes to OS processes (via intermediate
     Erlang Pids that are linked to an associated OS process).</li>
 <li>Proper cleanup of OS processes at port program termination time.</li>
-<li>Redirecting STDOUT and STDERR of a process to a file, erlang process,
+<li>Communicating to an OS process via its STDIN</li>
+<li>Redirecting STDOUT and STDERR of an OS process to a file, erlang process,
     or a custom function</li>
 </ul>
 <p/>
@@ -168,4 +169,34 @@ ok
 21> file:delete("/tmp/pid").
 ok
 '''
+
+<h4>Specifying custom process shutdown delay</h4>
+```
+% Execute an OS process (script) that blocks SIGTERM with custom kill timeout, and monitor
+22> f(I), {ok, _, I} = exec:run("trap '' SIGTERM; sleep 30", [{kill_timeout, 3000}, monitor]).
+{ok,<0.399.0>,26347}
+% Attempt to stop the OS process
+23> exec:stop(I).
+ok
+% Wait for its completion
+24> f(M), receive M -> M after 10000 -> timeout end.                                          
+{'DOWN',#Ref<0.0.0.1671>,process,<0.403.0>,normal}
+'''
+
+<h4>Communicating with an OS process via STDIN</h4>
+```
+% Execute an OS process (script) that reads STDIN and echoes it back to Erlang
+25> f(I), {ok, _, I} = exec:run("read x; echo \"Got: $x\"", [stdin, stdout, monitor]).
+{ok,<0.427.0>,26431}
+% Send the OS process some data via its `stdin'
+26> exec:send(I, <<"Test data\n">>).                                                  
+ok
+% Get the response written to processes `stdout'
+27> f(M), receive M -> M after 10000 -> timeout end.
+{stdout,26431,<<"Got: Test data\n">>}
+% Confirm that the process exited
+28> f(M), receive M -> M after 10000 -> timeout end.
+{'DOWN',#Ref<0.0.0.1837>,process,<0.427.0>,normal}
+'''
+
 @end
