@@ -31,14 +31,16 @@
 %%% @version {@vsn}
 %%%
 %%% @type exec_options() = [Option]
-%%%         Option = debug | verbose | {args, Args} | {alarm, Secs} |
+%%%         Option = debug | {debug, Level::integer()} |
+%%%                  verbose | {args, Args} | {alarm, Secs} |
 %%%                  {user, User} | {limit_users, Users} |
 %%%                  {portexe, Exe::string()}
 %%%         Users  = [User]
 %%%         User   = Acount::string().
 %%%     Options passed to the exec process at startup.
 %%%     <dl>
-%%%     <dt>debug</dt><dd>Enable port-programs debug trace.</dd>
+%%%     <dt>debug</dt><dd>Same as {debug, 1}</dd>
+%%%     <dt>{debug, Level}</dt><dd>Enable port-programs debug trace at `Level'.</dd>
 %%%     <dt>verbose</dt><dd>Enable verbose prints of the Erlang process.</dd>
 %%%     <dt>{args, Args}</dt><dd>Append `Args' to the port command.</dd>
 %%%     <dt>{alarm, Secs}</dt>
@@ -64,13 +66,14 @@
 %%% @type cmd_options() = [Option]
 %%%         Option      = {cd, WorkDir::string()} | {env, Env} |
 %%%                       {kill, Cmd::string()} |
+%%%                       {kill_timeout, MSec::integer()} |
 %%%                       {user, RunAsUser::string()} |
 %%%                       {nice, Priority::integer()} |
-%%%                       {stdout, Device} | {stderr, Device} |
+%%%                       stdin | {stdout, Device} | {stderr, Device} |
 %%%                       monitor
 %%%         Env         = [VarEqVal]
 %%%         VarEqVal    = string() | {Var::string(), Value::string()}
-%%%         Device      = null | stdout | stderr | File | {append, File}
+%%%         Device      = null | stdout | stderr | File | {append, File} | true
 %%%         File        = string().
 %%%     Command options:
 %%%     <dl>
@@ -87,6 +90,12 @@
 %%%             killed with SIGTERM followed by SIGKILL.  By default
 %%%             SIGTERM/SIGKILL combination is used for process
 %%%             termination.</dd>
+%%%     <dt>{kill_timeout, MSec::integer()}</dt>
+%%%         <dd>Number of milliseconds to wait after issueing a SIGTERM or
+%%%             executing the custom `kill' command (if specified) before
+%%%             killing the process with the `SIGKILL' signal</dd>
+%%%     <dt>{group, GID}</dt>
+%%%         <dd>Sets the effective group ID of the spawned process</dd>
 %%%     <dt>{user, RunAsUser}</dt>
 %%%         <dd>When exec-port was compiled with capability (Linux) support
 %%%             enabled and has a suid bit set, it's capable of running
@@ -129,7 +138,7 @@
 
 %% External exports
 -export([
-    start/1, start_link/1, run/2, run_link/2, manage/2,
+    start/1, start_link/1, run/2, run_link/2, manage/2, send/2,
     which_children/0, kill/2, stop/1, ospid/1, pid/1, status/1
 ]).
 
@@ -154,6 +163,7 @@
 -type exec_options() :: [exec_option()].
 -type exec_option()  ::
       debug
+    | {debug, integer()}
     | verbose
     | {args, [string(), ...]}
     | {alarm, non_neg_integer()}
@@ -165,11 +175,18 @@
 -type cmd_option()  ::
       {cd, string()}
     | {env, [string() | {Name :: string(), Value :: string()}, ...]}
+    | {kill, string()}
+    | {kill, non_neg_integer()}
     | {user, string()}
     | {nice, integer()}
-    | {stdout, null | close | stdout | stderr | fun((stdout, integer(), binary()) -> none()) | pid() |
+    | stdin  | {stdin,  null | close | string() | true}
+    | stdout
+    | {stdout, null | close | stdout | stderr |
+               fun((stdout, integer(), binary()) -> none()) | pid() |
                string() | {append, string()}}
-    | {stderr, null | close | stdout | stderr | fun((stderr, integer(), binary()) -> none()) | pid() |
+    | stderr
+    | {stderr, null | close | stdout | stderr |
+               fun((stderr, integer(), binary()) -> none()) | pid() |
                string() | {append, string()}}.
 
 -type ospid() :: integer().
@@ -296,6 +313,14 @@ pid(OsPid) when is_integer(OsPid) ->
     gen_server:call(?MODULE, {pid, OsPid}).
 
 %%-------------------------------------------------------------------------
+%% @doc Send `Data' to stdin of the OS process identified by `OsPid'.
+%% @end
+%%-------------------------------------------------------------------------
+-spec send(OsPid :: ospid() | pid(), binary()) -> ok.
+send(OsPid, Data) when (is_integer(OsPid) orelse is_pid(OsPid)) andalso is_binary(Data) ->
+    gen_server:call(?MODULE, {port, {send, OsPid, Data}}).
+
+%%-------------------------------------------------------------------------
 %% @spec (Status::integer()) -> 
 %%          {status, ExitStatus::integer()} | 
 %%          {signal, Signal::integer(), Core::boolean()}
@@ -325,7 +350,7 @@ status(Status) when is_integer(Status) ->
 %% @end
 %%-------------------------------------------------------------------------
 default() -> 
-    [{debug, false},    % Debug mode of the port program. 
+    [{debug, 0},        % Debug mode of the port program. 
      {verbose, false},  % Verbose print of events on the Erlang side.
      {args, ""},        % Extra arguments that can be passed to port program
      {alarm, 12},
@@ -341,10 +366,6 @@ default(portexe) ->
 default(Option) ->
     proplists:get_value(Option, default()).
 
-get_opt({Option, Value}) -> {Option, Value};
-get_opt(verbose)         -> {verbose, true};
-get_opt(debug)           -> {debug, true}.
-
 %%%----------------------------------------------------------------------
 %%% Callback functions from gen_server
 %%%----------------------------------------------------------------------
@@ -359,13 +380,19 @@ get_opt(debug)           -> {debug, true}.
 %%-----------------------------------------------------------------------
 init([Options]) ->
     process_flag(trap_exit, true),
-    Args = lists:foldl(
-        fun({debug, true},       Acc) -> [" -debug" | Acc];
-           ({alarm, I},          Acc) -> [" -alarm "++integer_to_list(I) | Acc];
-           ({args, Arg},         Acc) -> [" "++Arg | Acc];
-           ({user, User}, Acc) when User =/= "" -> [" -user "++User | Acc];
-           (_,                   Acc) -> Acc
-        end, [], [get_opt(O) || O <- Options]),
+    Opts0 = proplists:normalize(Options,
+                    [{expand, [{debug,   {debug, 1}},
+                               {verbose, {verbose, true}}]}]),
+    Opts1 = [T || T = {O,_} <- Opts0, 
+                lists:member(O, [debug, verbose, args, alarm, user])],
+    Opts  = proplists:normalize(Opts1, [{aliases, [{args, ''}]}]),
+    Args  = lists:foldl(
+        fun({Opt, I}, Acc) when is_list(I), I =/= ""   ->
+                [" -"++atom_to_list(Opt)++" "++I | Acc];
+           ({Opt, I}, Acc) when is_integer(I) ->
+                [" -"++atom_to_list(Opt)++" "++integer_to_list(I) | Acc];
+           (_, Acc) -> Acc
+        end, [], Opts),
     Exe   = proplists:get_value(portexe,     Options, default(portexe)) ++ lists:flatten([" -n"|Args]),
     Users = proplists:get_value(limit_users, Options, default(limit_users)),
     Debug = proplists:get_value(verbose,     Options, default(verbose)),
@@ -389,7 +416,10 @@ init([Options]) ->
 %% @private
 %%----------------------------------------------------------------------
 handle_call({port, Instruction}, From, #state{last_trans=Last} = State) ->
-    try is_port_command(Instruction, State) of
+    try is_port_command(Instruction, element(1, From), State) of
+    {ok, Term} ->
+        erlang:port_command(State#state.port, term_to_binary({0, Term})),
+        {reply, ok, State};
     {ok, Term, Link, PidOpts} ->
         Next = next_trans(Last),
         erlang:port_command(State#state.port, term_to_binary({Next, Term})),
@@ -479,20 +509,20 @@ code_change(_OldVsn, State, _Extra) ->
 %%----------------------------------------------------------------------
 terminate(_Reason, State) ->
     try
-        erlang:port_command(State#state.port, term_to_binary({-1, {shutdown}})),
-        Status = wait_on_exit(State#state.port),
+        erlang:port_command(State#state.port, term_to_binary({0, {shutdown}})),
+        Status = wait_port_exit(State#state.port),
         error_logger:warning_msg("~w - exec process terminated (status: ~w)\n",
             [self(), Status])
     catch _:_ ->
         ok
     end.
 
-wait_on_exit(Port) ->
+wait_port_exit(Port) ->
     receive
-        {Port,{exit_status,Status}} ->
-            Status;
-        _ ->
-            wait_on_exit(Port)
+    {Port,{exit_status,Status}} ->
+        Status;
+    _ ->
+        wait_port_exit(Port)
     end.
 
 %%%---------------------------------------------------------------------
@@ -622,70 +652,83 @@ get_transaction(Q, I, OldQ) ->
         get_transaction(Q2, I, OldQ)
     end.
     
-is_port_command({{run, Cmd, Options}, Link}, State) ->
-    {PortOpts, Other} = check_cmd_options(Options, State, [], []),
+is_port_command({{run, Cmd, Options}, Link}, Pid, State) ->
+    {PortOpts, Other} = check_cmd_options(Options, Pid, State, [], []),
     {ok, {run, Cmd, PortOpts}, Link, Other};
-is_port_command({list} = T, _State) -> 
+is_port_command({list} = T, _Pid, _State) -> 
     {ok, T, undefined, []};
-is_port_command({stop, OsPid}=T, _State) when is_integer(OsPid) -> 
+is_port_command({stop, OsPid}=T, _Pid, _State) when is_integer(OsPid) -> 
     {ok, T, undefined, []};
-is_port_command({stop, Pid}, _State) when is_pid(Pid) ->
+is_port_command({stop, Pid}, _Pid, _State) when is_pid(Pid) ->
     case ets:lookup(exec_mon, Pid) of
     [{_Pid, OsPid}] -> {ok, {stop, OsPid}, undefined, []};
     []              -> throw({error, no_process})
     end;
-is_port_command({{manage, OsPid, Options}, Link}, State) when is_integer(OsPid) ->
-    {PortOpts, _Other} = check_cmd_options(Options, State, [], []),
+is_port_command({{manage, OsPid, Options}, Link}, Pid, State) when is_integer(OsPid) ->
+    {PortOpts, _Other} = check_cmd_options(Options, Pid, State, [], []),
     {ok, {manage, OsPid, PortOpts}, Link, []};
-is_port_command({kill, OsPid, Sig}=T, _State) when is_integer(OsPid),is_integer(Sig) -> 
+is_port_command({send, Pid, Data}, _Pid, _State) when is_pid(Pid), is_binary(Data) ->
+    case ets:lookup(exec_mon, Pid) of
+    [{Pid, OsPid}]  -> {ok, {stdin, OsPid, Data}, undefined, []};
+    []              -> throw({error, no_process})
+    end;
+is_port_command({send, OsPid, Data}, _Pid, _State) when is_integer(OsPid), is_binary(Data) ->
+    {ok, {stdin, OsPid, Data}};
+is_port_command({kill, OsPid, Sig}=T, _Pid, _State) when is_integer(OsPid),is_integer(Sig) -> 
     {ok, T, undefined, []};
-is_port_command({kill, Pid, Sig}, _State) when is_pid(Pid),is_integer(Sig) -> 
+is_port_command({kill, Pid, Sig}, _Pid, _State) when is_pid(Pid),is_integer(Sig) -> 
     case ets:lookup(exec_mon, Pid) of
     [{Pid, OsPid}]  -> {ok, {kill, OsPid, Sig}, undefined, []};
     []              -> throw({error, no_process})
     end.
 
-check_cmd_options([monitor|T], State, PortOpts, OtherOpts) ->
-    check_cmd_options(T, State, PortOpts, OtherOpts);
-check_cmd_options([link|T], State, PortOpts, OtherOpts) ->
-    check_cmd_options(T, State, PortOpts, OtherOpts);
-check_cmd_options([{cd, Dir}=H|T], State, PortOpts, OtherOpts) when is_list(Dir) ->
-    check_cmd_options(T, State, [H|PortOpts], OtherOpts);
-check_cmd_options([{env, Env}=H|T], State, PortOpts, OtherOpts) when is_list(Env) ->
+check_cmd_options([monitor|T], Pid, State, PortOpts, OtherOpts) ->
+    check_cmd_options(T, Pid, State, PortOpts, OtherOpts);
+check_cmd_options([link|T], Pid, State, PortOpts, OtherOpts) ->
+    check_cmd_options(T, Pid, State, PortOpts, OtherOpts);
+check_cmd_options([{cd, Dir}=H|T], Pid, State, PortOpts, OtherOpts) when is_list(Dir) ->
+    check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+check_cmd_options([{env, Env}=H|T], Pid, State, PortOpts, OtherOpts) when is_list(Env) ->
     case lists:filter(fun(S) when is_list(S) -> false;
                          ({S1,S2}) when is_list(S1), is_list(S2) -> false;
                          (_) -> true
                       end, Env) of
-    [] -> check_cmd_options(T, State, [H|PortOpts], OtherOpts);
+    [] -> check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
     L  -> throw({error, {invalid_env_value, L}})
     end;
-check_cmd_options([{kill, Cmd}=H|T], State, PortOpts, OtherOpts) when is_list(Cmd) ->
-    check_cmd_options(T, State, [H|PortOpts], OtherOpts);
-check_cmd_options([{nice, I}=H|T], State, PortOpts, OtherOpts) when is_integer(I), I >= -20, I =< 20 ->
-    check_cmd_options(T, State, [H|PortOpts], OtherOpts);
-check_cmd_options([{Std, I}=H|T], State, PortOpts, OtherOpts)
+check_cmd_options([{kill, Cmd}=H|T], Pid, State, PortOpts, OtherOpts) when is_list(Cmd) ->
+    check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+check_cmd_options([{kill_timeout, I}=H|T], Pid, State, PortOpts, OtherOpts) when is_integer(I), I >= 0 ->
+    check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+check_cmd_options([{nice, I}=H|T], Pid, State, PortOpts, OtherOpts) when is_integer(I), I >= -20, I =< 20 ->
+    check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+check_cmd_options([H|T], Pid, State, PortOpts, OtherOpts) when H=:=stdin; H=:=stdout; H=:=stderr ->
+    check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
+check_cmd_options([{Std, I}=H|T], Pid, State, PortOpts, OtherOpts)
         when Std=:=stderr, I=/=Std; Std=:=stdout, I=/=Std ->
     if
         I=:=null; I=:=true; I=:=close; I=:=stderr; I=:=stdout; is_list(I); 
         is_tuple(I), size(I)=:=2, element(1,I)=:=append, is_list(element(2,I)) ->
-            check_cmd_options(T, State, [H|PortOpts], OtherOpts);
+            check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
         is_pid(I) ->
-            check_cmd_options(T, State, [{Std, true} | PortOpts], [H|OtherOpts]);
+            check_cmd_options(T, Pid, State, [Std | PortOpts], [H|OtherOpts]);
         is_function(I) ->
             {arity, 3} =:= erlang:fun_info(I, arity)
                 orelse throw({error, ?FMT("Invalid ~w option ~p: expected Fun/3", [Std, I])}),
-            check_cmd_options(T, State, [{Std, true} | PortOpts], [H|OtherOpts]);
+            check_cmd_options(T, Pid, State, [Std | PortOpts], [H|OtherOpts]);
         true -> 
             throw({error, ?FMT("Invalid ~w option ~p", [Std, I])})
     end;
-check_cmd_options([{user, U}=H|T], State, PortOpts, OtherOpts) when is_list(U), U =/= "" ->
+check_cmd_options([{group, I}=H|T], Pid, State, PortOpts, OtherOpts) when is_integer(I), I >= 0; is_list(I) ->
+    check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+check_cmd_options([{user, U}=H|T], Pid, State, PortOpts, OtherOpts) when is_list(U), U =/= "" ->
     case lists:member(U, State#state.limit_users) of
-    true  -> check_cmd_options(T, State, [H|PortOpts], OtherOpts);
+    true  -> check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
     false -> throw({error, ?FMT("User ~s is not allowed to run commands!", [U])})
     end;
-check_cmd_options([Other|_], _State, _PortOpts, _OtherOpts) ->
+check_cmd_options([Other|_], _Pid, _State, _PortOpts, _OtherOpts) ->
     throw({error, {invalid_option, Other}});
-check_cmd_options([], _State, PortOpts, OtherOpts) ->
+check_cmd_options([], _Pid, _State, PortOpts, OtherOpts) ->
     {PortOpts, OtherOpts}.
     
 next_trans(I) when I =< 134217727 ->

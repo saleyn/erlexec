@@ -264,7 +264,8 @@ namespace ei {
         TimeVal(const struct timeval& tv) { m_tv.tv_sec=tv.tv_sec; m_tv.tv_usec=tv.tv_usec; normalize(); }
         TimeVal(TimeType tp, int _s=0, int _us=0);
 
-        struct timeval& timeval()   { return m_tv; }
+        struct timeval&       timeval()       { return m_tv; }
+        const struct timeval& timeval() const { return m_tv; }
         int32_t sec()      const   { return m_tv.tv_sec;  }
         int32_t usec()     const   { return m_tv.tv_usec; }
         int64_t microsec() const   { return (int64_t)m_tv.tv_sec*1000000ull + (int64_t)m_tv.tv_usec; }
@@ -276,7 +277,7 @@ namespace ei {
             m_tv.tv_sec = tv.sec() + _s; m_tv.tv_usec = tv.usec() + _us; normalize();
         }
 
-        double diff(const TimeVal& t) {
+        double diff(const TimeVal& t) const {
             TimeVal tv(this->timeval());
             tv -= t;
             return (double)tv.sec() + (double)tv.usec() / 1000000.0;
@@ -507,6 +508,15 @@ namespace ei {
             if (decodeType(size) != etString || !s.resize(size) || ei_decode_string(&m_rbuf, &m_rIdx, s.c_str()))
                 return -1;
             return size;
+        }
+
+        int decodeBinary(std::string& data) {
+            int size;
+            if (decodeType(size) != etBinary) return -1;
+            data.resize(size);
+            long sz;
+            if (ei_decode_binary(&m_rbuf, &m_rIdx, (void*)data.c_str(), &sz) < 0) return -1;
+            return sz;
         }
 
         /// Print input buffer to stream to stream.
