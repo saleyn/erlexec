@@ -34,7 +34,7 @@
 %%%         Option = debug | {debug, Level::integer()} |
 %%%                  verbose | {args, Args} | {alarm, Secs} |
 %%%                  {user, User} | {limit_users, Users} |
-%%%                  {portexe, Exe::string()}
+%%%                  {portexe, Exe::string()} | {env, Env::list()}
 %%%         Users  = [User]
 %%%         User   = Acount::string().
 %%%     Options passed to the exec process at startup.
@@ -62,6 +62,11 @@
 %%%             This option is useful when this application is stored
 %%%             on NFS and the port program needs to be copied locally
 %%%             so that root suid bit can be set.</dd>
+%%%     <dt>{env, Env}</dt>
+%%%         <dd>Extend environment of the port program by using `Env' specification.
+%%%             `Env' should be a list of tuples `{Name, Val}', where Name is the
+%%%             name of an environment variable, and Val is the value it is to have
+%%%             in the spawned port process.</dd>
 %%%     </dl>.
 %%% @type cmd_options() = [Option]
 %%%         Option      = {cd, WorkDir::string()} | {env, Env} |
@@ -147,7 +152,7 @@
 %% External exports
 -export([
     start/1, start_link/1, run/2, run_link/2, manage/2, send/2,
-    which_children/0, kill/2, stop/1, ospid/1, pid/1, status/1
+    which_children/0, kill/2, stop/1, ospid/1, pid/1, status/1, signal/1
 ]).
 
 %% Internal exports
@@ -177,7 +182,8 @@
     | {alarm, non_neg_integer()}
     | {user, string()}
     | {limit_users, [string(), ...]}
-    | {portexe, string()}.
+    | {portexe, string()}
+    | {env, [{string(), string()}, ...]}.
 
 -type cmd_options() :: [cmd_option()].
 -type cmd_option()  ::
@@ -329,16 +335,15 @@ send(OsPid, Data) when (is_integer(OsPid) orelse is_pid(OsPid)) andalso is_binar
     gen_server:call(?MODULE, {port, {send, OsPid, Data}}).
 
 %%-------------------------------------------------------------------------
-%% @spec (Status::integer()) -> 
-%%          {status, ExitStatus::integer()} | 
-%%          {signal, Signal::integer(), Core::boolean()}
 %% @doc Decode the program's exit_status.  If the program exited by signal
 %%      the function returns `{signal, Signal, Core}' where the `Signal'
-%%      is the signal number, and `Core' indicates if the core file was
-%%      generated.
+%%      is the signal number or atom, and `Core' indicates if the core file
+%%      was generated.
 %% @end
 %%-------------------------------------------------------------------------
--spec status(integer()) -> {status, integer()} | {signal, integer(), boolean()}.
+-spec status(integer()) ->
+        {status, ExitStatus :: integer()} |
+        {signal, Singnal :: integer() | atom(), Core :: boolean()}.
 status(Status) when is_integer(Status) ->
     TermSignal = Status band 16#7F,
     IfSignaled = ((TermSignal + 1) bsr 1) > 0,
@@ -346,10 +351,48 @@ status(Status) when is_integer(Status) ->
     case IfSignaled of
     true ->
         CoreDump = (Status band 16#80) =:= 16#80,
-        {signal, TermSignal, CoreDump};
+        {signal, signal(TermSignal), CoreDump};
     false ->
         {status, ExitStatus}
     end.
+
+%%-------------------------------------------------------------------------
+%% @doc Convert a signal number to atom
+%% @end
+%%-------------------------------------------------------------------------
+-spec signal(integer()) -> atom() | integer().
+signal( 1) -> sighup;
+signal( 2) -> sigint;
+signal( 3) -> sigquit;
+signal( 4) -> sigill;
+signal( 5) -> sigtrap;
+signal( 6) -> sigabrt;
+signal( 7) -> sigbus;
+signal( 8) -> sigfpe;
+signal( 9) -> sigkill;
+signal(11) -> sigsegv;
+signal(13) -> sigpipe;
+signal(14) -> sigalrm;
+signal(15) -> sigterm;
+signal(16) -> sigstkflt;
+signal(17) -> sigchld;
+signal(18) -> sigcont;
+signal(19) -> sigstop;
+signal(20) -> sigtstp;
+signal(21) -> sigttin;
+signal(22) -> sigttou;
+signal(23) -> sigurg;
+signal(24) -> sigxcpu;
+signal(25) -> sigxfsz;
+signal(26) -> sigvtalrm;
+signal(27) -> sigprof;
+signal(28) -> sigwinch;
+signal(29) -> sigio;
+signal(30) -> sigpwr;
+signal(31) -> sigsys;
+signal(34) -> sigrtmin;
+signal(64) -> sigrtmax;
+signal(XX) -> XX.
 
 %%-------------------------------------------------------------------------
 %% @private
@@ -404,9 +447,14 @@ init([Options]) ->
     Exe   = proplists:get_value(portexe,     Options, default(portexe)) ++ lists:flatten([" -n"|Args]),
     Users = proplists:get_value(limit_users, Options, default(limit_users)),
     Debug = proplists:get_value(verbose,     Options, default(verbose)),
+    Env   = case proplists:get_value(env, Options) of
+            undefined -> [];
+            Other     -> [{env, Other}]
+            end,
     try
-        debug(Debug, "exec: port program: ~s\n", [Exe]),
-        Port = erlang:open_port({spawn, Exe}, [binary, exit_status, {packet, 2}, nouse_stdio, hide]),
+        debug(Debug, "exec: port program: ~s\n env: ~p\n", [Exe, Env]),
+        PortOpts = Env ++ [binary, exit_status, {packet, 2}, nouse_stdio, hide],
+        Port = erlang:open_port({spawn, Exe}, PortOpts),
         Tab  = ets:new(exec_mon, [protected,named_table]),
         {ok, #state{port=Port, limit_users=Users, debug=Debug, registry=Tab}}
     catch _:Reason ->

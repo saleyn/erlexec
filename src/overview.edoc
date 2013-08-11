@@ -28,7 +28,7 @@
 <li>Ability to link Erlang processes to OS processes (via intermediate
     Erlang Pids that are linked to an associated OS process).</li>
 <li>Proper cleanup of OS processes at port program termination time.</li>
-<li>Communicating to an OS process via its STDIN</li>
+<li>Communicating with an OS process via its STDIN</li>
 <li>Redirecting STDOUT and STDERR of an OS process to a file, erlang process,
     or a custom function</li>
 </ul>
@@ -113,8 +113,10 @@ ok
 ```
 10> exec:run("for i in 1 2 3; do sleep 1; echo \"Iter$i\"; done",
             [{stdout, fun(S,OsPid,D) -> io:format("Got ~w from ~w: ~p\n", [S,OsPid,D]) end}]).
-{ok,<0.242.0>,18378}
-Got stdout from 18378: <<"Iter1\nIter2\nIter3\n">>
+{ok,<0.121.0>,29652}
+Got stdout from 29652: <<"Iter1\n">>
+Got stdout from 29652: <<"Iter2\n">>
+Got stdout from 29652: <<"Iter3\n">>
 
 11> exec:run("echo Hello World!; echo ERR!! 1>&2", [{stdout, self()}, {stderr, self()}]).
 {ok,<0.244.0>,18382}
