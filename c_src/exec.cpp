@@ -109,6 +109,8 @@ typedef std::pair<pid_t, CmdInfo>           PidInfoT;
 typedef std::map <pid_t, CmdInfo>           MapChildrenT;
 typedef std::pair<kill_cmd_pid_t, pid_t>    KillPidStatusT;
 typedef std::map <kill_cmd_pid_t, pid_t>    MapKillPidT;
+typedef std::map<std::string, std::string>  MapEnv;
+typedef typename MapEnv::iterator           MapEnvIterator;
 
 enum RedirectType {
     REDIRECT_NONE = -1,     // No output redirection
@@ -128,7 +130,7 @@ class CmdOptions {
     std::string             m_stderr;
     std::string             m_kill_cmd;
     int                     m_kill_timeout;
-    std::list<std::string>  m_env;
+    MapEnv                  m_env;
     long                    m_nice;     // niceness level
     size_t                  m_size;
     size_t                  m_count;
@@ -203,6 +205,7 @@ public:
     }
 
     int ei_decode(ei::Serializer& ei, bool getCmd = false);
+    int init_cenv();
 };
 
 /// Contains run-time info of a child OS process.
@@ -241,11 +244,6 @@ struct CmdInfo {
         , stdin_wr_pos(0)
     {}
 };
-
-//-------------------------------------------------------------------------
-// External definitions
-//-------------------------------------------------------------------------
-extern char **environ; // getting the whole environment
 
 //-------------------------------------------------------------------------
 // Global variables
@@ -488,8 +486,6 @@ int main(int argc, char* argv[])
         #endif
     }
 
-    const int MAX_FD = eis.read_handle() + 1;
-
     while (!terminated) {
 
         FD_ZERO (&writefds);
@@ -497,25 +493,28 @@ int main(int argc, char* argv[])
 
         FD_SET (eis.read_handle(), &readfds);
 
-        int maxfd = MAX_FD;
+        int maxfd = eis.read_handle();
 
         // Set up all stdout/stderr input streams that we need to monitor and redirect to Erlang
         for(MapChildrenT::iterator it=children.begin(), end=children.end(); it != end; ++it) {
             if (it->second.stdin_fd >= 0 && it->second.stdin_wr_pos > 0) {
-                if (debug)
-                    fprintf(stderr, "Pid %d adding stdin available notification\r\n", it->first);
+                if (debug > 1)
+                    fprintf(stderr, "Pid %d adding stdin available notification (fd=%d, pos=%d)\r\n",
+                        it->first, it->second.stdin_fd, it->second.stdin_wr_pos);
                 FD_SET(it->second.stdin_fd, &writefds);
                 if (it->second.stdin_fd > maxfd) maxfd = it->second.stdin_fd;
             }
             if (it->second.stdout_fd >= 0) {
-                if (debug)
-                    fprintf(stderr, "Pid %d adding stdout checking\r\n", it->first);
+                if (debug > 1)
+                    fprintf(stderr, "Pid %d adding stdout checking (fd=%d)\r\n",
+                        it->first, it->second.stdout_fd);
                 FD_SET(it->second.stdout_fd, &readfds);
                 if (it->second.stdout_fd > maxfd) maxfd = it->second.stdout_fd;
             }
             if (it->second.stderr_fd >= 0) {
-                if (debug)
-                    fprintf(stderr, "Pid %d adding stderr checking\r\n", it->first);
+                if (debug > 1)
+                    fprintf(stderr, "Pid %d adding stderr checking (fd=%d)\r\n",
+                        it->first, it->second.stderr_fd);
                 FD_SET(it->second.stderr_fd, &readfds);
                 if (it->second.stderr_fd > maxfd) maxfd = it->second.stderr_fd;
             }
@@ -535,12 +534,12 @@ int main(int argc, char* argv[])
 
         oktojump = 1;
         ei::TimeVal timeout(KILL_TIMEOUT_SEC, 0);
-        int cnt = select (maxfd, &readfds, &writefds, (fd_set *) 0, &timeout.timeval());
+        int cnt = select (maxfd+1, &readfds, &writefds, (fd_set *) 0, &timeout.timeval());
         int interrupted = (cnt < 0 && errno == EINTR);
         oktojump = 0;
 
         if (debug > 1)
-            fprintf(stderr, "Select got %d events\r\n", cnt);
+            fprintf(stderr, "Select got %d events (maxfd=%d)\r\n", cnt, maxfd);
 
         if (interrupted || cnt == 0) {
             if (check_children(terminated) < 0)
@@ -684,10 +683,10 @@ int main(int argc, char* argv[])
         } else {
             // Check if any stdout/stderr streams have data
             for(MapChildrenT::iterator it=children.begin(), end=children.end(); it != end; ++it) {
-                if (FD_ISSET(it->second.stdin_fd, &writefds))
+                if (it->second.stdin_fd >= 0 && FD_ISSET(it->second.stdin_fd, &writefds))
                     process_pid_input(it);
-                if (FD_ISSET(it->second.stdout_fd, &readfds) ||
-                    FD_ISSET(it->second.stderr_fd, &readfds))
+                if ((it->second.stdout_fd >= 0 && FD_ISSET(it->second.stdout_fd, &readfds)) ||
+                    (it->second.stderr_fd >= 0 && FD_ISSET(it->second.stderr_fd, &readfds)))
                     process_pid_output(it);
             }
         }
@@ -868,25 +867,29 @@ pid_t start_child(CmdOptions& op, std::string& error)
         if (stdout_fd[RD] >= 0) close(stdout_fd[RD]);   // Close reading end of the child pipe
         if (stdout_fd[WR] == REDIRECT_CLOSE)
             close(STDOUT_FILENO);
-        else if (stdout_fd[WR] == STDERR_FILENO)
+        else if (stdout_fd[WR] == STDERR_FILENO) {
+            close(STDOUT_FILENO);
             dup2(STDERR_FILENO, STDOUT_FILENO);
-        else if (stdout_fd[WR] >= 0) {
+        } else if (stdout_fd[WR] >= 0) {
+            close(STDOUT_FILENO);
             dup2(stdout_fd[WR], STDOUT_FILENO);         // Send stdout to the pipe/file
             close(stdout_fd[WR]);                       // This fd is no longer needed
+            //setlinebuf(stdout);                         // Set line buffering
         }
-        if (stdout_fd[WR] >= 0) setlinebuf(stdout);     // Set line buffering
 
         // Set up stderr redirect
         if (stderr_fd[RD] >= 0) close(stderr_fd[RD]);   // Close reading end of the child pipe
         if (stderr_fd[WR] == REDIRECT_CLOSE)
             close(STDERR_FILENO);
-        else if (stderr_fd[WR] == STDOUT_FILENO)
+        else if (stderr_fd[WR] == STDOUT_FILENO) {
+            close(STDERR_FILENO);
             dup2(STDOUT_FILENO, STDERR_FILENO);
-        else if (stderr_fd[WR] >= 0) {
+        } else if (stderr_fd[WR] >= 0) {
+            close(STDERR_FILENO);
             dup2(stderr_fd[WR], STDERR_FILENO);         // Send stderr to the pipe
             close(stderr_fd[WR]);                       // This fd is no longer needed
+            //setlinebuf(stderr);                         // Set line buffering
         }
-        if (stderr_fd[WR] >= 0) setlinebuf(stderr);     // Set line buffering
 
         #if !defined(__CYGWIN__) && !defined(__WIN32)
         if (op.user() != INT_MAX && setresuid(op.user(), op.user(), op.user()) < 0) {
@@ -909,8 +912,13 @@ pid_t start_child(CmdOptions& op, std::string& error)
             return EXIT_FAILURE;
         }
 
-        // TODO: move environment setup here
+        // Setup process environment
+        if (op.init_cenv() < 0) {
+            perror(err.c_str());
+            return EXIT_FAILURE;
+        }
 
+        // Execute the process
         if (execve((const char*)argv[0], (char* const*)argv, op.env()) < 0) {
             err.write("Cannot execute '%s'", op.cmd());
             perror(err.c_str());
@@ -1269,17 +1277,9 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
     std::string op, val;
 
     m_err.str("");
-
-    delete [] m_cenv;
-    m_cenv = NULL;
+    m_cmd.clear();
+    m_kill_cmd.clear();
     m_env.clear();
-
-    // getting the environment of the caller process
-    int orig_env_sz = 0;
-    for (char **env_ptr = environ; *env_ptr; env_ptr++) {
-        m_env.push_back(*env_ptr);
-        orig_env_sz++;
-    }
 
     m_nice = INT_MAX;
 
@@ -1289,21 +1289,6 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
     } else if ((sz = eis.decodeListSize()) < 0) {
         m_err << "option list expected";
         return -1;
-    } else if (sz == 0) {
-        m_cd  = "";
-        m_kill_cmd = "";
-
-        if ((m_cenv = (const char**) new char* [orig_env_sz+1]) == NULL) {
-           m_err << "out of memory"; return -1;
-        }
-        else {
-           for (int i=0; i < orig_env_sz; i++) {
-                m_cenv[i] = m_env.front().c_str();
-                m_env.pop_front();
-            }
-            m_cenv[orig_env_sz] = NULL;
-        }
-        return 0;
     }
 
     for(int i=0; i < sz; i++) {
@@ -1388,22 +1373,30 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
                 // obtained from environ global var
                 int opt_env_sz = eis.decodeListSize();
                 if (opt_env_sz < 0) {
-                    m_err << "env list expected"; return -1;
+                    m_err << "env list expected";
+                    return -1;
                 }
 
                 for (int i=0; i < opt_env_sz; i++) {
                     int sz, type = eis.decodeType(sz);
                     bool res = false;
-                    std::string s;
+                    std::string s, key;
 
                     if (type == ERL_STRING_EXT) {
                         res = !eis.decodeString(s);
+                        if (res) {
+                            size_t pos = s.find_first_of('=');
+                            if (pos == std::string::npos)
+                                res = false;
+                            else
+                                key = s.substr(0, pos);
+                        }
                     } else if (type == ERL_SMALL_TUPLE_EXT && sz == 2) {
                         eis.decodeTupleSize();
-                        std::string s1, s2;
-                        if (eis.decodeString(s1) == 0 && eis.decodeString(s2) == 0) {
+                        std::string s2;
+                        if (eis.decodeString(key) == 0 && eis.decodeString(s2) == 0) {
                             res = true;
-                            s = s1 + "=" + s2;
+                            s = key + "=" + s2;
                         }
                     }
 
@@ -1411,9 +1404,8 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
                         m_err << "invalid env argument #" << i;
                         return -1;
                     }
-                    m_env.push_back(s);
+                    m_env[key] = s;
                 }
-                orig_env_sz += opt_env_sz;
                 break;
             }
 
@@ -1471,17 +1463,6 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
         }
     }
 
-    if ((m_cenv = (const char**) new char* [orig_env_sz+1]) == NULL) {
-        m_err << "out of memory"; return -1;
-    }
-    else {
-      for (int i=0; i < orig_env_sz; i++) {
-          m_cenv[i] = m_env.front().c_str();
-          m_env.pop_front();
-      }
-      m_cenv[orig_env_sz] = NULL;
-    }
-
     if (m_stdout_fd == STDERR_FILENO && m_stderr_fd == STDOUT_FILENO) {
         m_err << "circular reference of stdout and stderr";
         return -1;
@@ -1528,22 +1509,30 @@ int set_nonblock_flag(pid_t pid, int fd, bool value)
     return ret;
 }
 
-/*
-int CmdOptions::init(const std::list<std::string>& list)
+int CmdOptions::init_cenv()
 {
-    int i, size=0;
-    for(std::list<std::string>::iterator it=list.begin(), end=list.end(); it != end; ++it)
-        size += it->size() + 1;
-    if (m_env.resize(m_size) == NULL)
-        return -1;
-    m_count = list.size() + 1;
-    char *p = m_env.c_str();
-    for(std::list<std::string>::iterator it=list.begin(), end=list.end(); it != end; ++it) {
-        strcpy(p, it->c_str());
-        m_cenv[i++] = p;
-        p += it->size() + 1;
+    extern char **environ; // getting the whole environment
+
+    delete[] m_cenv;
+    m_cenv = NULL;
+
+    // Copy environment of the caller process
+    for (char **env_ptr = environ; *env_ptr; env_ptr++) {
+        std::string s(*env_ptr), key(s.substr(0, s.find_first_of('=')));
+        MapEnvIterator it = m_env.find(key);
+        if (it == m_env.end())
+            m_env[key] = s;
     }
+
+    if ((m_cenv = (const char**) new char* [m_env.size()+1]) == NULL) {
+        m_err << "Cannot allocate memory for " << m_env.size()+1 << " environment entries";
+        return -1;
+    }
+
+    int i = 0;
+    for (MapEnvIterator it = m_env.begin(), end = m_env.end(); it != end; ++it, ++i)
+        m_cenv[i] = it->second.c_str();
     m_cenv[i] = NULL;
+
     return 0;
 }
-*/
