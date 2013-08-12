@@ -142,14 +142,14 @@ ok
 
 === Appending OS process stdout to a file ===
 ```
-13> f(I), {ok, _, I} = exec:run_link("for i in 1 2 3; do echo \"$RANDOM\"; done",
-    [{stdout, {append, "/tmp/random"}]).
-14> io:format("~s", [binary_to_list(element(2, file:read_file("/tmp/random")))]).
-6093
-17318
-23135
-ok
-15> file:delete("/tmp/random").
+13> exec:run("for i in 1 2 3; do echo TEST$i; done",
+        [{stdout, "/tmp/out", [append, {mode, 8#600}]}, sync]),
+    file:read_file("/tmp/out").
+{ok,<<"TEST1\nTEST2\nTEST3\n">>}
+14> exec:run("echo Test4; done", [{stdout, "/tmp/out", [append, {mode, 8#600}]}, sync]),
+    file:read_file("/tmp/out").
+{ok,<<"TEST1\nTEST2\nTEST3\nTest4\n">>}
+15> file:delete("/tmp/out").
 '''
 
 === Setting up a monitor for the OS process ===
@@ -213,6 +213,13 @@ ok
 % Confirm that the process exited
 28> f(M), receive M -> M after 10000 -> timeout end.
 {'DOWN',#Ref<0.0.0.1837>,process,<0.427.0>,normal}
+'''
+
+=== Running OS commands synchronously ===
+```
+% Execute an shell script that blocks for 1 second and return its termination code
+29> exec:run("sleep 1", [sync]).                                                       
+{ok,0}
 '''
 
 @end

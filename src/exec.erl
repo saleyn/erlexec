@@ -109,6 +109,7 @@
 -type cmd_options() :: [cmd_option()].
 -type cmd_option()  ::
       monitor
+    | sync
     | {cd, WorkDir::string()}
     | {env, [string() | {Name :: string(), Value :: string()}, ...]}
     | {kill, KillCmd::string()}
@@ -124,6 +125,7 @@
 %% Command options:
 %% <dl>
 %% <dt>monitor</dt><dd>Set up a monitor for the spawned process</dd>
+%% <dt>sync</dt><dd>Block the caller until the OS command exits</dd>
 %% <dt>{cd, WorkDir}</dt><dd>Working directory</dd>
 %% <dt>{env, Env}</dt>
 %%     <dd>List of "VAR=VALUE" environment variables or
@@ -214,11 +216,12 @@ start(Options) when is_list(Options) ->
 
 %%-------------------------------------------------------------------------
 %% @doc Run an external program. `OsPid' is the OS process identifier of
-%%      the new process.
+%%      the new process. If `sync' is specified in `Options' the return
+%%      value is `{ok, Status}' where `Status' is OS process exit status.
 %% @end
 %%-------------------------------------------------------------------------
 -spec run(Exe::string(), Options::cmd_options()) ->
-    {ok, pid(), ospid()} | {error, any()}.
+    {ok, pid(), ospid()} | {ok, Status::integer()|atom()} | {error, any()}.
 run(Exe, Options) when is_list(Exe), is_list(Options) ->
     do_run({run, Exe, Options}, Options).
 
@@ -230,23 +233,34 @@ run(Exe, Options) when is_list(Exe), is_list(Options) ->
 %%      dies the OsPid will be killed.
 %% @end
 %%-------------------------------------------------------------------------
--spec run_link(string(), cmd_options()) -> {ok, pid(), integer()} | {error, any()}.
+-spec run_link(string(), cmd_options()) ->
+    {ok, pid(), integer()} | {ok, Status::integer()|atom()} | {error, any()}.
 run_link(Exe, Options) when is_list(Exe), is_list(Options) ->
     do_run({run, Exe, Options}, [link | Options]).
 
 -spec do_run(Cmd::any(), Options::cmd_options()) ->
-    {ok, pid(), ospid()} | {error, any()}.
+    {ok, pid(), ospid()} | {ok, Status :: integer() | atom()} | {error, any()}.
 do_run(Cmd, Options) ->
-    Mon = proplists:get_value(monitor, Options),
-    Link= case proplists:get_value(link, Options) of
-          true -> link;
-          _    -> nolink
-          end,
+    Sync = proplists:get_value(sync, Options, false),
+    Mon  = Sync =:= true orelse proplists:get_value(monitor, Options),
+    Link = case proplists:get_value(link, Options) of
+           true -> link;
+           _    -> nolink
+           end,
     Cmd2 = {port, {Cmd, Link}},
     case {Mon, gen_server:call(?MODULE, Cmd2, 30000)} of
     {true, {ok, Pid, _} = R} ->
-        monitor(process, Pid),
-        R;
+        Ref = monitor(process, Pid),
+        case Sync of
+        true ->
+            receive
+            {'DOWN', Ref, process, _, {exit_status, N}} -> {ok, N};
+            {'DOWN', Ref, process, _, normal}           -> {ok, 0};
+            {'DOWN', Ref, process, _, Other}            -> {ok, Other}
+            end;
+        _ ->
+            R
+        end;
     {_, R} ->
         R
     end.
@@ -731,6 +745,8 @@ is_port_command({kill, Pid, Sig}, _Pid, _State) when is_pid(Pid),is_integer(Sig)
     end.
 
 check_cmd_options([monitor|T], Pid, State, PortOpts, OtherOpts) ->
+    check_cmd_options(T, Pid, State, PortOpts, OtherOpts);
+check_cmd_options([sync|T], Pid, State, PortOpts, OtherOpts) ->
     check_cmd_options(T, Pid, State, PortOpts, OtherOpts);
 check_cmd_options([link|T], Pid, State, PortOpts, OtherOpts) ->
     check_cmd_options(T, Pid, State, PortOpts, OtherOpts);
