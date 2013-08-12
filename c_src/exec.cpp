@@ -79,7 +79,7 @@
 #include <ei.h>
 #include "ei++.h"
 
-#if defined(__CYGWIN__) || defined(__WIN32)
+#if defined(__CYGWIN__) || defined(__WIN32) || defined(__APPLE__)
 #  define sigtimedwait(a, b, c) 0
 #endif
 
@@ -190,6 +190,7 @@ int   stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify = tru
 void  erase_child(MapChildrenT::iterator& it);
 
 int process_command();
+void initialize(int userid);
 int finalize();
 int set_nonblock_flag(pid_t pid, int fd, bool value);
 int erl_exec_kill(pid_t pid, int signal);
@@ -516,81 +517,7 @@ int main(int argc, char* argv[])
         }
     }
 
-    // If we are root, switch to non-root user and set capabilities
-    // to be able to adjust niceness and run commands as other users.
-    if (getuid() == 0) {
-        superuser = true;
-        if (userid == 0) {
-            fprintf(stderr, "When running as root, \"-user User\" option must be provided!\r\n");
-            exit(4);
-        }
-
-        #ifdef HAVE_CAP
-        if (prctl(PR_SET_KEEPCAPS, 1) < 0) {
-            perror("Failed to call prctl to keep capabilities");
-            exit(5);
-        }
-        #endif
-
-        if (
-            #ifdef HAVE_SETRESUID
-            setresuid(-1, userid, geteuid()) // glibc, FreeBSD, OpenBSD, HP-UX
-            #elif HAVE_SETREUID
-            setreuid(-1, userid)             // MacOSX, NetBSD, AIX, IRIX, Solaris>=2.5, OSF/1, Cygwin
-            #else
-            #error setresuid(3) not supported!
-            #endif
-        < 0) {
-            perror("Failed to set userid");
-            exit(6);
-        }
-
-        struct passwd* pw;
-        if (debug && (pw = getpwuid(geteuid())) != NULL)
-            fprintf(stderr, "exec: running as: %s (euid=%d)\r\n", pw->pw_name, geteuid());
-
-        if (geteuid() == 0) {
-            fprintf(stderr, "Failed to set effective userid to a non-root user %s (uid=%d)\r\n",
-                pw ? pw->pw_name : "", geteuid());
-            exit(7);
-        }
-
-        #ifdef HAVE_CAP
-        cap_t cur;
-        if ((cur = cap_from_text("cap_setuid=eip cap_kill=eip cap_sys_nice=eip")) == 0) {
-            perror("Failed to convert cap_setuid & cap_sys_nice from text");
-            exit(8);
-        }
-        if (cap_set_proc(cur) < 0) {
-            perror("Failed to set cap_setuid & cap_sys_nice");
-            exit(9);
-        }
-        cap_free(cur);
-
-        if (debug && (cur = cap_get_proc()) != NULL) {
-            fprintf(stderr, "exec: current capabilities: %s\r\n",  cap_to_text(cur, NULL));
-            cap_free(cur);
-        }
-        #else
-        if (debug)
-            fprintf(stderr, "capability feature is not implemented for this plaform!\r\n");
-        //exit(10);
-        #endif
-    }
-
-    #if !defined(NO_SYSCONF)
-    max_fds = sysconf(_SC_OPEN_MAX);
-    #else
-    max_fds = OPEN_MAX;
-    #endif
-    if (max_fds < 1024) max_fds = 1024;
-
-    dev_null = open(CS_DEV_NULL, O_RDWR);
-
-    if (dev_null < 0) {
-        fprintf(stderr, "cannot open %s: %s\r\n", CS_DEV_NULL, strerror(errno));
-        exit(10);
-    }
+    initialize(userid);
 
     while (!terminated) {
 
@@ -790,6 +717,86 @@ int process_command()
         }
     }
     return 0;
+}
+
+void initialize(int userid)
+{
+    // If we are root, switch to non-root user and set capabilities
+    // to be able to adjust niceness and run commands as other users.
+    if (getuid() == 0) {
+        superuser = true;
+        if (userid == 0) {
+            fprintf(stderr, "When running as root, \"-user User\" option must be provided!\r\n");
+            exit(4);
+        }
+
+        #ifdef HAVE_CAP
+        if (prctl(PR_SET_KEEPCAPS, 1) < 0) {
+            perror("Failed to call prctl to keep capabilities");
+            exit(5);
+        }
+        #endif
+
+        if (
+            #ifdef HAVE_SETRESUID
+            setresuid(-1, userid, geteuid()) // glibc, FreeBSD, OpenBSD, HP-UX
+            #elif HAVE_SETREUID
+            setreuid(-1, userid)             // MacOSX, NetBSD, AIX, IRIX, Solaris>=2.5, OSF/1, Cygwin
+            #else
+            #error setresuid(3) not supported!
+            #endif
+        < 0) {
+            perror("Failed to set userid");
+            exit(6);
+        }
+
+        struct passwd* pw;
+        if (debug && (pw = getpwuid(geteuid())) != NULL)
+            fprintf(stderr, "exec: running as: %s (euid=%d)\r\n", pw->pw_name, geteuid());
+
+        if (geteuid() == 0) {
+            fprintf(stderr, "exec: failed to set effective userid to a non-root user %s (uid=%d)\r\n",
+                pw ? pw->pw_name : "", geteuid());
+            exit(7);
+        }
+
+        #ifdef HAVE_CAP
+        cap_t cur;
+        if ((cur = cap_from_text("cap_setuid=eip cap_kill=eip cap_sys_nice=eip")) == 0) {
+            fprintf(stderr, "exec: failed to convert cap_setuid & cap_sys_nice from text");
+            exit(8);
+        }
+        if (cap_set_proc(cur) < 0) {
+            fprintf(stderr, "exec: failed to set cap_setuid & cap_sys_nice");
+            exit(9);
+        }
+        cap_free(cur);
+
+        if (debug && (cur = cap_get_proc()) != NULL) {
+            fprintf(stderr, "exec: current capabilities: %s\r\n",  cap_to_text(cur, NULL));
+            cap_free(cur);
+        }
+        #else
+        if (debug)
+            fprintf(stderr, "exec: capability feature is not implemented for this plaform!\r\n");
+        //exit(10);
+        #endif
+    }
+
+    #if !defined(NO_SYSCONF)
+    max_fds = sysconf(_SC_OPEN_MAX);
+    #else
+    max_fds = OPEN_MAX;
+    #endif
+    if (max_fds < 1024) max_fds = 1024;
+
+    dev_null = open(CS_DEV_NULL, O_RDWR);
+
+    if (dev_null < 0) {
+        fprintf(stderr, "exec: cannot open %s: %s\r\n", CS_DEV_NULL, strerror(errno));
+        exit(10);
+    }
+
 }
 
 int finalize()
