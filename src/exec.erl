@@ -1,7 +1,7 @@
 %%%------------------------------------------------------------------------
 %%% File: $Id$
 %%%------------------------------------------------------------------------
-%%% @doc OS shell command starter.
+%%% @doc OS shell command runner.
 %%%      It communicates with a separate C++ port process `exec-port'
 %%%      spawned by this module, which is responsible
 %%%      for starting, killing, listing, terminating, and notifying of
@@ -29,119 +29,6 @@
 %%%
 %%% @author Serge Aleynikov <saleyn@gmail.com>
 %%% @version {@vsn}
-%%%
-%%% @type exec_options() = [Option]
-%%%         Option = debug | {debug, Level::integer()} |
-%%%                  verbose | {args, Args} | {alarm, Secs} |
-%%%                  {user, User} | {limit_users, Users} |
-%%%                  {portexe, Exe::string()} | {env, Env::list()}
-%%%         Users  = [User]
-%%%         User   = Acount::string().
-%%%     Options passed to the exec process at startup.
-%%%     <dl>
-%%%     <dt>debug</dt><dd>Same as {debug, 1}</dd>
-%%%     <dt>{debug, Level}</dt><dd>Enable port-programs debug trace at `Level'.</dd>
-%%%     <dt>verbose</dt><dd>Enable verbose prints of the Erlang process.</dd>
-%%%     <dt>{args, Args}</dt><dd>Append `Args' to the port command.</dd>
-%%%     <dt>{alarm, Secs}</dt>
-%%%         <dd>Give `Secs' deadline for the port program to clean up
-%%%             child pids before exiting</dd>
-%%%     <dt>{user, User}</dt>
-%%%         <dd>When the port program was compiled with capability (Linux)
-%%%             support enabled, and is owned by root with a a suid bit set,
-%%%             this option must be specified so that upon startup the port
-%%%             program is running under the effective user different from root.
-%%%             This is a security measure that will also prevent the port program
-%%%             to execute root commands.</dd>
-%%%     <dt>{limit_users, LimitUsers}</dt>
-%%%         <dd>Limit execution of external commands to these set of users.
-%%%             This option is only valid when the port program is owned
-%%%             by root.</dd>
-%%%     <dt>{portexe, Exe}</dt>
-%%%         <dd>Provide an alternative location of the port program.
-%%%             This option is useful when this application is stored
-%%%             on NFS and the port program needs to be copied locally
-%%%             so that root suid bit can be set.</dd>
-%%%     <dt>{env, Env}</dt>
-%%%         <dd>Extend environment of the port program by using `Env' specification.
-%%%             `Env' should be a list of tuples `{Name, Val}', where Name is the
-%%%             name of an environment variable, and Val is the value it is to have
-%%%             in the spawned port process.</dd>
-%%%     </dl>.
-%%% @type cmd_options() = [Option]
-%%%         Option      = {cd, WorkDir::string()} | {env, Env} |
-%%%                       {kill, Cmd::string()} |
-%%%                       {kill_timeout, Sec::integer()} |
-%%%                       {user, RunAsUser::string()} |
-%%%                       {nice, Priority::integer()} |
-%%%                       stdin | stdout | stderr |
-%%%                       {stdout, Device} | {stderr, Device} |
-%%%                       monitor
-%%%         Env         = [VarEqVal]
-%%%         VarEqVal    = string() | {Var::string(), Value::string()}
-%%%         Device      = null | stdout | stderr | File | {append, File} | true
-%%%         File        = string().
-%%%     Command options:
-%%%     <dl>
-%%%     <dt>monitor</dt><dd>Set up a monitor for the spawned process</dd>
-%%%     <dt>{cd, WorkDir}</dt><dd>Working directory</dd>
-%%%     <dt>{env, Env}</dt>
-%%%         <dd>List of "VAR=VALUE" environment variables or
-%%%             list of {Var, Value} tuples. Both representations are
-%%%             used in other parts of Erlang/OTP
-%%%             (e.g. os:getenv/0, erlang:open_port/2)</dd>
-%%%     <dt>{kill, Cmd}</dt>
-%%%         <dd>This command will be used for killing the process. After
-%%%             a 5-sec timeout if the process is still alive, it'll be
-%%%             killed with SIGTERM followed by SIGKILL.  By default
-%%%             SIGTERM/SIGKILL combination is used for process
-%%%             termination.</dd>
-%%%     <dt>{kill_timeout, Sec::integer()}</dt>
-%%%         <dd>Number of seconds to wait after issueing a SIGTERM or
-%%%             executing the custom `kill' command (if specified) before
-%%%             killing the process with the `SIGKILL' signal</dd>
-%%%     <dt>{group, GID}</dt>
-%%%         <dd>Sets the effective group ID of the spawned process</dd>
-%%%     <dt>{user, RunAsUser}</dt>
-%%%         <dd>When exec-port was compiled with capability (Linux) support
-%%%             enabled and has a suid bit set, it's capable of running
-%%%             commands with a different RunAsUser effective user. Passing
-%%%             "root" value of `RunAsUser' is prohibited.</dd>
-%%%     <dt>{nice, Priority}</dt>
-%%%         <dd>Set process priority between -20 and 20. Note that
-%%%             negative values can be specified only when `exec-port'
-%%%             is started with a root suid bit set.</dd>
-%%%     <dt>stdin</dt>
-%%%         <dd>Enable communication with an OS process via its `stdin'. The
-%%%             input to the process is sent by `exec:send(OsPid, Data)'.</dd>
-%%%     <dt>stdout</dt>
-%%%         <dd>Same as `{stdout, self()}'.</dd>
-%%%     <dt>stderr</dt>
-%%%         <dd>Same as `{stderr, self()}'.</dd>
-%%%     <dt>{stdout, output_device()}</dt>
-%%%         <dd>Option for redirecting process's standard output stream</dd>
-%%%     <dt>{stderr, output_device()}</dt>
-%%%         <dd>Option for redirecting process's standard error stream</dd>
-%%%     </dl>
-%%% @type output_device() = null | close | stdout | stderr | print | pid() |
-%%%         OutputFun | Filename | {append, Filename}
-%%%         OutputFun = fun((stdout | stderr, integer(), binary()) -> none())
-%%%         Filename  = string().
-%%%     Output device option:
-%%%     <dl>
-%%%     <dt>null</dt><dd>Suppress output.</dd>
-%%%     <dt>close</dt><dd>Close file descriptor for writing.</dd>
-%%%     <dt>stdout</dt><dd>Redirect output to stdout.</dd>
-%%%     <dt>stderr</dt><dd>Redirect output to stderr.</dd>
-%%%     <dt>pid()</dt><dd>Redirect output to this pid.</dd>
-%%%     <dt>fun((Stream, OsPid, Data) -> none())</dt>
-%%%         <dd>Execute this callback on receiving output data</dd>
-%%%     <dt>print</dt>
-%%%         <dd>A debugging convenience device that prints the output to the
-%%%             console shell</dd>
-%%%     <dt>Filename</dt><dd>Save output to file by overwriting it.</dd>
-%%%     <dt>{append, Filename}</dt><dd>Append output to file.</dd>
-%%%     </dl>
 %%% @end
 %%%------------------------------------------------------------------------
 %%% Created: 2003-06-10 by Serge Aleynikov <saleyn@gmail.com>
@@ -187,24 +74,123 @@
     | {limit_users, [string(), ...]}
     | {portexe, string()}
     | {env, [{string(), string()}, ...]}.
+%% Options passed to the exec process at startup.
+%% <dl>
+%% <dt>debug</dt><dd>Same as {debug, 1}</dd>
+%% <dt>{debug, Level}</dt><dd>Enable port-programs debug trace at `Level'.</dd>
+%% <dt>verbose</dt><dd>Enable verbose prints of the Erlang process.</dd>
+%% <dt>{args, Args}</dt><dd>Append `Args' to the port command.</dd>
+%% <dt>{alarm, Secs}</dt>
+%%     <dd>Give `Secs' deadline for the port program to clean up
+%%         child pids before exiting</dd>
+%% <dt>{user, User}</dt>
+%%     <dd>When the port program was compiled with capability (Linux)
+%%         support enabled, and is owned by root with a a suid bit set,
+%%         this option must be specified so that upon startup the port
+%%         program is running under the effective user different from root.
+%%         This is a security measure that will also prevent the port program
+%%         to execute root commands.</dd>
+%% <dt>{limit_users, LimitUsers}</dt>
+%%     <dd>Limit execution of external commands to these set of users.
+%%         This option is only valid when the port program is owned
+%%         by root.</dd>
+%% <dt>{portexe, Exe}</dt>
+%%     <dd>Provide an alternative location of the port program.
+%%         This option is useful when this application is stored
+%%         on NFS and the port program needs to be copied locally
+%%         so that root suid bit can be set.</dd>
+%% <dt>{env, Env}</dt>
+%%     <dd>Extend environment of the port program by using `Env' specification.
+%%         `Env' should be a list of tuples `{Name, Val}', where Name is the
+%%         name of an environment variable, and Val is the value it is to have
+%%         in the spawned port process.</dd>
+%% </dl>.
 
 -type cmd_options() :: [cmd_option()].
 -type cmd_option()  ::
-      {cd, string()}
+      monitor
+    | {cd, WorkDir::string()}
     | {env, [string() | {Name :: string(), Value :: string()}, ...]}
-    | {kill, string()}
-    | {kill, non_neg_integer()}
-    | {user, string()}
-    | {nice, integer()}
-    | stdin  | {stdin,  null | close | string() | true}
-    | stdout
-    | {stdout, null | close | stdout | stderr | print |
-               fun((stdout, integer(), binary()) -> none()) | pid() |
-               string() | {append, string()}}
-    | stderr
-    | {stderr, null | close | stdout | stderr | print |
-               fun((stderr, integer(), binary()) -> none()) | pid() |
-               string() | {append, string()}}.
+    | {kill, KillCmd::string()}
+    | {kill_timeout, Sec::non_neg_integer()}
+    | {group, GID :: string() | integer()}
+    | {user, RunAsUser :: string()}
+    | {nice, Priority :: integer()}
+    | stdin  | {stdin, null | close | string()}
+    | stdout | stderr
+    | {stdout, stderr | output_dev_opt()}
+    | {stderr, stdout | output_dev_opt()}
+    | {stdout | stderr, string(), [output_file_opt()]}.
+%% Command options:
+%% <dl>
+%% <dt>monitor</dt><dd>Set up a monitor for the spawned process</dd>
+%% <dt>{cd, WorkDir}</dt><dd>Working directory</dd>
+%% <dt>{env, Env}</dt>
+%%     <dd>List of "VAR=VALUE" environment variables or
+%%         list of {Var, Value} tuples. Both representations are
+%%         used in other parts of Erlang/OTP
+%%         (e.g. os:getenv/0, erlang:open_port/2)</dd>
+%% <dt>{kill, KillCmd}</dt>
+%%     <dd>This command will be used for killing the process. After
+%%         a 5-sec timeout if the process is still alive, it'll be
+%%         killed with SIGTERM followed by SIGKILL.  By default
+%%         SIGTERM/SIGKILL combination is used for process
+%%         termination.</dd>
+%% <dt>{kill_timeout, Sec::integer()}</dt>
+%%     <dd>Number of seconds to wait after issueing a SIGTERM or
+%%         executing the custom `kill' command (if specified) before
+%%         killing the process with the `SIGKILL' signal</dd>
+%% <dt>{group, GID}</dt>
+%%     <dd>Sets the effective group ID of the spawned process</dd>
+%% <dt>{user, RunAsUser}</dt>
+%%     <dd>When exec-port was compiled with capability (Linux) support
+%%         enabled and has a suid bit set, it's capable of running
+%%         commands with a different RunAsUser effective user. Passing
+%%         "root" value of `RunAsUser' is prohibited.</dd>
+%% <dt>{nice, Priority}</dt>
+%%     <dd>Set process priority between -20 and 20. Note that
+%%         negative values can be specified only when `exec-port'
+%%         is started with a root suid bit set.</dd>
+%% <dt>stdin | {stdin, null | close | Filename}</dt>
+%%     <dd>Enable communication with an OS process via its `stdin'. The
+%%         input to the process is sent by `exec:send(OsPid, Data)'.
+%%         When specified as a tuple, `null' means redirection from `/dev/null',
+%%         `close' means to close `stdin' stream, and `Filename' means to
+%%         take input from file.</dd>
+%% <dt>stdout</dt>
+%%     <dd>Same as `{stdout, self()}'.</dd>
+%% <dt>stderr</dt>
+%%     <dd>Same as `{stderr, self()}'.</dd>
+%% <dt>{stdout, output_device()}</dt>
+%%     <dd>Redirect process's standard output stream</dd>
+%% <dt>{stderr, output_device()}</dt>
+%%     <dd>Redirect process's standard error stream</dd>
+%% <dt>{stdout | stderr, Filename::string(), [output_dev_opt()]}</dt>
+%%     <dd>Redirect process's stdout/stderr stream to file</dd>
+%% </dl>
+
+-type output_dev_opt() :: null | close | print | string() | pid()
+    | fun((stdout | stderr, integer(), binary()) -> none()).
+%% Output device option:
+%% <dl>
+%% <dt>null</dt><dd>Suppress output.</dd>
+%% <dt>close</dt><dd>Close file descriptor for writing.</dd>
+%% <dt>print</dt>
+%%     <dd>A debugging convenience device that prints the output to the
+%%         console shell</dd>
+%% <dt>Filename</dt><dd>Save output to file by overwriting it.</dd>
+%% <dt>pid()</dt><dd>Redirect output to this pid.</dd>
+%% <dt>fun((Stream, OsPid, Data) -> none())</dt>
+%%     <dd>Execute this callback on receiving output data</dd>
+%% </dl>
+
+-type output_file_opt() :: append | {mode, Mode::integer()}.
+%% Defines file opening attributes:
+%% <dl>
+%% <dt>append</dt><dd>Open the file in `append' mode</dd>
+%% <dt>{mode, Mode}</dt>
+%%      <dd>File creation access mode <b>specified in base 8</b> (e.g. 8#0644)</dd>
+%% </dl>
 
 -type ospid() :: integer().
 %% Representation of OS process ID.
@@ -769,11 +755,20 @@ check_cmd_options([H|T], Pid, State, PortOpts, OtherOpts) when H=:=stdin; H=:=st
 check_cmd_options([{stdin, I}=H|T], Pid, State, PortOpts, OtherOpts)
         when I=:=null; I=:=close; is_list(I) ->
     check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+check_cmd_options([{Std, I, Opts}=H|T], Pid, State, PortOpts, OtherOpts)
+        when (Std=:=stdout orelse Std=:=stderr), is_list(Opts) ->
+    io_lib:printable_list(I) orelse
+        throw({error, ?FMT("Invalid ~w filename: ~200p", [Std, I])}),
+    lists:foreach(fun
+        (append) -> ok;
+        ({mode, Mode}) when is_integer(Mode) -> ok;
+        (Other) -> throw({error, ?FMT("Invalid ~w option: ~p", [Std, Other])})
+    end, Opts),
+    check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
 check_cmd_options([{Std, I}=H|T], Pid, State, PortOpts, OtherOpts)
         when Std=:=stderr, I=/=Std; Std=:=stdout, I=/=Std ->
     if
-        I=:=null; I=:=close; I=:=stderr; I=:=stdout; is_list(I); 
-        is_tuple(I), size(I)=:=2, element(1,I)=:=append, is_list(element(2,I)) ->
+        I=:=null; I=:=close; I=:=stderr; I=:=stdout; is_list(I) ->
             check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
         I=:=print ->
             check_cmd_options(T, Pid, State, [Std | PortOpts], [{Std, fun print/3} | OtherOpts]);

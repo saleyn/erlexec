@@ -113,6 +113,9 @@ static bool pipe_valid      = true;
 static int  max_fds;
 static int  dev_null;
 
+static const int   DEF_MODE     = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
+static const char* CS_DEV_NULL  = "/dev/null";
+
 //-------------------------------------------------------------------------
 // Types & variables
 //-------------------------------------------------------------------------
@@ -135,8 +138,6 @@ MapKillPidT  transient_pids;        // Map of pids of custom kill commands.
 
 #define SIGCHLD_MAX_SIZE 4096
 std::list< PidStatusT > exited_children;  // deque of processed SIGCHLD events
-
-const char* CS_DEV_NULL = "/dev/null";
 
 enum RedirectType {
     REDIRECT_STDOUT = -1,   // Redirect to stdout
@@ -193,14 +194,15 @@ int finalize();
 int set_nonblock_flag(pid_t pid, int fd, bool value);
 int erl_exec_kill(pid_t pid, int signal);
 int open_file(const char* file, bool append, const char* stream,
-              const char* cmd, ei::StringBuffer<128>& err);
+              const char* cmd, ei::StringBuffer<128>& err, int mode = DEF_MODE);
 int open_pipe(int fds[2], const char* stream, ei::StringBuffer<128>& err);
 
 //-------------------------------------------------------------------------
 // Types
 //-------------------------------------------------------------------------
 
-class CmdOptions {
+struct CmdOptions {
+private:
     ei::StringBuffer<256>   m_tmp;
     std::stringstream       m_err;
     std::string             m_cmd;
@@ -217,17 +219,19 @@ class CmdOptions {
     std::string             m_std_stream[3];
     bool                    m_std_stream_append[3];
     int                     m_std_stream_fd[3];
+    int                     m_std_stream_mode[3];
 
     void init_streams() {
         m_std_stream[STDOUT_FILENO] = CS_DEV_NULL;
         m_std_stream[STDERR_FILENO] = CS_DEV_NULL;
 
-        for (int i=STDIN_FILENO; i <= STDERR_FILENO; i++)
-            m_std_stream_append[i] = false;
+        for (int i=STDIN_FILENO; i <= STDERR_FILENO; i++) {
+            m_std_stream_append[i]  = false;
+            m_std_stream_mode[i]    = DEF_MODE;
+            m_std_stream_fd[i]      = REDIRECT_NONE;
+        }
 
         m_std_stream_fd[STDIN_FILENO]  = REDIRECT_NULL;
-        m_std_stream_fd[STDOUT_FILENO] = REDIRECT_NONE;
-        m_std_stream_fd[STDERR_FILENO] = REDIRECT_NONE;
     }
 
 public:
@@ -265,13 +269,15 @@ public:
     int          nice()                 const { return m_nice; }
     const char*  stream_file(int i)     const { return m_std_stream[i].c_str(); }
     bool         stream_append(int i)   const { return m_std_stream_append[i]; }
+    int          stream_mode(int i)     const { return m_std_stream_mode[i]; }
     int          stream_fd(int i)       const { return m_std_stream_fd[i]; }
     int&         stream_fd(int i)             { return m_std_stream_fd[i]; }
     const char*  stream_fd_type(int i)  const { return fd_type(stream_fd(i)).c_str(); }
 
-    void stream_file(int i, const std::string& file, bool append) {
+    void stream_file(int i, const std::string& file, bool append = false, int mode = DEF_MODE) {
         m_std_stream_fd[i]      = REDIRECT_FILE;
         m_std_stream_append[i]  = append;
+        m_std_stream_mode[i]    = mode;
         m_std_stream[i]         = file;
     }
 
@@ -329,15 +335,6 @@ struct CmdInfo {
         stream_fd[STDERR_FILENO] = _stderr_fd;
     }
 
-    const char* stream_name(int i) const {
-        switch (i) {
-            case STDIN_FILENO:  return "stdin";
-            case STDOUT_FILENO: return "stdout";
-            case STDERR_FILENO: return "stderr";
-            default:            return "<unknown>";
-        }
-    }
-
     void include_stream_fd(int i, int& maxfd, fd_set* readfds, fd_set* writefds) {
         bool ok;
         fd_set* fds;
@@ -377,6 +374,15 @@ struct CmdInfo {
 //-------------------------------------------------------------------------
 // Local Functions
 //-------------------------------------------------------------------------
+
+const char* stream_name(int i) {
+    switch (i) {
+        case STDIN_FILENO:  return "stdin";
+        case STDOUT_FILENO: return "stdout";
+        case STDERR_FILENO: return "stderr";
+        default:            return "<unknown>";
+    }
+}
 
 void gotsignal(int signal)
 {
@@ -846,15 +852,11 @@ pid_t start_child(CmdOptions& op, std::string& error)
 
     ei::StringBuffer<128> err;
 
-    const char* stream[] = { "stdin", "stdout", "stderr" };
-
     // Optionally setup stdin/stdout/stderr redirect
     for (int i=0; i < 3; i++) {
         int  crw        = i==0 ? RD : WR;
         int  cfd        = op.stream_fd(i);
         int* sfd        = stream_fd[i];
-        const char* file= op.stream_file(i);
-        bool append     = op.stream_append(i);
 
         // Optionally setup stdout redirect
         switch (cfd) {
@@ -862,16 +864,16 @@ pid_t start_child(CmdOptions& op, std::string& error)
                 sfd[RD] = cfd;
                 sfd[WR] = cfd;
                 if (debug)
-                    fprintf(stderr, "  Closing %s\r\n", stream[i]);
+                    fprintf(stderr, "  Closing %s\r\n", stream_name(i));
                 break;
             case REDIRECT_STDOUT:
             case REDIRECT_STDERR:
                 sfd[crw] = cfd;
                 if (debug)
-                    fprintf(stderr, "  Redirecting [%s -> %s]\r\n", stream[i], fd_type(cfd).c_str());
+                    fprintf(stderr, "  Redirecting [%s -> %s]\r\n", stream_name(i), fd_type(cfd).c_str());
                 break;
             case REDIRECT_ERL:
-                if (open_pipe(sfd, stream[i], err) < 0) {
+                if (open_pipe(sfd, stream_name(i), err) < 0) {
                     error = err.c_str();
                     return -1;
                 }
@@ -879,10 +881,11 @@ pid_t start_child(CmdOptions& op, std::string& error)
             case REDIRECT_NULL:
                 sfd[crw] = dev_null;
                 if (debug)
-                    fprintf(stderr, "  Redirecting [%s -> null]\r\n", stream[i]);
+                    fprintf(stderr, "  Redirecting [%s -> null]\r\n", stream_name(i));
                 break;
             case REDIRECT_FILE: {
-                sfd[crw] = open_file(file, append, stream[i], op.cmd(), err);
+                sfd[crw] = open_file(op.stream_file(i), op.stream_append(i),
+                                     stream_name(i), op.cmd(), err, op.stream_mode(i));
                 if (sfd[crw] < 0) {
                     error = err.c_str();
                     return -1;
@@ -998,7 +1001,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
 
             if (debug)
                 fprintf(stderr, "  Setup %s end of pid %d %s redirection (fd=%d%s)\r\n",
-                    i==0 ? "writing" : "reading", pid, stream[i], cfd,
+                    i==0 ? "writing" : "reading", pid, stream_name(i), cfd,
                     (fcntl(cfd, F_GETFL, 0) & O_NONBLOCK) == O_NONBLOCK ? " [non-block]" : "");
         }
     }
@@ -1180,9 +1183,9 @@ void process_pid_output(CmdInfo& ci, int maxsize)
                 while ((n = read(fd, buf, sizeof(buf))) < 0 && errno == EINTR);
                 if (debug > 1)
                     fprintf(stderr, "Read %d bytes from pid %d's %s (fd=%d): %s\r\n",
-                        n, ci.cmd_pid, ci.stream_name(i), fd, n > 0 ? "ok" : strerror(errno));
+                        n, ci.cmd_pid, stream_name(i), fd, n > 0 ? "ok" : strerror(errno));
                 if (n > 0) {
-                    send_ospid_output(ci.cmd_pid, ci.stream_name(i), buf, n);
+                    send_ospid_output(ci.cmd_pid, stream_name(i), buf, n);
                     if (n < (int)sizeof(buf))
                         break;
                 } else if (n < 0 && errno == EAGAIN)
@@ -1190,7 +1193,7 @@ void process_pid_output(CmdInfo& ci, int maxsize)
                 else if (n <= 0) {
                     if (debug)
                         fprintf(stderr, "Eof reading pid %d's %s, closing fd=%d: %s\r\n",
-                            ci.cmd_pid, ci.stream_name(i), fd, strerror(errno));
+                            ci.cmd_pid, stream_name(i), fd, strerror(errno));
                     close(fd);
                     fd = REDIRECT_CLOSE;
                     break;
@@ -1205,7 +1208,7 @@ void erase_child(MapChildrenT::iterator& it)
     for (int i=STDIN_FILENO; i<=STDERR_FILENO; i++)
         if (it->second.stream_fd[i] >= 0) {
             if (debug)
-                fprintf(stderr, "Closing pid %d's %s\r\n", it->first, it->second.stream_name(i));
+                fprintf(stderr, "Closing pid %d's %s\r\n", it->first, stream_name(i));
             close(it->second.stream_fd[i]);
         }
 
@@ -1346,10 +1349,9 @@ int send_ospid_output(int pid, const char* type, const char* data, int len)
 }
 
 int open_file(const char* file, bool append, const char* stream,
-              const char* cmd, ei::StringBuffer<128>& err)
+              const char* cmd, ei::StringBuffer<128>& err, int mode)
 {
     int flags = O_RDWR | O_CREAT | (append ? O_APPEND : O_TRUNC);
-    int mode  = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
     int fd    = open(file, flags, mode);
     if (fd < 0) {
         err.write("Failed to redirect %s to file: %s", stream, strerror(errno));
@@ -1411,12 +1413,14 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
     for(int i=0; i < sz; i++) {
         int arity, type = eis.decodeType(arity);
 
-        if (type == ERL_ATOM_EXT && (int)(opt = (OptionT)eis.decodeAtomIndex(opts, op)) >= 0)
+        if (type == etAtom && (int)(opt = (OptionT)eis.decodeAtomIndex(opts, op)) >= 0)
             arity = 1;
-        else if (type != ERL_SMALL_TUPLE_EXT ||
-                   eis.decodeTupleSize() != 2  ||
-                   (int)(opt = (OptionT)eis.decodeAtomIndex(opts, op)) < 0) {
-            m_err << "badarg: cmd option must be {Cmd, Opt} or atom";
+        else if (type != etTuple || (arity != 2 && arity != 3)) {
+            m_err << "badarg: option must be {Cmd, Opt} or {Cmd, Opt, Args} or atom "
+                     "(got tp=" << type << ", arity=" << arity << ')';
+            return -1;
+        } else if (eis.decodeTupleSize() < 0 || (int)(opt = (OptionT)eis.decodeAtomIndex(opts, op)) < 0) {
+            m_err << "badarg: invalid cmd option tuple";
             return -1;
         }
 
@@ -1429,13 +1433,17 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
         switch (opt) {
             case CD:
                 // {cd, Dir::string()}
-                if (eis.decodeString(val) < 0) { m_err << op << " bad option value"; return -1; }
+                if (eis.decodeString(val) < 0) {
+                    m_err << op << " bad option value"; return -1;
+                }
                 m_cd = val;
                 break;
 
             case KILL:
                 // {kill, Cmd::string()}
-                if (eis.decodeString(val) < 0) { m_err << op << " bad option value"; return -1; }
+                if (eis.decodeString(val) < 0) {
+                    m_err << op << " bad option value"; return -1;
+                }
                 m_kill_cmd = val;
                 break;
 
@@ -1538,7 +1546,7 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
 
                 if (arity == 1)
                     stream_redirect(opt, REDIRECT_ERL);
-                else {
+                else if (arity == 2) {
                     int type = 0, sz;
                     std::string s, fop;
                     type = eis.decodeType(sz);
@@ -1547,12 +1555,8 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
                         eis.decodeAtom(s);
                     else if (type == ERL_STRING_EXT)
                         eis.decodeString(s);
-                    else if (! (type == ERL_SMALL_TUPLE_EXT && sz == 2 &&
-                        eis.decodeTupleSize() == 2 &&
-                        eis.decodeAtom(fop) == 0 &&
-                        eis.decodeString(s) == 0 && fop == "append"))
-                    {
-                        m_err << "atom, string or {append, Name} tuple required for option " << op;
+                    else {
+                        m_err << "atom or string value in tuple required for option " << op;
                         return -1;
                     }
 
@@ -1566,8 +1570,40 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
                     else if (s == "stdout" && opt == STDERR)
                         stream_redirect(opt, REDIRECT_STDOUT);
                     else if (!s.empty()) {
-                        stream_file(opt, s, fop == "append");
+                        stream_file(opt, s);
                     }
+                } else if (arity == 3) {
+                    int n, sz, mode = DEF_MODE;
+                    bool append = false;
+                    std::string s, a, fop;
+                    if (eis.decodeString(s) < 0) {
+                        m_err << "filename must be a string for option " << op;
+                        return -1;
+                    }
+                    if ((n = eis.decodeListSize()) < 0) {
+                        m_err << "option " << op << " requires a list of file options" << op;
+                        return -1;
+                    }
+                    for(int i=0; i < n; i++) {
+                        int tp = eis.decodeType(sz);
+                        if (eis.decodeAtom(a) >= 0) {
+                            if (a == "append")
+                                append = true;
+                            else {
+                                m_err << "option " << op << ": unsupported file option '" << a << "'";
+                                return -1;
+                            }
+                        }
+                        else if (tp != etTuple || eis.decodeTupleSize() != 2 ||
+                                 eis.decodeAtom(a) < 0 || a != "mode" || eis.decodeInt(mode) < 0) {
+                            m_err << "option " << op << ": unsupported file option '" << a << "'";
+                            return -1;
+                            
+                        }
+                    }
+                    eis.decodeListEnd();
+
+                    stream_file(opt, s, append, mode);
                 }
 
                 if (opt == STDIN &&
