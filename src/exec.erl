@@ -395,7 +395,7 @@ signal(30) -> sigpwr;
 signal(31) -> sigsys;
 signal(34) -> sigrtmin;
 signal(64) -> sigrtmax;
-signal(XX) -> XX.
+signal(Num) when is_integer(Num) -> Num.
 
 %%-------------------------------------------------------------------------
 %% @private
@@ -731,7 +731,7 @@ is_port_command({{manage, OsPid, Options}, Link}, Pid, State) when is_integer(Os
     {ok, {manage, OsPid, PortOpts}, Link, []};
 is_port_command({send, Pid, Data}, _Pid, _State) when is_pid(Pid), is_binary(Data) ->
     case ets:lookup(exec_mon, Pid) of
-    [{Pid, OsPid}]  -> {ok, {stdin, OsPid, Data}, undefined, []};
+    [{Pid, OsPid}]  -> {ok, {stdin, OsPid, Data}};
     []              -> throw({error, no_process})
     end;
 is_port_command({send, OsPid, Data}, _Pid, _State) when is_integer(OsPid), is_binary(Data) ->
