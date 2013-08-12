@@ -123,7 +123,7 @@
 %%%     <dt>{stderr, output_device()}</dt>
 %%%         <dd>Option for redirecting process's standard error stream</dd>
 %%%     </dl>
-%%% @type output_device() = null | close | stdout | stderr | pid() |
+%%% @type output_device() = null | close | stdout | stderr | print | pid() |
 %%%         OutputFun | Filename | {append, Filename}
 %%%         OutputFun = fun((stdout | stderr, integer(), binary()) -> none())
 %%%         Filename  = string().
@@ -136,6 +136,9 @@
 %%%     <dt>pid()</dt><dd>Redirect output to this pid.</dd>
 %%%     <dt>fun((Stream, OsPid, Data) -> none())</dt>
 %%%         <dd>Execute this callback on receiving output data</dd>
+%%%     <dt>print</dt>
+%%%         <dd>A debugging convenience device that prints the output to the
+%%%             console shell</dd>
 %%%     <dt>Filename</dt><dd>Save output to file by overwriting it.</dd>
 %%%     <dt>{append, Filename}</dt><dd>Append output to file.</dd>
 %%%     </dl>
@@ -195,11 +198,11 @@
     | {nice, integer()}
     | stdin  | {stdin,  null | close | string() | true}
     | stdout
-    | {stdout, null | close | stdout | stderr |
+    | {stdout, null | close | stdout | stderr | print |
                fun((stdout, integer(), binary()) -> none()) | pid() |
                string() | {append, string()}}
     | stderr
-    | {stderr, null | close | stdout | stderr |
+    | {stderr, null | close | stdout | stderr | print |
                fun((stderr, integer(), binary()) -> none()) | pid() |
                string() | {append, string()}}.
 
@@ -511,7 +514,9 @@ handle_cast(_Msg, State) ->
 %% @private
 %%----------------------------------------------------------------------
 handle_info({Port, {data, Bin}}, #state{port=Port, debug=Debug} = State) ->
-    case binary_to_term(Bin) of
+    Msg = binary_to_term(Bin),
+    debug(Debug, "~w got msg from port: ~p\n", [?MODULE, Msg]),
+    case Msg of
     {N, Reply} when N =/= 0 ->
         case get_transaction(State#state.trans, N) of
         {true, {Pid,_} = From, MonType, PidOpts, Q} ->
@@ -530,7 +535,8 @@ handle_info({Port, {data, Bin}}, #state{port=Port, debug=Debug} = State) ->
              (Status band 16#FF00 bsr 8), Status band 127]),
         notify_ospid_owner(OsPid, Status),
         {noreply, State};
-    {0, _Ignore} ->
+    {0, Ignore} ->
+        error_logger:warning_msg("~w [~w] unknown msg: ~p\n", [self(), ?MODULE, Ignore]),
         {noreply, State}
     end;
 
@@ -760,12 +766,17 @@ check_cmd_options([{nice, I}=H|T], Pid, State, PortOpts, OtherOpts) when is_inte
     check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
 check_cmd_options([H|T], Pid, State, PortOpts, OtherOpts) when H=:=stdin; H=:=stdout; H=:=stderr ->
     check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
+check_cmd_options([{stdin, I}=H|T], Pid, State, PortOpts, OtherOpts)
+        when I=:=null; I=:=close; is_list(I) ->
+    check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
 check_cmd_options([{Std, I}=H|T], Pid, State, PortOpts, OtherOpts)
         when Std=:=stderr, I=/=Std; Std=:=stdout, I=/=Std ->
     if
-        I=:=null; I=:=true; I=:=close; I=:=stderr; I=:=stdout; is_list(I); 
+        I=:=null; I=:=close; I=:=stderr; I=:=stdout; is_list(I); 
         is_tuple(I), size(I)=:=2, element(1,I)=:=append, is_list(element(2,I)) ->
             check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+        I=:=print ->
+            check_cmd_options(T, Pid, State, [Std | PortOpts], [{Std, fun print/3} | OtherOpts]);
         is_pid(I) ->
             check_cmd_options(T, Pid, State, [Std | PortOpts], [H|OtherOpts]);
         is_function(I) ->
@@ -792,4 +803,5 @@ next_trans(I) when I =< 134217727 ->
 next_trans(_) ->
     1.
 
-
+print(Stream, OsPid, Data) ->
+    io:format("Got ~w from ~w: ~p\n", [Stream, OsPid, Data]).
