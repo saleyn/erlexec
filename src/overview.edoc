@@ -24,10 +24,10 @@ OS processes.
 
 == Download ==
 
-    Project's repository:
-        [https://github.com/saleyn/erlexec]
-    Git clone command:
-        `git clone https://github.com/saleyn/erlexec.git'
+<ul>
+<li>Project's repository: [https://github.com/saleyn/erlexec]</li>
+<li>Git clone command: `git clone https://github.com/saleyn/erlexec.git'</li>
+</ul>
 
 == Features ==
 
