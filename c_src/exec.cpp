@@ -504,8 +504,7 @@ int main(int argc, char* argv[])
                 else
                     usage(argv[0]);
             } else if (strcmp(argv[res], "-n") == 0) {
-                close(STDIN_FILENO);
-                close(STDOUT_FILENO);
+                eis.close_handles(); // Close stdin, stdout
                 eis.set_handles(3, 4);
             } else if (strcmp(argv[res], "-user") == 0 && res+1 < argc && argv[res+1][0] != '-') {
                 char* run_as_user = argv[++res];
@@ -682,7 +681,10 @@ int process_command()
             if (arity != 3 || eis.decodeInt(pid) < 0 || (eis.decodeInt(sig)) < 0) {
                 send_error_str(transId, true, "badarg");
                 break;
-            } if (superuser && children.find(pid) == children.end()) {
+            } else if (pid < 0) {
+                send_error_str(transId, false, "Not allowed to send signal to all processes");
+                break;
+            } else if (superuser && children.find(pid) == children.end()) {
                 send_error_str(transId, false, "Cannot kill a pid not managed by this application");
                 break;
             }
@@ -862,7 +864,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
     ei::StringBuffer<128> err;
 
     // Optionally setup stdin/stdout/stderr redirect
-    for (int i=0; i < 3; i++) {
+    for (int i=STDIN_FILENO; i <= STDERR_FILENO; i++) {
         int  crw        = i==0 ? RD : WR;
         int  cfd        = op.stream_fd(i);
         int* sfd        = stream_fd[i];
@@ -990,8 +992,8 @@ pid_t start_child(CmdOptions& op, std::string& error)
     }
 
     // I am the parent
-    for (int i=0; i < 3; i++) {
-        int  wr  = i==0 ? WR : RD;
+    for (int i=STDIN_FILENO; i <= STDERR_FILENO; i++) {
+        int  wr  = i==STDIN_FILENO ? WR : RD;
         int& cfd = op.stream_fd(i);
         int* sfd = stream_fd[i];
 
@@ -999,7 +1001,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
         if (fd >= 0 && fd != dev_null) {
             if (debug)
                 fprintf(stderr, "  Parent closing pid %d pipe %s end (fd=%d)\r\n",
-                    pid, i==0 ? "reading" : "writing", fd);
+                    pid, i==STDIN_FILENO ? "reading" : "writing", fd);
             close(fd); // Close stdin/reading or stdout(err)/writing end of the child pipe
         }
 
@@ -1010,7 +1012,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
 
             if (debug)
                 fprintf(stderr, "  Setup %s end of pid %d %s redirection (fd=%d%s)\r\n",
-                    i==0 ? "writing" : "reading", pid, stream_name(i), cfd,
+                    i==STDIN_FILENO ? "writing" : "reading", pid, stream_name(i), cfd,
                     (fcntl(cfd, F_GETFL, 0) & O_NONBLOCK) == O_NONBLOCK ? " [non-block]" : "");
         }
     }
@@ -1391,6 +1393,43 @@ int open_pipe(int fds[2], const char* stream, ei::StringBuffer<128>& err)
     return 0;
 }
 
+/* This exists just to make sure that we don't inadvertently do a
+ * kill(-1, SIGKILL), which will cause all kinds of bad things to
+ * happen. */
+
+int erl_exec_kill(pid_t pid, int signal) {
+    if (pid < 0) {
+        if (debug)
+            fprintf(stderr, "kill(%d, %d) attempt prohibited!\r\n", pid, signal);
+        return -1;
+    }
+
+    if (debug && signal > 0)
+        fprintf(stderr, "Calling kill(pid=%d, sig=%d)\r\n", pid, signal);
+
+    return kill(pid, signal);
+}
+
+int set_nonblock_flag(pid_t pid, int fd, bool value)
+{
+    int oldflags = fcntl(fd, F_GETFL, 0);
+    if (oldflags < 0)
+        return oldflags;
+    if (value != 0)
+        oldflags |= O_NONBLOCK;
+    else
+        oldflags &= ~O_NONBLOCK;
+
+    int ret = fcntl(fd, F_SETFL, oldflags);
+    if (debug > 3) {
+        oldflags = fcntl(fd, F_GETFL, 0);
+        fprintf(stderr, "  Set pid %d's fd=%d to non-blocking mode (flags=%x)\r\n",
+            pid, fd, oldflags);
+    }
+
+    return ret;
+}
+
 int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
 {
     // {Cmd::string(), [Option]}
@@ -1417,7 +1456,7 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
     enum OptionT       { STDIN,  STDOUT,  STDERR,  CD,  ENV,  KILL,  KILL_TIMEOUT,  NICE,  USER,  GROUP} opt;
     const char* opts[]={"stdin","stdout","stderr","cd","env","kill","kill_timeout","nice","user","group"};
 
-    bool seen_opt[STDERR+1] = {false};
+    bool seen_opt[sizeof(opts) / sizeof(char*)] = {false};
 
     for(int i=0; i < sz; i++) {
         int arity, type = eis.decodeType(arity);
@@ -1646,44 +1685,6 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
             m_cmd.c_str(), stream_fd_type(0), stream_fd_type(1), stream_fd_type(2));
 
     return 0;
-}
-
-/* This exists just to make sure that we don't inadvertently do a
- * kill(-1, SIGKILL), which will cause all kinds of bad things to
- * happen. */
-
-int erl_exec_kill(pid_t pid, int signal) {
-    if (pid < 0) {
-        if (debug)
-            fprintf(stderr, "kill(-1, %d) attempt prohibited!\r\n", signal);
-
-        return -1;
-    }
-
-    if (debug && signal > 0)
-        fprintf(stderr, "Calling kill(pid=%d, sig=%d)\r\n", pid, signal);
-
-    return kill(pid, signal);
-}
-
-int set_nonblock_flag(pid_t pid, int fd, bool value)
-{
-    int oldflags = fcntl(fd, F_GETFL, 0);
-    if (oldflags < 0)
-        return oldflags;
-    if (value != 0)
-        oldflags |= O_NONBLOCK;
-    else
-        oldflags &= ~O_NONBLOCK;
-
-    int ret = fcntl(fd, F_SETFL, oldflags);
-    if (debug > 3) {
-        oldflags = fcntl(fd, F_GETFL, 0);
-        fprintf(stderr, "  Set pid %d's fd=%d to non-blocking mode (flags=%x)\r\n",
-            pid, fd, oldflags);
-    }
-
-    return ret;
 }
 
 int CmdOptions::init_cenv()
