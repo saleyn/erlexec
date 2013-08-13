@@ -63,11 +63,10 @@ body {
    color: #333;
 }
 
-tt, code, pre { font-size: 0.875em }
+tt, code, pre { font-size: 0.95em }
 
 pre {
    font-size: 0.875em; /* 14px */
-   line-height: 1.7143em; /* 24px */
    margin: 0 1em 1.7143em;
    padding: 0 1em;
    background: #E0F0FF;
