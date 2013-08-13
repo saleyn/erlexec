@@ -221,7 +221,7 @@ start(Options) when is_list(Options) ->
 %% @end
 %%-------------------------------------------------------------------------
 -spec run(Exe::string(), Options::cmd_options()) ->
-    {ok, pid(), ospid()} | {ok, Status::integer()|atom()} | {error, any()}.
+    {ok, pid(), ospid()} | {ok, [{stdout | stderr, [binary()]}]} | {error, any()}.
 run(Exe, Options) when is_list(Exe), is_list(Options) ->
     do_run({run, Exe, Options}, Options).
 
@@ -234,36 +234,9 @@ run(Exe, Options) when is_list(Exe), is_list(Options) ->
 %% @end
 %%-------------------------------------------------------------------------
 -spec run_link(string(), cmd_options()) ->
-    {ok, pid(), integer()} | {ok, Status::integer()|atom()} | {error, any()}.
+    {ok, pid(), ospid()} | {ok, [{stdout | stderr, [binary()]}]} | {error, any()}.
 run_link(Exe, Options) when is_list(Exe), is_list(Options) ->
     do_run({run, Exe, Options}, [link | Options]).
-
--spec do_run(Cmd::any(), Options::cmd_options()) ->
-    {ok, pid(), ospid()} | {ok, Status :: integer() | atom()} | {error, any()}.
-do_run(Cmd, Options) ->
-    Sync = proplists:get_value(sync, Options, false),
-    Mon  = Sync =:= true orelse proplists:get_value(monitor, Options),
-    Link = case proplists:get_value(link, Options) of
-           true -> link;
-           _    -> nolink
-           end,
-    Cmd2 = {port, {Cmd, Link}},
-    case {Mon, gen_server:call(?MODULE, Cmd2, 30000)} of
-    {true, {ok, Pid, _} = R} ->
-        Ref = monitor(process, Pid),
-        case Sync of
-        true ->
-            receive
-            {'DOWN', Ref, process, _, {exit_status, N}} -> {ok, N};
-            {'DOWN', Ref, process, _, normal}           -> {ok, 0};
-            {'DOWN', Ref, process, _, Other}            -> {ok, Other}
-            end;
-        _ ->
-            R
-        end;
-    {_, R} ->
-        R
-    end.
 
 %%-------------------------------------------------------------------------
 %% @doc Manage an existing external process. `OsPid' is the OS process
@@ -590,6 +563,46 @@ wait_port_exit(Port) ->
 %%%---------------------------------------------------------------------
 %%% Internal functions
 %%%---------------------------------------------------------------------
+
+-spec do_run(Cmd::any(), Options::cmd_options()) ->
+    {ok, pid(), ospid()} | {ok, [{stdout | stderr, [binary()]}]} | {error, any()}.
+do_run(Cmd, Options) ->
+    Sync = proplists:get_value(sync, Options, false),
+    Mon  = Sync =:= true orelse proplists:get_value(monitor, Options),
+    Link = case proplists:get_value(link, Options) of
+           true -> link;
+           _    -> nolink
+           end,
+    Cmd2 = {port, {Cmd, Link}},
+    case {Mon, gen_server:call(?MODULE, Cmd2, 30000)} of
+    {true, {ok, Pid, OsPid} = R} ->
+        Ref = monitor(process, Pid),
+        case Sync of
+        true -> wait_for_ospid_exit(OsPid, Ref, [], []);
+        _    -> R
+        end;
+    {_, R} ->
+        R
+    end.
+
+wait_for_ospid_exit(OsPid, Ref, OutAcc, ErrAcc) ->
+    receive
+    {stdout, OsPid, Data} ->
+        wait_for_ospid_exit(OsPid, Ref, [Data | OutAcc], ErrAcc);
+    {stderr, OsPid, Data} ->
+        wait_for_ospid_exit(OsPid, Ref, OutAcc, [Data | ErrAcc]);
+    {'DOWN', Ref, process, _, R} ->
+        case R of
+        normal              -> {ok, sync_res(OutAcc, ErrAcc)};
+        noproc              -> {ok, sync_res(OutAcc, ErrAcc)};
+        {exit_status,_}=R   -> {error, [R | sync_res(OutAcc, ErrAcc)]};
+        Other               -> {error, [{reason, Other} | sync_res(OutAcc, ErrAcc)]}
+        end
+    end.
+
+sync_res([], []) -> [];
+sync_res([], L)  -> [{stderr, lists:reverse(L)}];
+sync_res(LO, LE) -> [{stdout, lists:reverse(LO)} | sync_res([], LE)].
 
 %% Add a link for Pid to OsPid if requested.
 maybe_add_monitor({ok, OsPid}, Pid, MonType, PidOpts, Debug) when is_integer(OsPid) ->

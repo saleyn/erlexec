@@ -7,6 +7,10 @@
 
 @doc This application implements a manager of OS processes.
 
+It's designed to address the shortcomings of Erlang's
+`os:cmd/1' and `erlang:open_port/2' that allow to execute external
+OS processes.
+
 == Contents ==
 <ol>
   <li>{@section Download}</li>
@@ -22,7 +26,6 @@
 
     Project's repository:
         [https://github.com/saleyn/erlexec]
-
     Git clone command:
         `git clone https://github.com/saleyn/erlexec.git'
 
@@ -30,12 +33,15 @@
 
 <ol>
 <li>Starting, stopping OS commands and getting their OS process IDs.</li>
-<li>Providing versatile OS command options, including working directory,
-    environment settings, alternative termination command, effective
-    user, process priority options, custom redirection of their
-    stdin/stdout/stderr streams.</li>
+<li>Setting OS command working directory, environment, effective user,
+    process priority.
+<li>Providing custom termination command for killing a process or relying
+    on default SIGTERM/SIGKILL behavior.  Specifying custom timeout
+    for SIGKILL after the termination command or SIGTERM was executed.
 <li>Ability to link Erlang processes to OS processes (via intermediate
     Erlang Pids that are linked to an associated OS process).</li>
+<li>Ability to monitor the termination of OS processes.
+<li>Ability to execute OS processes synchronously and asynchronously.
 <li>Proper cleanup of OS processes at port program termination time.</li>
 <li>Communicating with an OS process via its STDIN.</li> 
 <li>Redirecting STDOUT and STDERR of an OS process to a file, erlang process,
@@ -45,7 +51,7 @@
 
 == Supported Platforms ==
 
-Currently the project supports Linux and Solaris operating systems.
+Linux, Solaris, and Mac.
 
 == Architecture ==
 ```
@@ -132,6 +138,7 @@ Got stdout from 29652: <<"Iter1\n">>
 Got stdout from 29652: <<"Iter2\n">>
 Got stdout from 29652: <<"Iter3\n">>
 
+% Note that stdout/stderr options are equivanet to {stdout, self()}, {stderr, self()} 
 11> exec:run("echo Hello World!; echo ERR!! 1>&2", [stdout, stderr]).
 {ok,<0.244.0>,18382}
 12> flush().
@@ -204,10 +211,10 @@ ok
 % Execute an OS process (script) that reads STDIN and echoes it back to Erlang
 25> f(I), {ok, _, I} = exec:run("read x; echo \"Got: $x\"", [stdin, stdout, monitor]).
 {ok,<0.427.0>,26431}
-% Send the OS process some data via its `stdin'
+% Send the OS process some data via its stdin
 26> exec:send(I, <<"Test data\n">>).                                                  
 ok
-% Get the response written to processes `stdout'
+% Get the response written to processes stdout
 27> f(M), receive M -> M after 10000 -> timeout end.
 {stdout,26431,<<"Got: Test data\n">>}
 % Confirm that the process exited
@@ -218,8 +225,17 @@ ok
 === Running OS commands synchronously ===
 ```
 % Execute an shell script that blocks for 1 second and return its termination code
-29> exec:run("sleep 1", [sync]).                                                       
-{ok,0}
+29> exec:run("sleep 1; echo Test", [sync]).
+{ok,[<<"Test\n">>]}
+
+% Execute a non-existing command
+30> exec:run("echo1 Test", [sync, stdout, stderr]).   
+{error,[{exit_status,32512},
+        {stderr,[<<"/bin/bash: echo1: command not found\n">>]}]}
+
+% Capture stdout/stderr of the executed command
+31> exec:run("echo Test; echo Err 1>&2", [sync, stdout, stderr]).    
+{ok,[{stdout,[<<"Test\n">>]},{stderr,[<<"Err\n">>]}]}
 '''
 
 @end
