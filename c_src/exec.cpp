@@ -504,6 +504,8 @@ int main(int argc, char* argv[])
                 else
                     usage(argv[0]);
             } else if (strcmp(argv[res], "-n") == 0) {
+                close(STDIN_FILENO);
+                close(STDOUT_FILENO);
                 eis.set_handles(3, 4);
             } else if (strcmp(argv[res], "-user") == 0 && res+1 < argc && argv[res+1][0] != '-') {
                 char* run_as_user = argv[++res];
