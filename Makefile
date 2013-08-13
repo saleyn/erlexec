@@ -7,6 +7,8 @@ TARBALL = $(PROJECT)-$(VSN)
 DIALYZER = dialyzer
 REBAR = rebar
 
+.PHONY : all clean test docs doc clean-docs github-docs
+
 all:
 	@$(REBAR) compile
 
@@ -19,6 +21,9 @@ docs: doc ebin clean-docs
 
 doc ebin:
 	mkdir -p $@
+
+test:
+	@$(REBAR) eunit
 
 clean-docs:
 	rm -f doc/*.{css,html,png} doc/edoc-info

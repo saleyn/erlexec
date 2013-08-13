@@ -1463,11 +1463,11 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
 
         if (type == etAtom && (int)(opt = (OptionT)eis.decodeAtomIndex(opts, op)) >= 0)
             arity = 1;
-        else if (type != etTuple || (arity != 2 && arity != 3)) {
+        else if (type != etTuple || ((arity = eis.decodeTupleSize()) != 2 && arity != 3)) {
             m_err << "badarg: option must be {Cmd, Opt} or {Cmd, Opt, Args} or atom "
-                     "(got tp=" << type << ", arity=" << arity << ')';
+                     "(got tp=" << (char)type << ", arity=" << arity << ')';
             return -1;
-        } else if (eis.decodeTupleSize() < 0 || (int)(opt = (OptionT)eis.decodeAtomIndex(opts, op)) < 0) {
+        } else if ((int)(opt = (OptionT)eis.decodeAtomIndex(opts, op)) < 0) {
             m_err << "badarg: invalid cmd option tuple";
             return -1;
         }
@@ -1584,6 +1584,7 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
                     }
                     m_env[key] = s;
                 }
+                eis.decodeListEnd();
                 break;
             }
 
@@ -1666,6 +1667,8 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
                 m_err << "bad option: " << op; return -1;
         }
     }
+
+    eis.decodeListEnd();
 
     for (int i=STDOUT_FILENO; i <= STDERR_FILENO; i++)
         if (stream_fd(i) == (i == STDOUT_FILENO ? REDIRECT_STDOUT : REDIRECT_STDERR)) {

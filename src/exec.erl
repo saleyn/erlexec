@@ -54,6 +54,10 @@
 
 -include("exec.hrl").
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 -record(state, {
     port,
     last_trans  = 0,            % Last transaction number sent to port
@@ -545,9 +549,11 @@ code_change(_OldVsn, State, _Extra) ->
 terminate(_Reason, State) ->
     try
         erlang:port_command(State#state.port, term_to_binary({0, {shutdown}})),
-        Status = wait_port_exit(State#state.port),
-        error_logger:warning_msg("~w - exec process terminated (status: ~w)\n",
-            [self(), Status])
+        case wait_port_exit(State#state.port) of
+        0 -> ok;
+        S -> error_logger:warning_msg("~w - exec process terminated (status: ~w)\n",
+                [self(), S])
+        end
     catch _:_ ->
         ok
     end.
@@ -829,3 +835,90 @@ next_trans(_) ->
 
 print(Stream, OsPid, Data) ->
     io:format("Got ~w from ~w: ~p\n", [Stream, OsPid, Data]).
+
+%%%---------------------------------------------------------------------
+%%% Unit testing
+%%%---------------------------------------------------------------------
+
+-ifdef(EUNIT).
+
+-define(receiveMatch(A, Timeout),
+    (fun() ->
+        receive
+            _M -> ?assertMatch(A, _M)
+        after Timeout ->
+            ?assertMatch(A, timeout)
+        end
+    end)()).
+
+exec_test_() ->
+    {setup,
+        fun()    -> {ok, Pid} = exec:start([]), Pid end,
+        fun(Pid) -> exit(Pid, kill) end,
+        {timeout, 60, 
+            [
+                ?_test(test_monitor()),
+                ?_test(test_sync()),
+                ?_test(test_stdin()),
+                ?_test(test_std(stdout)),
+                ?_test(test_std(stderr)),
+                ?_test(test_env()),
+                ?_test(test_kill_timeout())
+            ]}}.
+
+test_monitor() ->
+    {ok, P, _} = exec:run("echo ok", [{stdout, null}, monitor]),
+    ?receiveMatch({'DOWN', _, process, P, normal}, 5000).
+
+test_sync() ->
+    ?assertMatch({ok, [{stdout, [<<"Test\n">>]}, {stderr, [<<"ERR\n">>]}]},
+        exec:run("echo Test; echo ERR 1>&2", [stdout, stderr, sync])).
+
+test_stdin() ->
+    {ok, P, I} = exec:run("read x; echo \"Got: $x\"", [stdin, stdout, monitor]),
+    ok = exec:send(I, <<"Test data\n">>),
+    ?receiveMatch({stdout,I,<<"Got: Test data\n">>}, 3000),
+    ?receiveMatch({'DOWN', _, process, P, normal}, 1000).
+
+test_std(Stream) ->
+    Suffix = case Stream of
+             stderr -> " 1>&2";
+             stdout -> ""
+             end,
+    {ok, _, I} = exec:run("for i in 1 2; do echo TEST$i; sleep 0.05; done" ++ Suffix, [Stream]),
+    ?receiveMatch({Stream,I,<<"TEST1\n">>}, 3000),
+    ?receiveMatch({Stream,I,<<"TEST2\n">>}, 3000),
+    
+    Filename = temp_file(),
+    try
+        ?assertMatch({ok, []}, exec:run("echo Test"++Suffix, [{Stream, Filename}, sync])),
+        ?assertMatch({ok, <<"Test\n">>}, file:read_file(Filename)),
+
+        ?assertMatch({ok, []}, exec:run("echo Test"++Suffix, [{Stream, Filename}, sync])),
+        ?assertMatch({ok, <<"Test\n">>}, file:read_file(Filename)),
+
+        ?assertMatch({ok, []}, exec:run("echo Test2"++Suffix, [{Stream, Filename, [append]}, sync])),
+        ?assertMatch({ok, <<"Test\nTest2\n">>}, file:read_file(Filename))
+
+    after
+        ?assertEqual(ok, file:delete(Filename))
+    end.
+
+test_env() ->
+    ?assertMatch({ok, [{stdout, [<<"X\n">>]}]},
+        exec:run("echo $XXX", [stdout, {env, [{"XXX", "X"}]}, sync])).
+
+test_kill_timeout() ->
+    {ok, P, I} = exec:run("trap '' SIGTERM; sleep 30", [{kill_timeout, 1}, monitor]),
+    exec:stop(I),
+    ?receiveMatch({'DOWN', _, process, P, normal}, 6000).
+
+temp_file() ->
+    Dir =   case os:getenv("TEMP") of
+            false -> "/tmp";
+            Path  -> Path
+            end,
+    {I1, I2, I3}  = now(),
+    filename:join(Dir, io_lib:format("exec_temp_~w_~w_~w", [I1, I2, I3])).
+
+-endif.
