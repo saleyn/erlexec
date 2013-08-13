@@ -34,14 +34,14 @@ OS processes.
 <ol>
 <li>Starting, stopping OS commands and getting their OS process IDs.</li>
 <li>Setting OS command working directory, environment, effective user,
-    process priority.
+    process priority.</li>
 <li>Providing custom termination command for killing a process or relying
     on default SIGTERM/SIGKILL behavior.  Specifying custom timeout
-    for SIGKILL after the termination command or SIGTERM was executed.
+    for SIGKILL after the termination command or SIGTERM was executed.</li>
 <li>Ability to link Erlang processes to OS processes (via intermediate
     Erlang Pids that are linked to an associated OS process).</li>
-<li>Ability to monitor the termination of OS processes.
-<li>Ability to execute OS processes synchronously and asynchronously.
+<li>Ability to monitor the termination of OS processes.</li>
+<li>Ability to execute OS processes synchronously and asynchronously.</li>
 <li>Proper cleanup of OS processes at port program termination time.</li>
 <li>Communicating with an OS process via its STDIN.</li> 
 <li>Redirecting STDOUT and STDERR of an OS process to a file, erlang process,
