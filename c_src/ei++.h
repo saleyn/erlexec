@@ -519,7 +519,7 @@ namespace ei {
             return sz;
         }
 
-        /// Print input buffer to stream to stream.
+        /// Print input buffer to stream
         int print(std::ostream& os, const std::string& header = "");
 
         /// Assumes the command is encoded as an atom. This function takes an
@@ -527,15 +527,13 @@ namespace ei {
         /// string in the <cmds> array is returned.
         template <int M>
         int decodeAtomIndex(const char* (&cmds)[M], std::string& cmd, int firstIdx = 0) {
-            if (decodeAtom(cmd) < 0)
-                return firstIdx-2;
+            if (decodeAtom(cmd) < 0) return -1;
             return stringIndex(cmds, cmd, firstIdx, M);
         }
 
         /// Same as previous version but <cmds> array must have the last element being NULL
         int decodeAtomIndex(const char** cmds, std::string& cmd, int firstIdx = 0) {
-            if (decodeAtom(cmd) < 0)
-                return firstIdx-2;
+            if (decodeAtom(cmd) < 0) return -1;
             return stringIndex(cmds, cmd, firstIdx);
         }
 
