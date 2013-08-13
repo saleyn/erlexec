@@ -1,17 +1,527 @@
 <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
 <html>
 <head>
-<title>The exec application</title>
+<!-- HEAD -->
+  <link rel="stylesheet" type="text/css" href="stylesheet.css" title="EDoc">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.2.0/styles/github-dark-dimmed.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.2.0/highlight.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.2.0/languages/erlang.min.js"></script>
+  <script>hljs.highlightAll();</script>
 </head>
-<frameset cols="20%,80%">
-<frame src="modules-frame.html" name="modulesFrame" title="">
+<body>
+<a name="top"></a>
+<div class="navcontainer">
+  <div class="navbar">
+    <div class="dropdown">
+      <i class="fa fa-bars dropbtn"></i>
+      <div class="dropdown-content">
+<a class="mod" href="exec_app.html">exec_app</a>
+<a class="mod" href="exec.html">exec</a>
+      </div>
+    </div>
+    <a class="mod" href="index.html">Overview</a>
+  </div>
+</div>
+<div class="main">
+<a name="top"></a>
+<h1>OS Process Manager for Erlang VM</h1>
+<p><b>Version:</b> 1.9-154-g1a230ef</p>
+<p><b>Authors:</b> Serge Aleynikov (<a href="mailto:saleyn(at)gmail.com"><tt>saleyn(at)gmail.com</tt></a>).</p>
 
-<frame src="overview-summary.html" name="overviewFrame" title="">
-<noframes>
-<h2>This page uses frames</h2>
-<p>Your browser does not accept frames.
-<br>You should go to the <a href="overview-summary.html">non-frame version</a> instead.
-</p>
-</noframes>
-</frameset>
+
+<h3><a name="Erlexec_-_OS_Process_Manager_for_the_Erlang_VM">Erlexec - OS Process Manager for the Erlang VM</a></h3>
+
+
+<p><a href="https://travis-ci.org/saleyn/erlexec"><img src="https://travis-ci.org/saleyn/erlexec.svg?branch=master"></a>
+<a href="https://hex.pm/packages/erlexec"><img src="https://img.shields.io/hexpm/v/erlexec.svg"></a>
+<a href="https://hex.pm/packages/erlexec"><img src="https://img.shields.io/hexpm/dt/erlexec.svg"></a></p>
+
+
+<h2> Summary </h2>
+
+<p>Execute and control OS processes from Erlang/OTP.</p>
+
+<p>This project implements an Erlang application with a C++ port program
+that gives light-weight Erlang processes fine-grain control over
+execution of OS processes.</p>
+
+<p>The following features are supported:</p>
+
+ <ul>
+   <li>Start/stop OS commands and get their OS process IDs, and termination reason
+  (exit code, signal number, core dump status).
+   </li>
+   <li>Manage/monitor externally started OS processes.
+   </li>
+   <li>Execute OS processes synchronously and asynchronously.
+   </li>
+   <li>Set OS command's working directory, environment, process group, effective user, process priority.
+   </li>
+   <li>Provide custom termination command for killing a process or relying on
+  default SIGTERM/SIGKILL behavior.
+   </li>
+   <li>Specify custom timeout for SIGKILL after the termination command or SIGTERM
+  was executed and the running OS child process is still alive.
+   </li>
+   <li>Link an Erlang processes to OS processes (via intermediate Erlang Pids that are linked
+  to an associated OS process).
+   </li>
+   <li>Monitor termination of OS processes.
+   </li>
+   <li>Terminate all processes beloging to an OS process group.
+   </li>
+   <li>Kill processes belonging to an OS process group at process exit.
+   </li>
+   <li>Communicate with an OS process via its STDIN.
+   </li>
+   <li>Redirect STDOUT and STDERR of an OS process to a file, erlang process, or a custom function.
+  When redirected to a file, the file can be open in append/truncate mode, and given creation
+  access mask.
+   </li>
+   <li>Run interactive processes with psudo-terminal pty support.
+   </li>
+   <li>Execute OS processes under different user credentials (using Linux capabilities).
+   </li>
+   <li>Perform proper cleanup of OS child processes at port program termination time.
+   </li>
+
+ </ul><p>
+This application provides significantly better control
+over OS processes than built-in <code>erlang:open_port/2</code> command with a
+<code>{spawn, Command}</code> option, and performs proper OS child process cleanup
+when the emulator exits. </p>
+
+<p>The <code>erlexec</code> application has been in production use by Erlang and Elixir systems,
+and is stable.</p>
+
+<h2> Donations </h2>
+If you find this project useful, please donate to:
+ <ul>
+   <li>Bitcoin: <code>12pt8TcoMWMkF6iY66VJQk95ntdN4pFihg</code>
+   </li>
+   <li>Ethereum: <code>0x268295486F258037CF53E504fcC1E67eba014218</code>
+   </li>
+
+ </ul>
+<h2> Supported Platforms</h2>
+
+<p>Linux, Solaris, FreeBSD, OpenBSD, MacOS X</p>
+
+<h2> DOCUMENTATION </h2>
+
+<p>See <a href="http://saleyn.github.io/erlexec" target="_top"><tt>http://saleyn.github.io/erlexec</tt></a></p>
+
+<h2> BUILDING </h2>
+
+<p>Make sure you have <a href="http://github.com/basho/rebar">rebar</a> or
+<a href="http://github.com/basho/rebar3">rebar3</a> installed locally and the rebar script
+is in the path.</p>
+
+<p>If you are deploying the application on Linux and would like to
+take advantage of exec-port running tasks using effective user IDs
+different from the real user ID that started exec-port, then
+either make sure that libcap-dev[el] library is installed or make
+sure that the user running the port program has <code>sudo</code> rights.</p>
+
+<p>OS-specific libcap-dev installation instructions:</p>
+
+ <ul>
+   <li>Fedora, CentOS: "yum install libcap-devel"
+   </li>
+   <li>Ubuntu:         "apt-get install libcap-dev"
+   </li>
+
+ </ul>
+<pre ><code class="language-erlang">$ git clone git&commat;github.com:saleyn/erlexec.git
+$ make
+# NOTE: for disabling optimized build of exec-port, do the following instead:
+$ OPTIMIZE=0 make</code></pre >
+
+<p>By default port program's implementation uses <code>poll(2)</code> call for event
+demultiplexing. If you prefer to use <code>select(2)</code>, set the following environment
+variable:</p>
+
+
+<pre ><code class="language-erlang">$ USE_POLL=0 make</code></pre >
+
+<h2> LICENSE </h2>
+
+<p>The program is distributed under BSD license.</p>
+
+<p>Copyright @copy; 2003 Serge Aleynikov</p>
+
+<h2> Architecture</h2>
+
+
+<pre ><code class="language-erlang">  *---------------------------*
+  |   +----+ +----+ +----+    |
+  |   |Pid1| |Pid2| |PidN|    |   Erlang light-weight Pids associated
+  |   +----+ +----+ +----+    |   one-to-one with managed OsPids
+  |         \   |   /         |
+  |          \  |  /          |
+  |           \ | / (links)   |
+  |         +------+          |
+  |         | exec |          |   Exec application running in Erlang VM
+  |         +------+          |
+  | Erlang VM   |             |
+  *-------------+-------------*
+                |
+          +-----------+
+          | exec-port |           Port program (separate OS process)
+          +-----------+
+           /    |    \
+ (optional stdin/stdout/stderr pipes)
+         /      |      \
+    +------+ +------+ +------+
+    |OsPid1| |OsPid2| |OsPidN|    Managed Child OS processes
+    +------+ +------+ +------+</code></pre >
+
+<h2> Configuration Options</h2>
+
+<p>See description of types in <a docgen-rel="seetype" docgen-href="exec#exec_options/0" href="exec.html#type-exec_options"><code>exec:exec_options()</code></a>.</p>
+
+<p>The <code>exec-port</code> program requires the <code>SHELL</code> variable to be set. If you are
+running Erlang inside a docker container, you might need to ensure that <code>SHELL</code>
+is properly set prior to starting the emulator.</p>
+
+<h2> Examples</h2>
+
+<h3> Starting/stopping an OS process</h3>
+
+
+<pre ><code class="language-erlang">1&gt; exec:start([]).                                      % Start the port program.
+{ok,&lt;0.32.0&gt;}
+2&gt; {ok, _, I} = exec:run_link("sleep 1000", []).        % Run a shell command to sleep for 1000s.
+{ok,&lt;0.34.0&gt;,23584}
+3&gt; exec:stop(I).                                        % Kill the shell command.
+ok                                                      % Note that this could also be accomplished
+                                                        % by doing exec:stop(pid(0,34,0)).</code></pre >
+
+<h3> Clearing environment or unsetting an env variable of the child process</h3>
+
+
+<pre ><code class="language-erlang">%% Clear environment with {env, [clear]} option:
+10&gt; f(Bin), {ok, [{stdout, [Bin]}]} = exec:run("env", [sync, stdout, {env, [clear]}]), p(re:split(Bin, &lt;&lt;"\n"&gt;&gt;)).
+[&lt;&lt;"PWD=/home/..."&gt;&gt;,&lt;&lt;"SHLVL=0"&gt;&gt;, &lt;&lt;"_=/usr/bin/env"&gt;&gt;,&lt;&lt;&gt;&gt;]
+ok
+%% Clear env and add a "TEST" env variable:
+11&gt; f(Bin), {ok, [{stdout, [Bin]}]} = exec:run("env", [sync, stdout, {env, [clear, {"TEST", "xxx"}]}]), p(re:split(Bin, &lt;&lt;"\n"&gt;&gt;)).
+[&lt;&lt;"PWD=/home/..."&gt;&gt;,&lt;&lt;"SHLVL=0"&gt;&gt;, &lt;&lt;"_=/usr/bin/env"&gt;&gt;,&lt;&lt;"TEST=xxx"&gt;&gt;,&lt;&lt;&gt;&gt;]
+%% Unset an "EMU" env variable:
+11&gt; f(Bin), {ok, [{stdout, [Bin]}]} = exec:run("env", [sync, stdout, {env, [{"EMU", false}]}]), p(re:split(Bin, &lt;&lt;"\n"&gt;&gt;)).
+[...]
+ok</code></pre >
+
+<h3> Running exec-port as another effective user</h3>
+
+<p>In order to be able to use this feature the current user must either have <code>sudo</code>
+rights or the <code>exec-port</code> file must be owned by <code>root</code> and have the SUID bit set
+(use: <code>chown root:root exec-port; chmod 4555 exec-port</code>):</p>
+
+
+
+<pre ><code class="language-erlang">$ ll priv/x86_64-unknown-linux-gnu/exec-port
+-rwsr-xr-x 1 root root 777336 Dec  8 10:02 ./priv/x86_64-unknown-linux-gnu/exec-port</code></pre >
+
+<p>If the effective user doesn't have rights to access the <code>exec-port</code>
+program in the real user's directory, then the <code>exec-port</code> can be copied to some
+shared location, which will be specified at startup using
+<code>{portexe, "/path/to/exec-port"}</code>.</p>
+
+
+
+<pre ><code class="language-erlang">$ cp $(find . -name exec-port) /tmp
+$ chmod 755 /tmp/exec-port
+$ whoami
+serge
+$ erl
+1&gt; exec:start([{user, "wheel"}, {portexe, "/tmp/exec-port"}]).  % Start the port program as effective user "wheel".
+{ok,&lt;0.32.0&gt;}
+$ ps haxo user,comm | grep exec-port
+wheel      exec-port</code></pre >
+
+<h3> Allowing exec-port to run commands as other effective users</h3>
+
+<p>In order to be able to use this feature the current user must either have <code>sudo</code>
+rights or the <code>exec-port</code> file must have the SUID bit set, and the <code>exec-port</code> file
+must have the capabilities set as described in the "Build" section above.</p>
+
+<p>The port program will initially be started as <code>root</code>, and then it will
+switch the effective user to <code>{user, User}</code> and set process capabilities to
+<code>cap_setuid,cap_kill,cap_sys_nice</code>.  After that it'll allow to run child programs
+under effective users listed in the <code>{limit_users, Users}</code> option.</p>
+
+
+
+<pre ><code class="language-erlang">$ whoami
+serge
+$ erl
+1&gt; Opts = [root, {user, "wheel"}, {limit_users, ["alex","guest"]}],
+2&gt; exec:start(Opts).                                    % Start the port program as effective user "wheel"
+                                                        % and allow it to execute commands as "alex" or "guest".
+{ok,&lt;0.32.0&gt;}
+3&gt; exec:run("whoami", [sync, stdout, {user, "alex"}]).  % Command is executed under effective user "alex"
+{ok,[{stdout,[&lt;&lt;"alex\n"&gt;&gt;]}]}
+$ ps haxo user,comm | grep exec-port
+wheel      exec-port</code></pre >
+
+<h3> Running the port program as root</h3>
+
+<p>While running the port program as root is highly discouraged, since it opens a security
+hole that gives users an ability to damage the system, for those who might need such an
+option, here is how to get it done (PROCEED AT YOUR OWN RISK!!!).</p>
+
+<p>Note: in this case <code>exec</code> would use <code>sudo exec-port</code> to run it as <code>root</code> or the <code>exec-port</code>
+must have the SUID bit set (4555) and be owned by <code>root</code>.  The other (DANGEROUS and
+firmly DISCOURAGED!!!) alternative is to run <code>erl</code> as <code>root</code>:</p>
+
+
+
+<pre ><code class="language-erlang">$ whoami
+serge
+# Make sure the exec-port can run as root:
+$ sudo _build/default/lib/erlexec/priv/*/exec-port --whoami
+root
+$ erl
+1&gt; exec:start([root, {user, "root"}, {limit_users, ["root"]}]).
+2&gt; exec:run("whoami", [sync, stdout]).
+{ok, [{stdout, [&lt;&lt;"root\n"&gt;&gt;]}]}
+$ ps haxo user,comm | grep exec-port
+root       exec-port</code></pre >
+
+<h3> Killing an OS process</h3>
+
+<p>Note that killing a process can be accomplished by running kill(3) command
+in an external shell, or by executing exec:kill/2.</p>
+
+
+<pre ><code class="language-erlang">1&gt; f(I), {ok, _, I} = exec:run_link("sleep 1000", []).
+{ok,&lt;0.37.0&gt;,2350}
+2&gt; exec:kill(I, 15).
+ok
+** exception error: {exit_status,15}                    % Our shell died because we linked to the
+                                                        % killed shell process via exec:run_link/2.
+3&gt; exec:status(15).                                     % Examine the exit status.
+{signal,15,false}                                       % The program got SIGTERM signal and produced
+                                                        % no core file.</code></pre >
+
+<h3> Using a custom success return code</h3>
+
+
+<pre ><code class="language-erlang">1&gt; exec:start_link([]).
+{ok,&lt;0.35.0&gt;}
+2&gt; exec:run_link("sleep 1", [{success_exit_code, 0}, sync]).
+{ok,[]}
+3&gt; exec:run("sleep 1", [{success_exit_code, 1}, sync]).
+{error,[{exit_status,1}]}                               % Note that the command returns exit code 1</code></pre >
+
+<h3> Redirecting OS process stdout to a file</h3>
+
+
+<pre ><code class="language-erlang">7&gt; f(I), {ok, _, I} = exec:run_link("for i in 1 2 3; do echo \"Test$i\"; done",
+    [{stdout, "/tmp/output"}]).
+8&gt; io:format("~s", [binary_to_list(element(2, file:read_file("/tmp/output")))]),
+   file:delete("/tmp/output").
+Test1
+Test2
+Test3
+ok</code></pre >
+
+<h3> Redirecting OS process stdout to screen, an Erlang process or a custom function</h3>
+
+
+<pre ><code class="language-erlang">9&gt; exec:run("echo Test", [{stdout, print}]).
+{ok,&lt;0.119.0&gt;,29651}
+Got stdout from 29651: &lt;&lt;"Test\n"&gt;&gt;
+10&gt; exec:run("for i in 1 2 3; do sleep 1; echo \"Iter$i\"; done",
+            [{stdout, fun(S,OsPid,D) -&gt; io:format("Got ~w from ~w: ~p\n", [S,OsPid,D]) end}]).
+{ok,&lt;0.121.0&gt;,29652}
+Got stdout from 29652: &lt;&lt;"Iter1\n"&gt;&gt;
+Got stdout from 29652: &lt;&lt;"Iter2\n"&gt;&gt;
+Got stdout from 29652: &lt;&lt;"Iter3\n"&gt;&gt;
+% Note that stdout/stderr options are equivanet to {stdout, self()}, {stderr, self()} 
+11&gt; exec:run("echo Hello World!; echo ERR!! 1&gt;&amp;2", [stdout, stderr]).
+{ok,&lt;0.244.0&gt;,18382}
+12&gt; flush().
+Shell got {stdout,18382,&lt;&lt;"Hello World!\n"&gt;&gt;}
+Shell got {stderr,18382,&lt;&lt;"ERR!!\n"&gt;&gt;}
+ok</code></pre >
+
+<h3> Appending OS process stdout to a file</h3>
+
+
+<pre ><code class="language-erlang">13&gt; exec:run("for i in 1 2 3; do echo TEST$i; done",
+        [{stdout, "/tmp/out", [append, {mode, 8#600}]}, sync]),
+    file:read_file("/tmp/out").
+{ok,&lt;&lt;"TEST1\nTEST2\nTEST3\n"&gt;&gt;}
+14&gt; exec:run("echo Test4; done", [{stdout, "/tmp/out", [append, {mode, 8#600}]}, sync]),
+    file:read_file("/tmp/out").
+{ok,&lt;&lt;"TEST1\nTEST2\nTEST3\nTest4\n"&gt;&gt;}
+15&gt; file:delete("/tmp/out").</code></pre >
+
+<h3> Setting up a monitor for the OS process</h3>
+
+
+<pre ><code class="language-erlang">&gt; f(I), f(P), {ok, P, I} = exec:run("echo ok", [{stdout, self()}, monitor]).
+{ok,&lt;0.263.0&gt;,18950}
+16&gt; flush().                                                                  
+Shell got {stdout,18950,&lt;&lt;"ok\n"&gt;&gt;}
+Shell got {'DOWN',18950,process,&lt;0.263.0&gt;,normal}
+ok</code></pre >
+
+<h3> Managing an externally started OS process</h3><p>
+This command allows to instruct erlexec to begin monitoring given OS process
+and notify Erlang when the process exits. It is also able to send signals to
+the process and kill it.</p>
+
+
+<pre ><code class="language-erlang">% Start an externally managed OS process and retrieve its OS PID:
+17&gt; spawn(fun() -&gt; os:cmd("echo $$ &gt; /tmp/pid; sleep 15") end).
+&lt;0.330.0&gt;  
+18&gt; f(P), P = list_to_integer(lists:reverse(tl(lists:reverse(binary_to_list(element(2,
+file:read_file("/tmp/pid"))))))).
+19355
+% Manage the process and get notified by a monitor when it exits:
+19&gt; exec:manage(P, [monitor]).
+{ok,&lt;0.334.0&gt;,19355}
+% Wait for monitor notification
+20&gt; f(M), receive M -&gt; M end.
+{'DOWN',19355,process,&lt;0.334.0&gt;,{exit_status,10}}
+ok
+21&gt; file:delete("/tmp/pid").
+ok</code></pre >
+
+<h3> Specifying a custom process shutdown delay in seconds</h3>
+
+
+<pre ><code class="language-erlang">% Execute an OS process (script) that blocks SIGTERM with custom kill timeout, and monitor
+22&gt; f(I), {ok, _, I} = exec:run("trap '' SIGTERM; sleep 30", [{kill_timeout, 3}, monitor]).
+{ok,&lt;0.399.0&gt;,26347}
+% Attempt to stop the OS process
+23&gt; exec:stop(I).
+ok
+% Wait for its completion
+24&gt; f(M), receive M -&gt; M after 10000 -&gt; timeout end.                                          
+{'DOWN',26347,process,&lt;0.403.0&gt;,normal}</code></pre >
+
+<h3> Specifying a custom kill command for a process</h3>
+
+
+<pre ><code class="language-erlang">% Execute an OS process (script) that blocks SIGTERM, and uses a custom kill command,
+% which kills it with a SIGINT. Add a monitor so that we can wait for process exit
+% notification. Note the use of the special environment variable "CHILD_PID" by the
+% kill command. This environment variable is set by the port program before invoking
+% the kill command:
+2&gt; f(I), {ok, _, I} = exec:run("trap '' SIGTERM; sleep 30", [{kill, "kill -n 2 ${CHILD_PID}"},
+                                                             {kill_timeout, 2}, monitor]).
+{ok,&lt;0.399.0&gt;,26347}
+% Try to kill by SIGTERM. This does nothing, since the process is blocking SIGTERM:
+3&gt; exec:kill(I, sigterm), f(M), receive M -&gt; M after 0 -&gt; timeout end.
+timeout
+% Attempt to stop the OS process
+4&gt; exec:stop(I).
+ok
+% Wait for its completion
+5&gt; f(M), receive M -&gt; M after 1000 -&gt; timeout end.                                          
+{'DOWN',26347,process,&lt;0.403.0&gt;,normal}</code></pre >
+
+<h3> Communicating with an OS process via STDIN</h3>
+
+
+<pre ><code class="language-erlang">% Execute an OS process (script) that reads STDIN and echoes it back to Erlang
+25&gt; f(I), {ok, _, I} = exec:run("read x; echo \"Got: $x\"", [stdin, stdout, monitor]).
+{ok,&lt;0.427.0&gt;,26431}
+% Send the OS process some data via its stdin
+26&gt; exec:send(I, &lt;&lt;"Test data\n"&gt;&gt;).                                                  
+ok
+% Get the response written to processes stdout
+27&gt; f(M), receive M -&gt; M after 10000 -&gt; timeout end.
+{stdout,26431,&lt;&lt;"Got: Test data\n"&gt;&gt;}
+% Confirm that the process exited
+28&gt; f(M), receive M -&gt; M after 10000 -&gt; timeout end.
+{'DOWN',26431,process,&lt;0.427.0&gt;,normal}</code></pre >
+
+<h3> Communicating with an OS process via STDIN and sending end-of-file</h3>
+
+
+<pre ><code class="language-erlang">2&gt; Watcher = spawn(fun F() -&gt; receive Msg -&gt; io:format("Got: ~p\n", [Msg]), F() after 60000 -&gt; ok end end).
+&lt;0.112.0&gt;
+3&gt; f(Pid), f(OsPid), {ok, Pid, OsPid} = exec:run("tac", [stdin, {stdout, Watcher}, {stderr, Watcher}]).
+{ok,&lt;0.114.0&gt;,26143}
+4&gt; exec:send(Pid, &lt;&lt;"foo\n"&gt;&gt;).
+ok
+5&gt; exec:send(Pid, &lt;&lt;"bar\n"&gt;&gt;).
+ok
+6&gt; exec:send(Pid, &lt;&lt;"baz\n"&gt;&gt;).
+ok
+7&gt; exec:send(Pid, eof).
+ok
+Got: {stdout,26143,&lt;&lt;"baz\nbar\nfoo\n"&gt;&gt;}</code></pre >
+
+<h3> Running OS commands synchronously</h3>
+
+
+<pre ><code class="language-erlang">% Execute an shell script that blocks for 1 second and return its termination code
+29&gt; exec:run("sleep 1; echo Test", [sync]).
+% By default all I/O is redirected to /dev/null, so no output is captured
+{ok,[]}
+% 'stdout' option instructs the port program to capture stdout and return it to caller
+30&gt; exec:run("sleep 1; echo Test", [stdout, sync]).
+{ok,[{stdout, [&lt;&lt;"Test\n"&gt;&gt;]}]}
+% Execute a non-existing command
+31&gt; exec:run("echo1 Test", [sync, stdout, stderr]).   
+{error,[{exit_status,32512},
+        {stderr,[&lt;&lt;"/bin/bash: echo1: command not found\n"&gt;&gt;]}]}
+% Capture stdout/stderr of the executed command
+32&gt; exec:run("echo Test; echo Err 1&gt;&amp;2", [sync, stdout, stderr]).    
+{ok,[{stdout,[&lt;&lt;"Test\n"&gt;&gt;]},{stderr,[&lt;&lt;"Err\n"&gt;&gt;]}]}
+% Redirect stderr to stdout
+33&gt; exec:run("echo Test 1&gt;&amp;2", [{stderr, stdout}, stdout, sync]).
+{ok, [{stdout, [&lt;&lt;"Test\n"&gt;&gt;]}]}</code></pre >
+
+<h3> Running OS commands with/without shell</h3>
+
+
+<pre ><code class="language-erlang">% Execute a command by an OS shell interpreter
+34&gt; exec:run("/bin/echo ok", [sync, stdout]).
+{ok, [{stdout, [&lt;&lt;"ok\n"&gt;&gt;]}]}
+% Execute an executable without a shell
+35&gt; exec:run(["/bin/echo", "ok"], [sync, stdout])).
+{ok, [{stdout, [&lt;&lt;"ok\n"&gt;&gt;]}]}
+% Execute a shell with custom options
+36&gt; exec:run(["/bin/bash", "-c", "echo ok"], [sync, stdout])).
+{ok, [{stdout, [&lt;&lt;"ok\n"&gt;&gt;]}]}</code></pre >
+
+<h3> Running OS commands with pseudo terminal (pty)</h3>
+
+
+<pre ><code class="language-erlang">% Execute a command without a pty
+37&gt; exec:run("echo hello", [sync, stdout]).
+{ok, [{stdout,[&lt;&lt;"hello\n"&gt;&gt;]}]}
+% Execute a command with a pty
+38&gt; exec:run("echo hello", [sync, stdout, pty]).
+{ok,[{stdout,[&lt;&lt;"hello"&gt;&gt;,&lt;&lt;"\r\n"&gt;&gt;]}]}</code></pre >
+ 
+<h3> Kill a process group at process exit</h3>
+
+
+<pre ><code class="language-erlang">% In the following scenario the process P0 will create a new process group
+% equal to the OS pid of that process (value = GID). The next two commands
+% are assigned to the same process group GID. As soon as the P0 process exits
+% P1 and P2 will also get terminated by signal 15 (SIGTERM):
+39&gt; {ok, P0, GID} = exec:run("sleep 10",  [{group, 0},   kill_group]).
+{ok,&lt;0.37.0&gt;,25306}
+40&gt; {ok, P1,   _} = exec:run("sleep 15",  [{group, GID}, monitor]).
+{ok,&lt;0.39.0&gt;,25307}
+41&gt; {ok, P2,   _} = exec:run("sleep 15",  [{group, GID}, monitor]).
+{ok,&lt;0.41.0&gt;,25308}
+42&gt; flush().
+Shell got {'DOWN',25307,process,&lt;0.39.0&gt;,{exit_status,15}}
+Shell got {'DOWN',25308,process,&lt;0.41.0&gt;,{exit_status,15}}
+ok</code></pre >
+
+<hr>
+</div>
+</body>
 </html>

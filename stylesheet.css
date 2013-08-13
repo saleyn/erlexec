@@ -1,145 +1,364 @@
-/* Baseline rhythm */
+html {
+  --scrollbarBG: #44565f;
+  --thumbBG: #5d7079;
+}
+
 body {
-   font-size: 16px;
-   font-family: Helvetica, sans-serif;
-   margin: 8px;
+  font-family: -apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif,Apple Color Emoji,Segoe UI Emoji;
+  margin: 0;
+  background-color: #0d1117;
+  color: #d8cebf;
+  scrollbar-width: thin;
+  /*scrollbar-color: var(--thumbBG) var(--scrollbarBG);*/
+  scrollbar-color: auto;
+}
+
+body.src {
+  margin-left: 10px;
+}
+
+element.style {
+  word-wrap: break-word;
+}
+
+code {
+  padding: 2px;
+}
+
+pre code {
+  padding: 10px;
+}
+
+pre {
+  background-color: var(--color-bg-tertiary);
+  background-color: #161b22;
+  border-radius: 6px;
+  font-size: 85%;
+  line-height: 1.5em;
+  overflow: auto;
+  padding: 0px;
+  word-wrap: normal;
+  white-space: pre;
+  margin: 0px;
 }
 
 p {
-   font-size: 1em; /* 16px */
-   line-height: 1.5em; /* 24px */
-   margin: 0 0 1.5em 0;
+  font-size: 16px;
+  line-height: 1.5em;
+  /*margin: 0 0 1.5em 0;*/
+  display: block;
+  margin-block-start: 1em;
+  margin-block-end: 1em;
+  margin-inline-start: 0px;
+  margin-inline-end: 0px;
 }
 
 h1 {
-   font-size: 1.5em; /* 24px */
-   line-height: 1em; /* 24px */
-   margin-top: 1em;
-   margin-bottom: 0em;
+  display: block;
 }
 
-h2 {
-   font-size: 1.375em; /* 22px */
-   line-height: 1.0909em; /* 24px */
-   margin-top: 1.0909em;
-   margin-bottom: 0em;
+h1, h2 {
+  border-bottom: 1px solid var(--color-border-secondary);
+  padding-bottom: .3em;
 }
-
-h3 {
-   font-size: 1.25em; /* 20px */
-   line-height: 1.2em; /* 24px */
-   margin-top: 1.2em;
-   margin-bottom: 0em;
-}
-
-h4 {
-   font-size: 1.125em; /* 18px */
-   line-height: 1.3333em; /* 24px */
-   margin-top: 1.3333em;
-   margin-bottom: 0em;
-}
-
-.class-for-16px {
-   font-size: 1em; /* 16px */
-   line-height: 1.5em; /* 24px */
-   margin-top: 1.5em;
-   margin-bottom: 0em;
-}
-
-.class-for-14px {
-   font-size: 0.875em; /* 14px */
-   line-height: 1.7143em; /* 24px */
-   margin-top: 1.7143em;
-   margin-bottom: 0em;
-}
-
-ul {
-   margin: 0 0 1.5em 0;
-   list-style-position: outside;
-}
-
-/* Customizations */
-body {
-   color: #333;
-}
-
-tt, code, pre { font-size: 0.875em }
-
-pre {
-   font-size: 0.875em; /* 14px */
-   line-height: 1.7143em; /* 24px */
-   margin: 0 1em 1.7143em;
-   padding: 0 1em;
-   background: #E0F0FF;
-}
-
-.navbar img, hr {
-   display: none;
-}
-
-.navbar {
-   background-color: #85C2FF;
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 600;
+  /*line-height: 1.25;*/
+  margin-bottom: 16px;
+  margin-left: 0;
 }
 
 table {
-   border-collapse: collapse;
+  display: block;
+  max-width: 100%;
+  overflow: auto;
+  width: 100%;
+  width: -webkit-max-content;
+  width: -moz-max-content;
+  width: max-content;
+  border-spacing: 0;
+  margin-left: 0;
 }
 
-h1 {
-   border-left: 0.5em solid #85C2FF;
-   padding-left: 0.5em;
-   background-color: #85C2FF;
+code, pre, tt {
+  font-family: ui-monospace,SFMono-Regular,SF Mono,Menlo,Consolas,Liberation Mono,monospace;
+  font-size: 12px;
+  border-radius: 6px;
+}
+
+/*
+blockquote, details, ul, dl, ol, p, pre {
+  margin-bottom: 15px;
+  margin-top: 0;
+}
+*/
+
+.class-for-16px {
+  line-height: 1.5em; /* 24px */
+  margin-top: 1.5em;
+  margin-bottom: 0em;
+}
+
+.class-for-14px {
+  line-height: 1.7143em; /* 24px */
+  margin-top: 1.7143em;
+  margin-bottom: 0em;
+}
+
+ul {
+  margin: 0 0 1.5em 0;
+  list-style-position: outside;
+}
+
+p tt {
+  padding: 5px;
+}
+
+tt, code, pre {
+  /*line-height: 24px */
+  /*margin: 0 1em 24px; */
+  /*padding: 0 1em;*/
+  background: #2d3238;
+}
+
+.navbar img, hr {
+  display: none;
+}
+
+.navbar, table th, h1, h2.indextitle {
+  /*background-color: #85C2FF;*/
+}
+
+table.frame {
+  padding: 0;
+}
+
+table.tab, table.index {
+  border-collapse: collapse;
+  border: 1px solid gray;
+}
+
+/* Column separators excluding the border */
+table.tab td.tab + td.tab
+{
+  border-left: 1px solid gray;
+}
+
+table.tab th.tab {
+  border-bottom: 1px solid gray;
+}
+
+table.tab   td,
+table.tab   th,
+dd {
+  padding: 8px;
+}
+
+dd {
+  margin-inline-start: 15px;
+}
+
+table td {
+  vertical-align: top;
+}
+
+/* table alternative row coloring */
+tr.tab:nth-child(even) {
+  background-color: #161b22;
 }
 
 h2.indextitle {
-   font-size: 1.25em; /* 20px */
-   line-height: 1.2em; /* 24px */
-   margin: -8px -8px 0.6em;
-   background-color: #85C2FF;
-   padding: 0.3em;
+  /*line-height: 24px */
+  margin: -8px -8px 0.6em;
+  padding: 0.3em;
 }
 
 ul.index {
-   list-style: none;
-   margin-left: 0em;
-   padding-left: 0;
+  list-style:  none;
+  margin-left: 0;
+  padding:     0;
 }
 
-ul.index li {
-   display: inline;
-   padding-right: 0.75em
+ul.index li,
+ol.index li,
+dl.index li {
+  display:       inline;
+  padding-left:  0.5em;
+  padding-right: 0.5em;
 }
 
-ul.definitions {
-   background-color: #E0F0FF;
+ul.index li:not(:first-child) {
+  border-left: 1px solid;
 }
 
 dt {
-   font-weight: 600;
+  font-weight: 600;
 }
 
 div.spec p {
-   margin-bottom: 0;
-   padding-left: 1.25em;
-   background-color: #E0F0FF;
+  margin-bottom: 0;
+  padding-left:  0;
 }
 
-h3.function {
-   border-left: 0.5em solid #85C2FF;
-   padding-left: 0.5em;
-   background-color: #BECFE0;
+a:not([href]) {
+  color: #84b1cc;
+  text-decoration: none;
 }
-a, a:visited, a:hover, a:active { color: #06C }
-h2 a, h3 a { color: #333 }
 
-h3.typedecl {
-   background-color: #BECFE0;
+a[href]:link, a[href]:visited, a[href]:active {
+  color: #58a6ff;
+  text-decoration: none;
+}
+
+a[href]:hover {
+  background-color: transparent;
+  text-decoration: underline;
+}
+
+a.function {
+  padding-left: 5px;
+}
+
+a tt {
+  background-color: #0d1117;
 }
 
 i {
-   font-size: 0.875em; /* 14px */
-   line-height: 1.7143em; /* 24px */
-   margin-top: 1.7143em;
-   margin-bottom: 0em;
-   font-style: normal;
+  /*line-height: 24px */
+  margin-top: 1.7143em;
+  margin-bottom: 0em;
+  font-style: normal;
 }
+
+/* Right/Left/Up/Down arrows */
+/* See: https://www.w3schools.com/howto/tryit.asp?filename=tryhow_css_arrows */
+.arrow {
+  border: solid #4f4c56;
+  border-width: 0 3px 3px 0;
+  display: inline-block;
+  padding: 3px;
+}
+.right {
+  transform: rotate(-45deg);
+  -webkit-transform: rotate(-45deg);
+}
+.left {
+  transform: rotate(135deg);
+  -webkit-transform: rotate(135deg);
+}
+.up {
+  transform: rotate(-135deg);
+  -webkit-transform: rotate(-135deg);
+}
+
+.down {
+  transform: rotate(45deg);
+  -webkit-transform: rotate(45deg);
+}
+
+/* NAVIGATION */
+
+.anchor {
+  top: -30px;  /* Position the anchor links with the offset so that clicking on them doesn't go off screen */
+}
+
+.navcontainer {
+  position: fixed;
+  top: 0;     /* Position the navbar at the top of the page */ 
+  width: 100%;
+  left: 0;
+}
+
+.navbar {
+  overflow: hidden;
+  background-color: #2e2e2f;
+  width: 100%;
+}
+
+/* Dropdown button */
+.dropdown .dropbtn {
+  border: none;
+  outline: none;
+  color: #f2f2f2;
+  padding: 14px 16px;
+  margin: 0; /* Important for vertical align on mobile phones */
+}
+
+.navbar i {
+  margin-top: 0px;
+}
+
+.navbar a {
+  float: left;
+  color: #f2f2f2;
+  text-align: center;
+  padding: 14px 16px;
+  text-decoration: none;
+  font-size: 17px;
+}
+
+.navbar a:link,
+.navbar a:visited,
+.navbar a:active {
+  color: #f2f2f2;
+  text-decoration: none;
+}
+
+.navbar a:hover {
+  background: #ddd;
+  color: black;
+}
+
+.main {
+  padding: 16px;
+  margin-top: 30px;
+  /* height: 1500px; */ /* Example to enable scrolling */
+}
+
+/* Dropdown Menu */
+/* The container <div> - needed to position the dropdown content */
+.dropdown {
+  float: left;
+  overflow: hidden;
+  display:inline-block;
+}
+
+.dropdown-content {
+  float: left;
+  display: none;
+  position: absolute;
+  background-color: #3a3a3c;
+  min-width: 160px;
+  box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+  z-index:1;
+}
+
+.dropdown-content a {
+  padding: 12px 16px;
+  margin-left: 0px;
+  float: none;
+}
+
+.dropdown-content a.mod {
+  float: none;
+  /*color: black; */
+  padding: 2px 10px;
+  text-decoration: none;
+  display: block;
+  text-align: left;
+  margin-left: 6px;
+  margin-right: 6px;
+  border-radius: 6px;
+}
+
+.dropdon-content a.overview {
+  color
+}
+
+.dropdown-content a:hover {
+  background-color: #ddd;
+}
+
+.dropdown:hover .dropdown-content {display:block; } 
+
+
