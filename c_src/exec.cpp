@@ -91,9 +91,15 @@ using namespace ei;
 
 #define BUF_SIZE 2048
 
-/* In the event we have tried to kill something, wait this many
- * seconds and then *really* kill it with SIGKILL if needs be.  */
+// In the event we have tried to kill something, wait this many
+// seconds and then *really* kill it with SIGKILL if needs be
 #define KILL_TIMEOUT_SEC 5
+
+// Max number of seconds to sleep in the select() call
+#define SLEEP_TIMEOUT_SEC 5
+
+// Number of seconds allowed for cleanup before exit
+#define FINALIZE_DEADLINE_SEC 10
 
 //-------------------------------------------------------------------------
 // Global variables
@@ -104,7 +110,7 @@ extern char **environ; // process environment
 ei::Serializer eis(/* packet header size */ 2);
 
 sigjmp_buf  jbuf;
-static int  alarm_max_time  = 12;
+static int  alarm_max_time  = FINALIZE_DEADLINE_SEC + 2;
 static int  debug           = 0;
 static bool oktojump        = false;
 static int  terminated      = 0;    // indicates that we got a SIGINT / SIGTERM event
@@ -174,29 +180,29 @@ class CmdInfo;
 // Local Functions
 //-------------------------------------------------------------------------
 
-int   send_ok(int transId, pid_t pid = -1);
-int   send_pid_status_term(const PidStatusT& stat);
-int   send_error_str(int transId, bool asAtom, const char* fmt, ...);
-int   send_pid_list(int transId, const MapChildrenT& children);
-int   send_ospid_output(int pid, const char* type, const char* data, int len);
+int     send_ok(int transId, pid_t pid = -1);
+int     send_pid_status_term(const PidStatusT& stat);
+int     send_error_str(int transId, bool asAtom, const char* fmt, ...);
+int     send_pid_list(int transId, const MapChildrenT& children);
+int     send_ospid_output(int pid, const char* type, const char* data, int len);
 
-pid_t start_child(CmdOptions& op, std::string& err);
-int   kill_child(pid_t pid, int sig, int transId, bool notify=true);
-int   check_children(int& isTerminated, bool notify = true);
-bool  process_pid_input(CmdInfo& ci);
-void  process_pid_output(CmdInfo& ci, int maxsize = 4096);
-void  stop_child(pid_t pid, int transId, const TimeVal& now);
-int   stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify = true);
-void  erase_child(MapChildrenT::iterator& it);
+pid_t   start_child(CmdOptions& op, std::string& err);
+int     kill_child(pid_t pid, int sig, int transId, bool notify=true);
+double  check_children(int& isTerminated, bool notify = true);
+bool    process_pid_input(CmdInfo& ci);
+void    process_pid_output(CmdInfo& ci, int maxsize = 4096);
+void    stop_child(pid_t pid, int transId, const TimeVal& now);
+int     stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify = true);
+void    erase_child(MapChildrenT::iterator& it);
 
-int process_command();
-void initialize(int userid);
-int finalize();
-int set_nonblock_flag(pid_t pid, int fd, bool value);
-int erl_exec_kill(pid_t pid, int signal);
-int open_file(const char* file, bool append, const char* stream,
-              const char* cmd, ei::StringBuffer<128>& err, int mode = DEF_MODE);
-int open_pipe(int fds[2], const char* stream, ei::StringBuffer<128>& err);
+int     process_command();
+void    initialize(int userid, bool use_alt_fds);
+int     finalize();
+int     set_nonblock_flag(pid_t pid, int fd, bool value);
+int     erl_exec_kill(pid_t pid, int signal);
+int     open_file(const char* file, bool append, const char* stream,
+                  ei::StringBuffer<128>& err, int mode = DEF_MODE);
+int     open_pipe(int fds[2], const char* stream, ei::StringBuffer<128>& err);
 
 //-------------------------------------------------------------------------
 // Types
@@ -469,6 +475,7 @@ int main(int argc, char* argv[])
     fd_set readfds, writefds;
     struct sigaction sact, sterm;
     int userid = 0;
+    bool use_alt_fds = false;
 
     sterm.sa_handler = gotsignal;
     sigemptyset(&sterm.sa_mask);
@@ -500,8 +507,7 @@ int main(int argc, char* argv[])
                 else
                     usage(argv[0]);
             } else if (strcmp(argv[res], "-n") == 0) {
-                eis.close_handles(); // Close stdin, stdout
-                eis.set_handles(3, 4);
+                use_alt_fds = true;
             } else if (strcmp(argv[res], "-user") == 0 && res+1 < argc && argv[res+1][0] != '-') {
                 char* run_as_user = argv[++res];
                 struct passwd *pw = NULL;
@@ -514,7 +520,7 @@ int main(int argc, char* argv[])
         }
     }
 
-    initialize(userid);
+    initialize(userid, use_alt_fds);
 
     while (!terminated) {
 
@@ -527,8 +533,12 @@ int main(int argc, char* argv[])
 
         int maxfd = eis.read_handle();
 
-        while (!terminated && !exited_children.empty())
-            check_children(terminated);
+        double wakeup = SLEEP_TIMEOUT_SEC;
+
+        while (!terminated && !exited_children.empty() && wakeup >= 0) {
+            double n = check_children(terminated);
+            wakeup = std::min(wakeup, n);
+        }
 
         // Set up all stdout/stderr input streams that we need to monitor and redirect to Erlang
         for(MapChildrenT::iterator it=children.begin(), end=children.end(); it != end; ++it)
@@ -537,13 +547,14 @@ int main(int argc, char* argv[])
 
         check_pending(); // Check for pending signals arrived while we were in the signal handler
 
-        if (terminated) break;
+        if (terminated || wakeup < 0) break;
 
         oktojump = 1;
-        ei::TimeVal timeout(KILL_TIMEOUT_SEC, 0);
+        ei::TimeVal timeout((int)wakeup, (wakeup - (int)wakeup) * 1000000);
 
         if (debug > 2)
-            fprintf(stderr, "Selecting maxfd=%d\r\n", maxfd);
+            fprintf(stderr, "Selecting maxfd=%d (sleep={%ds,%dus})\r\n",
+                maxfd, timeout.sec(), timeout.usec());
 
         int cnt = select (maxfd+1, &readfds, &writefds, (fd_set *) 0, &timeout.timeval());
         int interrupted = (cnt < 0 && errno == EINTR);
@@ -719,7 +730,7 @@ int process_command()
     return 0;
 }
 
-void initialize(int userid)
+void initialize(int userid, bool use_alt_fds)
 {
     // If we are root, switch to non-root user and set capabilities
     // to be able to adjust niceness and run commands as other users.
@@ -797,6 +808,15 @@ void initialize(int userid)
         exit(10);
     }
 
+    if (use_alt_fds) {
+        // TODO: when closing stdin/stdout we need to ensure that redirected
+        // streams in the forked children have FDs different from 0,1,2 or else
+        // wrong file handles get closed. Therefore for now just leave
+        // stdin/stdout open even when not needed
+
+        //eis.close_handles(); // Close stdin, stdout
+        eis.set_handles(3, 4);
+    }
 }
 
 int finalize()
@@ -810,7 +830,7 @@ int finalize()
     erl_exec_kill(0, SIGTERM); // Kill all children in our process group
 
     TimeVal now(TimeVal::NOW);
-    TimeVal deadline(now, 6, 0);
+    TimeVal deadline(now, FINALIZE_DEADLINE_SEC, 0);
 
     while (children.size() > 0) {
         sigsetjmp(jbuf, 1);
@@ -836,7 +856,7 @@ int finalize()
             timeout = deadline - timeout;
 
             oktojump = 1;
-            select (0, (fd_set *)0, (fd_set *)0, (fd_set *) 0, &timeout);
+            while (select(0, (fd_set *)0, (fd_set *)0, (fd_set *)0, &timeout) < 0 && errno == EINTR);
             oktojump = 0;
         }
     }
@@ -852,7 +872,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
     enum { RD = 0, WR = 1 };
 
     int stream_fd[][2] = {
-        // ReadFD           WriteFD
+        // ChildReadFD    ChildWriteFD
         { REDIRECT_NULL, REDIRECT_NONE },
         { REDIRECT_NONE, REDIRECT_NULL },
         { REDIRECT_NONE, REDIRECT_NULL }
@@ -862,9 +882,9 @@ pid_t start_child(CmdOptions& op, std::string& error)
 
     // Optionally setup stdin/stdout/stderr redirect
     for (int i=STDIN_FILENO; i <= STDERR_FILENO; i++) {
-        int  crw        = i==0 ? RD : WR;
-        int  cfd        = op.stream_fd(i);
-        int* sfd        = stream_fd[i];
+        int  crw = i==0 ? RD : WR;
+        int  cfd = op.stream_fd(i);
+        int* sfd = stream_fd[i];
 
         // Optionally setup stdout redirect
         switch (cfd) {
@@ -893,7 +913,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
                 break;
             case REDIRECT_FILE: {
                 sfd[crw] = open_file(op.stream_file(i), op.stream_append(i),
-                                     stream_name(i), op.cmd(), err, op.stream_mode(i));
+                                     stream_name(i), err, op.stream_mode(i));
                 if (sfd[crw] < 0) {
                     error = err.c_str();
                     return -1;
@@ -926,8 +946,8 @@ pid_t start_child(CmdOptions& op, std::string& error)
 
         // Setup stdin/stdout/stderr redirect
         for (int fd=STDIN_FILENO; fd <= STDERR_FILENO; fd++) {
-            int  crw = fd==STDIN_FILENO ? RD : WR;
-            int* sfd = stream_fd[fd];
+            int crw       = fd==STDIN_FILENO ? RD : WR;
+            int (&sfd)[2] = stream_fd[fd];
 
             // Set up stdin/stdout/stderr redirect
             close(sfd[fd==STDIN_FILENO ? WR : RD]);         // Close parent end of child pipes
@@ -1223,10 +1243,12 @@ void erase_child(MapChildrenT::iterator& it)
     children.erase(it);
 }
 
-int check_children(int& isTerminated, bool notify)
+double check_children(int& isTerminated, bool notify)
 {
     if (debug > 2)
         fprintf(stderr, "Checking %ld exited children\r\n", exited_children.size());
+
+    double wakeup = SLEEP_TIMEOUT_SEC;
 
     for (MapChildrenT::iterator it=children.begin(), end=children.end(); it != end; ++it) {
         TimeVal now(TimeVal::NOW);
@@ -1236,8 +1258,9 @@ int check_children(int& isTerminated, bool notify)
         int n = erl_exec_kill(pid, 0);
 
         if (n == 0) { // process is alive
+            double diff = 0;
             /* If a deadline has been set, and we're over it, wack it. */
-            if (!it->second.deadline.zero() && now.diff(it->second.deadline) > 0)
+            if (!it->second.deadline.zero() && (diff = it->second.deadline.diff(now)) <= 0)
                 stop_child(it->second, 0, now, false);
 
             while ((n = waitpid(pid, &status, WNOHANG)) < 0 && errno == EINTR);
@@ -1254,7 +1277,8 @@ int check_children(int& isTerminated, bool notify)
                         fprintf(stderr, "Pid %d %swas resumed by delivery of SIGCONT\r\n",
                             pid, it->second.managed ? "(managed) " : "");
                 }
-            }
+            } else
+                wakeup = std::min(std::max(0.0, diff), wakeup);
         } else if (n < 0 && errno == ESRCH) {
             exited_children.push_back(std::make_pair(pid, -1));
         }
@@ -1284,7 +1308,7 @@ int check_children(int& isTerminated, bool notify)
         exited_children.pop_front();
     }
 
-    return 0;
+    return wakeup;
 }
 
 int send_pid_list(int transId, const MapChildrenT& children)
@@ -1357,7 +1381,7 @@ int send_ospid_output(int pid, const char* type, const char* data, int len)
 }
 
 int open_file(const char* file, bool append, const char* stream,
-              const char* cmd, ei::StringBuffer<128>& err, int mode)
+              ei::StringBuffer<128>& err, int mode)
 {
     int flags = O_RDWR | O_CREAT | (append ? O_APPEND : O_TRUNC);
     int fd    = open(file, flags, mode);
@@ -1366,8 +1390,8 @@ int open_file(const char* file, bool append, const char* stream,
         return -1;
     }
     if (debug)
-        fprintf(stderr, "  Redirecting %s of cmd '%s' to file: '%s' (fd=%d)\r\n",
-            stream, cmd, file, fd);
+        fprintf(stderr, "  Redirecting [%s -> {file:%s, fd:%d}]\r\n",
+            stream, file, fd);
 
     return fd;
 }
@@ -1385,7 +1409,7 @@ int open_pipe(int fds[2], const char* stream, ei::StringBuffer<128>& err)
         return -1;
     }
     if (debug)
-        fprintf(stderr, "  Redirecting [%s -> pipe(rd=%d, wr=%d)]\r\n", stream, fds[0], fds[1]);
+        fprintf(stderr, "  Redirecting [%s -> pipe:{r=%d,w=%d}]\r\n", stream, fds[0], fds[1]);
 
     return 0;
 }
