@@ -223,16 +223,12 @@ private:
     int                     m_std_stream_mode[3];
 
     void init_streams() {
-        m_std_stream[STDOUT_FILENO] = CS_DEV_NULL;
-        m_std_stream[STDERR_FILENO] = CS_DEV_NULL;
-
         for (int i=STDIN_FILENO; i <= STDERR_FILENO; i++) {
             m_std_stream_append[i]  = false;
             m_std_stream_mode[i]    = DEF_MODE;
-            m_std_stream_fd[i]      = REDIRECT_NONE;
+            m_std_stream_fd[i]      = REDIRECT_NULL;
+            m_std_stream[i]         = CS_DEV_NULL;
         }
-
-        m_std_stream_fd[STDIN_FILENO]  = REDIRECT_NULL;
     }
 
 public:
@@ -856,9 +852,10 @@ pid_t start_child(CmdOptions& op, std::string& error)
     enum { RD = 0, WR = 1 };
 
     int stream_fd[][2] = {
+        // ReadFD           WriteFD
         { REDIRECT_NULL, REDIRECT_NONE },
-        { REDIRECT_NONE, REDIRECT_NONE },
-        { REDIRECT_NONE, REDIRECT_NONE }
+        { REDIRECT_NONE, REDIRECT_NULL },
+        { REDIRECT_NONE, REDIRECT_NULL }
     };
 
     ei::StringBuffer<128> err;

@@ -226,15 +226,20 @@ ok
 ```
 % Execute an shell script that blocks for 1 second and return its termination code
 29> exec:run("sleep 1; echo Test", [sync]).
-{ok,[<<"Test\n">>]}
+% By default all I/O is redirected to /dev/null, so no output is captured
+{ok,[]}
+
+% 'stdout' option instructs the port program to capture stdout and return it to caller
+30> exec:run("sleep 1; echo Test", [stdout, sync]).
+{ok,[{stdout, [<<"Test\n">>]}]}
 
 % Execute a non-existing command
-30> exec:run("echo1 Test", [sync, stdout, stderr]).   
+31> exec:run("echo1 Test", [sync, stdout, stderr]).   
 {error,[{exit_status,32512},
         {stderr,[<<"/bin/bash: echo1: command not found\n">>]}]}
 
 % Capture stdout/stderr of the executed command
-31> exec:run("echo Test; echo Err 1>&2", [sync, stdout, stderr]).    
+32> exec:run("echo Test; echo Err 1>&2", [sync, stdout, stderr]).    
 {ok,[{stdout,[<<"Test\n">>]},{stderr,[<<"Err\n">>]}]}
 '''
 
