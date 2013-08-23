@@ -864,7 +864,9 @@ exec_test_() ->
                 ?_test(test_std(stderr)),
                 ?_test(test_env()),
                 ?_test(test_kill_timeout())
-            ]}}.
+            ]
+        }
+    }.
 
 test_monitor() ->
     {ok, P, _} = exec:run("echo ok", [{stdout, null}, monitor]),
@@ -878,7 +880,7 @@ test_stdin() ->
     {ok, P, I} = exec:run("read x; echo \"Got: $x\"", [stdin, stdout, monitor]),
     ok = exec:send(I, <<"Test data\n">>),
     ?receiveMatch({stdout,I,<<"Got: Test data\n">>}, 3000),
-    ?receiveMatch({'DOWN', _, process, P, normal}, 1000).
+    ?receiveMatch({'DOWN', _, process, P, normal}, 5000).
 
 test_std(Stream) ->
     Suffix = case Stream of
@@ -886,8 +888,8 @@ test_std(Stream) ->
              stdout -> ""
              end,
     {ok, _, I} = exec:run("for i in 1 2; do echo TEST$i; sleep 0.05; done" ++ Suffix, [Stream]),
-    ?receiveMatch({Stream,I,<<"TEST1\n">>}, 3000),
-    ?receiveMatch({Stream,I,<<"TEST2\n">>}, 3000),
+    ?receiveMatch({Stream,I,<<"TEST1\n">>}, 5000),
+    ?receiveMatch({Stream,I,<<"TEST2\n">>}, 5000),
     
     Filename = temp_file(),
     try
@@ -911,7 +913,7 @@ test_env() ->
 test_kill_timeout() ->
     {ok, P, I} = exec:run("trap '' SIGTERM; sleep 30", [{kill_timeout, 1}, monitor]),
     exec:stop(I),
-    ?receiveMatch({'DOWN', _, process, P, normal}, 6000).
+    ?receiveMatch({'DOWN', _, process, P, normal}, 5000).
 
 temp_file() ->
     Dir =   case os:getenv("TEMP") of
