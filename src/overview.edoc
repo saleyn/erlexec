@@ -241,6 +241,10 @@ ok
 % Capture stdout/stderr of the executed command
 32> exec:run("echo Test; echo Err 1>&2", [sync, stdout, stderr]).    
 {ok,[{stdout,[<<"Test\n">>]},{stderr,[<<"Err\n">>]}]}
+
+% Redirect stderr to stdout
+33> exec:run("echo Test 1>&2", [{stderr, stdout}, stdout, sync]).
+{ok, [{stdout, [<<"Test\n">>]}]}
 '''
 
 @end
