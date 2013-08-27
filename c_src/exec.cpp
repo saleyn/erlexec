@@ -166,7 +166,10 @@ std::string fd_type(int tp) {
         case REDIRECT_NULL:     return "null";
         default: {
             std::stringstream s;
-            s << "fd:" << tp;
+            if (tp == dev_null)
+                s << "null(fd:" << tp << ')';
+            else
+                s << "fd:" << tp;
             return s.str();
         }
     }
@@ -954,11 +957,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
 
             if (sfd[crw] == REDIRECT_CLOSE)
                 close(fd);
-            else if (sfd[crw] == REDIRECT_STDOUT && fd == STDERR_FILENO) {
-                dup2(STDOUT_FILENO, fd);
-            } else if (sfd[crw] == REDIRECT_STDERR && fd == STDOUT_FILENO) {
-                dup2(STDERR_FILENO, fd);
-            } else if (sfd[crw] >= 0) {                     // Child end of the parent pipe
+            else if (sfd[crw] >= 0) {                       // Child end of the parent pipe
                 dup2(sfd[crw], fd);
                 // Don't close sfd[rw] here, since if the same fd is used for redirecting
                 // stdout and stdin (e.g. /dev/null) if won't work correctly. Instead the loop
@@ -967,6 +966,12 @@ pid_t start_child(CmdOptions& op, std::string& error)
                 //setlinebuf(stdout);                       // Set line buffering
             }
         }
+
+        // See if we need to redirect STDOUT <-> STDERR
+        if (stream_fd[STDOUT_FILENO][WR] == REDIRECT_STDERR)
+            dup2(STDERR_FILENO, STDOUT_FILENO);
+        if (stream_fd[STDERR_FILENO][WR] == REDIRECT_STDOUT)
+            dup2(STDOUT_FILENO, STDERR_FILENO);
 
         for(int i=STDERR_FILENO+1; i < max_fds; i++)
             close(i);

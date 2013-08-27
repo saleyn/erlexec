@@ -851,21 +851,22 @@ print(Stream, OsPid, Data) ->
         end
     end)()).
 
+-define(tt(F), {timeout, 20, ?_test(F)}).
+
 exec_test_() ->
     {setup,
         fun()    -> {ok, Pid} = exec:start([]), Pid end,
         fun(Pid) -> exit(Pid, kill) end,
-        {timeout, 60, 
-            [
-                ?_test(test_monitor()),
-                ?_test(test_sync()),
-                ?_test(test_stdin()),
-                ?_test(test_std(stdout)),
-                ?_test(test_std(stderr)),
-                ?_test(test_env()),
-                ?_test(test_kill_timeout())
-            ]
-        }
+        [
+            ?tt(test_monitor()),
+            ?tt(test_sync()),
+            ?tt(test_stdin()),
+            ?tt(test_std(stdout)),
+            ?tt(test_std(stderr)),
+            ?tt(test_redirect()),
+            ?tt(test_env()),
+            ?tt(test_kill_timeout())
+        ]
     }.
 
 test_monitor() ->
@@ -905,6 +906,13 @@ test_std(Stream) ->
     after
         ?assertEqual(ok, file:delete(Filename))
     end.
+
+test_redirect() ->
+    ?assertMatch({ok,[{stderr,[<<"TEST1\n">>]}]},
+        exec:run("echo TEST1", [stderr, {stdout, stderr}, sync])),
+    ?assertMatch({ok,[{stdout,[<<"TEST2\n">>]}]},
+        exec:run("echo TEST2 1>&2", [stdout, {stderr, stdout}, sync])),
+    ok.
 
 test_env() ->
     ?assertMatch({ok, [{stdout, [<<"X\n">>]}]},
