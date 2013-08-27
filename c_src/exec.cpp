@@ -137,7 +137,7 @@ typedef std::map <pid_t, CmdInfo>           MapChildrenT;
 typedef std::pair<kill_cmd_pid_t, pid_t>    KillPidStatusT;
 typedef std::map <kill_cmd_pid_t, pid_t>    MapKillPidT;
 typedef std::map<std::string, std::string>  MapEnv;
-typedef typename MapEnv::iterator           MapEnvIterator;
+typedef MapEnv::iterator                    MapEnvIterator;
 
 MapChildrenT children;              // Map containing all managed processes started by this port program.
 MapKillPidT  transient_pids;        // Map of pids of custom kill commands.
@@ -972,7 +972,15 @@ pid_t start_child(CmdOptions& op, std::string& error)
             close(i);
 
         #if !defined(__CYGWIN__) && !defined(__WIN32)
-        if (op.user() != INT_MAX && setresuid(op.user(), op.user(), op.user()) < 0) {
+        if (op.user() != INT_MAX && 
+            #ifdef HAVE_SETRESUID
+                setresuid(op.user(), op.user(), op.user())
+            #elif HAVE_SETREUID
+                setreuid(op.user(), op.user())
+            #else
+                #error setresuid(3) not supported!
+            #endif
+        < 0) {
             err.write("Cannot set effective user to %d", op.user());
             perror(err.c_str());
             return EXIT_FAILURE;
