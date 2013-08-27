@@ -2,7 +2,7 @@
 #include <fcntl.h>
 #include <sstream>
 #include <iomanip>
-#include "ei++.h"
+#include "ei++.hpp"
 
 using namespace ei;
 
