@@ -314,7 +314,7 @@ struct CmdInfo {
     ei::TimeVal     deadline;       // Time when the <cmd_pid> is supposed to be killed using SIGTERM.
     bool            sigterm;        // <true> if sigterm was issued.
     bool            sigkill;        // <true> if sigkill was issued.
-    int             kill_timeout;   // Pid shutdown interval in msec before it's killed with SIGKILL
+    int             kill_timeout;   // Pid shutdown interval in sec before it's killed with SIGKILL
     bool            managed;        // <true> if this pid is started externally, but managed by erlexec
     int             stream_fd[3];   // Pipe fd getting   process's stdin/stdout/stderr
     int             stdin_wr_pos;   // Offset of the unwritten portion of the head item of stdin_queue 
@@ -1103,7 +1103,7 @@ int stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify)
         int n;
         if (!ci.sigterm && (n = kill_child(ci.cmd_pid, SIGTERM, transId, notify)) == 0) {
             if (debug)
-                fprintf(stderr, "Sent SIGTERM to pid %d (timeout=%dms)\r\n", ci.cmd_pid, ci.kill_timeout);
+                fprintf(stderr, "Sent SIGTERM to pid %d (timeout=%ds)\r\n", ci.cmd_pid, ci.kill_timeout);
             ci.deadline.set(now, ci.kill_timeout);
         } else if (!ci.sigkill && (n = kill_child(ci.cmd_pid, SIGKILL, 0, false)) == 0) {
             if (debug)

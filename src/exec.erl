@@ -855,7 +855,7 @@ print(Stream, OsPid, Data) ->
 
 exec_test_() ->
     {setup,
-        fun()    -> {ok, Pid} = exec:start([{debug, 2}]), Pid end,
+        fun()    -> {ok, Pid} = exec:start([{debug, 3}]), Pid end,
         fun(Pid) -> exit(Pid, kill) end,
         [
             ?tt(test_monitor()),
