@@ -77,7 +77,7 @@
 #include <sstream>
 
 #include <ei.h>
-#include "ei++.h"
+#include "ei++.hpp"
 
 #if defined(__CYGWIN__) || defined(__WIN32) || defined(__APPLE__)
 #  define sigtimedwait(a, b, c) 0
