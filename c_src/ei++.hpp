@@ -495,6 +495,14 @@ namespace ei {
         int  decodeListSize()               { int v;  return (ei_decode_list_header(&m_rbuf,&m_rIdx,&v) < 0) ? -1 : v; }
         int  decodeListEnd()                { bool b = *(m_rbuf.c_str()+m_rIdx) == ERL_NIL_EXT; if (b) { m_rIdx++; return 0; } else return -1; }
         int  decodeAtom(std::string& a)     { char s[MAXATOMLEN]; if (ei_decode_atom(&m_rbuf,&m_rIdx,s) < 0) return -1; a=s; return 0; }
+        int  decodeBool(bool& a) {
+            std::string s;
+            if (decodeAtom(s) < 0) return -1;
+            else if (s == "true")  { a = true;  return 0; }
+            else if (s == "false") { a = false; return 0; }
+            else return -1;
+        }
+
         int  decodeString(std::string& a) {
             StringBuffer<256> s;
             if (decodeString(s) < 0)

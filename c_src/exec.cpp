@@ -20,7 +20,6 @@
 
     Instruction = {manage, OsPid::integer(), Options} |
                   {run,   Cmd::string(), Options}   |
-                  {shell, Cmd::string(), Options}   |
                   {list}                            |
                   {stop, OsPid::integer()}          |
                   {kill, OsPid::integer(), Signal::integer()} |
@@ -41,7 +40,7 @@
     Device  = close | null | stderr | stdout | File::string() | {append, File::string()}
 
     Reply = ok                      |       // For kill/stop commands
-            {ok, OsPid}             |       // For run/shell command
+            {ok, OsPid}             |       // For run command
             {ok, [OsPid]}           |       // For list command
             {error, Reason}         |
             {exit_status, OsPid, Status}    // OsPid terminated with Status
@@ -74,6 +73,7 @@
 #include <map>
 #include <list>
 #include <deque>
+#include <set>
 #include <sstream>
 
 #include <ei.h>
@@ -131,6 +131,7 @@ class CmdInfo;
 typedef unsigned char byte;
 typedef int   exit_status_t;
 typedef pid_t kill_cmd_pid_t;
+typedef std::list<std::string>              CmdArgsList;
 typedef std::pair<pid_t, exit_status_t>     PidStatusT;
 typedef std::pair<pid_t, CmdInfo>           PidInfoT;
 typedef std::map <pid_t, CmdInfo>           MapChildrenT;
@@ -138,12 +139,13 @@ typedef std::pair<kill_cmd_pid_t, pid_t>    KillPidStatusT;
 typedef std::map <kill_cmd_pid_t, pid_t>    MapKillPidT;
 typedef std::map<std::string, std::string>  MapEnv;
 typedef MapEnv::iterator                    MapEnvIterator;
+typedef std::map<pid_t, exit_status_t>      ExitedChildrenT;
 
-MapChildrenT children;              // Map containing all managed processes started by this port program.
-MapKillPidT  transient_pids;        // Map of pids of custom kill commands.
+MapChildrenT    children;       // Map containing all managed processes started by this port program.
+MapKillPidT     transient_pids; // Map of pids of custom kill commands.
+ExitedChildrenT exited_children;// Set of processed SIGCHLD events
 
 #define SIGCHLD_MAX_SIZE 4096
-std::list< PidStatusT > exited_children;  // deque of processed SIGCHLD events
 
 enum RedirectType {
     REDIRECT_STDOUT = -1,   // Redirect to stdout
@@ -215,7 +217,9 @@ struct CmdOptions {
 private:
     ei::StringBuffer<256>   m_tmp;
     std::stringstream       m_err;
-    std::string             m_cmd;
+    bool                    m_shell;
+    std::string             m_executable;
+    CmdArgsList             m_cmd;
     std::string             m_cd;
     std::string             m_kill_cmd;
     int                     m_kill_timeout;
@@ -243,16 +247,16 @@ private:
 public:
 
     CmdOptions()
-        : m_tmp(0, 256)
+        : m_tmp(0, 256), m_shell(true)
         , m_kill_timeout(KILL_TIMEOUT_SEC)
         , m_cenv(NULL), m_nice(INT_MAX), m_size(0), m_count(0)
         , m_group(INT_MAX), m_user(INT_MAX)
     {
         init_streams();
     }
-    CmdOptions(const char* cmd, const char* cd = NULL, const char** env = NULL,
+    CmdOptions(const CmdArgsList& cmd, const char* cd = NULL, const char** env = NULL,
                int user = INT_MAX, int nice = INT_MAX, int group = INT_MAX)
-        : m_cmd(cmd), m_cd(cd ? cd : "")
+        : m_shell(true), m_cmd(cmd), m_cd(cd ? cd : "")
         , m_kill_timeout(KILL_TIMEOUT_SEC)
         , m_cenv(NULL), m_nice(INT_MAX), m_size(0), m_count(0)
         , m_group(group), m_user(user)
@@ -264,8 +268,10 @@ public:
         m_cenv = NULL;
     }
 
-    const char*  strerror()             const { return m_err.str().c_str(); }
-    const char*  cmd()                  const { return m_cmd.c_str(); }
+    const char*         strerror()      const { return m_err.str().c_str(); }
+    const std::string&  executable()    const { return m_executable; }
+    const CmdArgsList&  cmd()           const { return m_cmd; }
+    bool                shell()         const { return m_shell; }
     const char*  cd()                   const { return m_cd.c_str(); }
     char* const* env()                  const { return (char* const*)m_cenv; }
     const char*  kill_cmd()             const { return m_kill_cmd.c_str(); }
@@ -278,7 +284,9 @@ public:
     int          stream_mode(int i)     const { return m_std_stream_mode[i]; }
     int          stream_fd(int i)       const { return m_std_stream_fd[i]; }
     int&         stream_fd(int i)             { return m_std_stream_fd[i]; }
-    const char*  stream_fd_type(int i)  const { return fd_type(stream_fd(i)).c_str(); }
+    std::string  stream_fd_type(int i)  const { return fd_type(stream_fd(i)); }
+
+    void executable(const std::string& s) { m_executable = s; }
 
     void stream_file(int i, const std::string& file, bool append = false, int mode = DEF_MODE) {
         m_std_stream_fd[i]      = REDIRECT_FILE;
@@ -307,7 +315,7 @@ public:
 /// When a user provides a custom command to kill a process this
 /// structure will contain its run-time information.
 struct CmdInfo {
-    std::string     cmd;            // Executed command
+    CmdArgsList     cmd;            // Executed command
     pid_t           cmd_pid;        // Pid of the custom kill command
     std::string     kill_cmd;       // Kill command to use (if provided - otherwise use SIGTERM)
     kill_cmd_pid_t  kill_cmd_pid;   // Pid of the command that <pid> is supposed to kill
@@ -321,15 +329,20 @@ struct CmdInfo {
     std::list<std::string> stdin_queue;
 
     CmdInfo() {
-        new (this) CmdInfo("", "", 0);
+        new (this) CmdInfo(CmdArgsList(), "", 0);
     }
     CmdInfo(const CmdInfo& ci) {
-        new (this) CmdInfo(ci.cmd.c_str(), ci.kill_cmd.c_str(), ci.cmd_pid, ci.managed,
+        new (this) CmdInfo(ci.cmd, ci.kill_cmd.c_str(), ci.cmd_pid, ci.managed,
                            ci.stream_fd[STDIN_FILENO], ci.stream_fd[STDOUT_FILENO],
                            ci.stream_fd[STDERR_FILENO]);
     }
-    CmdInfo(const char* _cmd, const char* _kill_cmd, pid_t _cmd_pid, bool _managed = false,
-            int _stdin_fd = REDIRECT_NULL, int _stdout_fd = REDIRECT_NONE, int _stderr_fd = REDIRECT_NONE,
+    CmdInfo(bool managed, const char* _kill_cmd, pid_t _cmd_pid) {
+        new (this) CmdInfo(cmd, _kill_cmd, _cmd_pid, managed);
+    }
+    CmdInfo(const CmdArgsList& _cmd, const char* _kill_cmd, pid_t _cmd_pid,
+            bool _managed = false,
+            int _stdin_fd = REDIRECT_NULL, int _stdout_fd = REDIRECT_NONE,
+            int _stderr_fd = REDIRECT_NONE,
             int _kill_timeout = KILL_TIMEOUT_SEC)
         : cmd(_cmd), cmd_pid(_cmd_pid), kill_cmd(_kill_cmd), kill_cmd_pid(-1)
         , sigterm(false), sigkill(false)
@@ -347,13 +360,13 @@ struct CmdInfo {
        
         if (i == STDIN_FILENO) {
             ok = stream_fd[i] >= 0 && stdin_wr_pos > 0;
-            if (debug > 2)
+            if (ok && debug > 2)
                 fprintf(stderr, "Pid %d adding stdin available notification (fd=%d, pos=%d)\r\n",
                     cmd_pid, stream_fd[i], stdin_wr_pos);
             fds = writefds;
         } else {
             ok = stream_fd[i] >= 0;
-            if (debug > 2)
+            if (ok && debug > 2)
                 fprintf(stderr, "Pid %d adding stdout checking (fd=%d)\r\n", cmd_pid, stream_fd[i]);
             fds = readfds;
         }
@@ -401,6 +414,41 @@ void gotsignal(int signal)
     if (oktojump) siglongjmp(jbuf, 1);
 }
 
+void check_child(pid_t pid, int signal = -1)
+{
+    int status = 0;
+    pid_t ret;
+
+    if (pid == getpid())    // Safety check. Never kill itself
+        return;
+
+    if (exited_children.find(pid) != exited_children.end())
+        return;
+
+    while ((ret = waitpid(pid, &status, WNOHANG)) < 0 && errno == EINTR);
+
+    if (debug)
+        fprintf(stderr,
+            "* Process %d (ret=%d, status=%d, sig=%d, "
+            "oktojump=%d, exited_count=%ld%s%s)\r\n",
+            pid, ret, status, signal, oktojump, exited_children.size(),
+            ret > 0 && WIFEXITED(status) ? " [exited]":"",
+            ret > 0 && WIFSIGNALED(status) ? " [signaled]":"");
+
+    if (ret < 0 && errno == ECHILD) {
+        if (erl_exec_kill(pid, 0) == 0) // process likely forked and is alive
+            status = 0;
+        if (status != 0)
+            exited_children.insert(std::make_pair(pid <= 0 ? ret : pid, status));
+    } else if (pid <= 0 && ret > 0)
+        exited_children.insert(std::make_pair(ret, status == 0 && signal == -1 ? 1 : status));
+    else if (ret == pid || WIFEXITED(status) || WIFSIGNALED(status)) {
+        exited_children.insert(std::make_pair(pid, status));
+    }
+
+    if (oktojump) siglongjmp(jbuf, 1);
+}
+
 void gotsigchild(int signal, siginfo_t* si, void* context)
 {
     // If someone used kill() to send SIGCHLD ignore the event
@@ -409,26 +457,17 @@ void gotsigchild(int signal, siginfo_t* si, void* context)
 
     pid_t pid = si->si_pid;
 
-    int status;
-    pid_t ret;
-
-    while ((ret = waitpid(pid, &status, WNOHANG)) < 0 && errno == EINTR);
-
     if (debug)
-        fprintf(stderr, "Process %d exited (status=%d, oktojump=%d)\r\n", si->si_pid, status, oktojump);
+        fprintf(stderr, "Child process %d exited\r\n", pid);
 
-    if (ret < 0 && errno == ECHILD) {
-        int status = ECHILD;
-        if (erl_exec_kill(pid, 0) == 0) // process likely forked and is alive
-            status = 0;
-        if (status != 0)
-            exited_children.push_back(std::make_pair(pid <= 0 ? ret : pid, status));
-    } else if (pid <= 0)
-        exited_children.push_back(std::make_pair(ret, status));
-    else if (ret == pid)
-        exited_children.push_back(std::make_pair(pid, status));
+    check_child(pid, signal);
+}
 
-    if (oktojump) siglongjmp(jbuf, 1);
+void add_exited_child(pid_t pid, exit_status_t status) {
+    std::pair<pid_t, exit_status_t> value = std::make_pair(pid, status);
+    // Note the following function doesn't insert anything if the element
+    // with given key was already present in the map
+    exited_children.insert(value);
 }
 
 void check_pending()
@@ -439,7 +478,10 @@ void check_pending()
     siginfo_t info;
     int sig;
     sigemptyset(&set);
-    if (sigpending(&set) == 0) {
+    if (sigpending(&set) == 0 && !sigisemptyset(&set)) {
+        if (debug > 1)
+            fprintf(stderr, "Detected pending signals\r\n");
+
         while ((sig = sigtimedwait(&set, &info, &timeout)) > 0 || errno == EINTR)
             switch (sig) {
                 case SIGCHLD:   gotsigchild(sig, &info, NULL); break;
@@ -492,7 +534,7 @@ int main(int argc, char* argv[])
     sact.sa_handler = NULL;
     sact.sa_sigaction = gotsigchild;
     sigemptyset(&sact.sa_mask);
-    sact.sa_flags = SA_SIGINFO | SA_RESTART | SA_NOCLDSTOP | SA_NODEFER;
+    sact.sa_flags = SA_SIGINFO | SA_RESTART | SA_NOCLDSTOP; // | SA_NODEFER;
     sigaction(SIGCHLD, &sact, NULL);
 
     if (argc > 1) {
@@ -567,16 +609,26 @@ int main(int argc, char* argv[])
             fprintf(stderr, "Select got %d events (maxfd=%d)\r\n", cnt, maxfd);
 
         if (interrupted || cnt == 0) {
-            if (check_children(terminated) < 0)
+            if (check_children(terminated) < 0) {
+                terminated = 11;
                 break;
+            }
         } else if (cnt < 0) {
-            fprintf(stderr, "Error in select: %s\r\n", strerror(errno));
-            terminated = 11;
+            if (errno == EBADF) {
+                if (debug)
+                    fprintf(stderr, "Error EBADF(9) in select: %s (terminated=%d)\r\n",
+                        strerror(errno), terminated);
+                continue;
+            }
+            fprintf(stderr, "Error %d in select: %s\r\n", errno, strerror(errno));
+            terminated = 12;
             break;
         } else if ( FD_ISSET (eis.read_handle(), &readfds) ) {
             /* Read from input stream a command sent by Erlang */
-            if (process_command() < 0)
+            if (process_command() < 0) {
+                terminated = 13;
                 break;
+            }
         } else {
             // Check if any stdout/stderr streams have data
             for(MapChildrenT::iterator it=children.begin(), end=children.end(); it != end; ++it)
@@ -614,8 +666,8 @@ int process_command()
         return -1;
     }
 
-    enum CmdTypeT        {  MANAGE,  RUN,  SHELL,  STOP,  KILL,  LIST,  SHUTDOWN,  STDIN  } cmd;
-    const char* cmds[] = { "manage","run","shell","stop","kill","list","shutdown","stdin" };
+    enum CmdTypeT        {  MANAGE,  RUN,  STOP,  KILL,  LIST,  SHUTDOWN,  STDIN  } cmd;
+    const char* cmds[] = { "manage","run","stop","kill","list","shutdown","stdin" };
 
     /* Determine the command */
     if ((int)(cmd = (CmdTypeT) eis.decodeAtomIndex(cmds, command)) < 0) {
@@ -643,16 +695,15 @@ int process_command()
             }
             realpid = pid;
 
-            CmdInfo ci("managed pid", po.kill_cmd(), realpid, true);
+            CmdInfo ci(true, po.kill_cmd(), realpid);
             ci.kill_timeout = po.kill_timeout();
             children[realpid] = ci;
 
             send_ok(transId, pid);
             break;
         }
-        case RUN:
-        case SHELL: {
-            // {shell, Cmd::string(), Options::list()}
+        case RUN: {
+            // {run, Cmd::string(), Options::list()}
             CmdOptions po;
 
             if (arity != 3 || po.ei_decode(eis, true) < 0) {
@@ -793,8 +844,13 @@ void initialize(int userid, bool use_alt_fds)
         #else
         if (debug)
             fprintf(stderr, "exec: capability feature is not implemented for this plaform!\r\n");
-        //exit(10);
         #endif
+
+        if (!getenv("SHELL") || strncmp(getenv("SHELL"), "", 1) == 0) {
+            fprintf(stderr, "exec: SHELL variable is not set!\r\n");
+            exit(10);
+        }
+
     }
 
     #if !defined(NO_SYSCONF)
@@ -926,11 +982,11 @@ pid_t start_child(CmdOptions& op, std::string& error)
         }
     }
 
-    if (debug)
+    if (debug) {
         fprintf(stderr, "Starting child: '%s'\r\n"
                         "  child  = (stdin=%s, stdout=%s, stderr=%s)\r\n"
                         "  parent = (stdin=%s, stdout=%s, stderr=%s)\r\n",
-            op.cmd(),
+            op.cmd().front().c_str(),
             fd_type(stream_fd[STDIN_FILENO ][RD]).c_str(),
             fd_type(stream_fd[STDOUT_FILENO][WR]).c_str(),
             fd_type(stream_fd[STDERR_FILENO][WR]).c_str(),
@@ -938,6 +994,19 @@ pid_t start_child(CmdOptions& op, std::string& error)
             fd_type(stream_fd[STDOUT_FILENO][RD]).c_str(),
             fd_type(stream_fd[STDERR_FILENO][RD]).c_str()
         );
+        if (!op.executable().empty())
+            fprintf(stderr, "  Executable: %s\r\n", op.executable().c_str());
+        if (op.cmd().size() > 0) {
+            int i = 0;
+            if (op.shell()) {
+                const char* s = getenv("SHELL");
+                fprintf(stderr, "  Args[%d]: %s\r\n", i++, s ? s : "(null)"); 
+                fprintf(stderr, "  Args[%d]: -c\r\n", i++); 
+            }
+            for(CmdArgsList::const_iterator it = op.cmd().begin(), end = op.cmd().end(); it != end; ++it)
+                fprintf(stderr, "  Args[%d]: %s\r\n", i++, it->c_str());
+        }
+    }
 
     pid_t pid = fork();
 
@@ -998,7 +1067,22 @@ pid_t start_child(CmdOptions& op, std::string& error)
             return EXIT_FAILURE;
         }
 
-        const char* const argv[] = { getenv("SHELL"), "-c", op.cmd(), (char*)NULL };
+        // Build the command arguments list
+        size_t sz = op.cmd().size() + 1 + (op.shell() ? 2 : 0);
+        const char** argv = new const char*[sz];
+        const char** p = argv;
+
+        if (op.shell()) {
+            *p++ = getenv("SHELL");
+            *p++ = "-c";
+        }
+
+        for (CmdArgsList::const_iterator
+                it = op.cmd().begin(), end = op.cmd().end(); it != end; ++it)
+            *p++ = it->c_str();
+
+        *p++ = (char*)NULL;
+
         if (op.cd() != NULL && op.cd()[0] != '\0' && chdir(op.cd()) < 0) {
             err.write("Cannot chdir to '%s'", op.cd());
             perror(err.c_str());
@@ -1011,15 +1095,25 @@ pid_t start_child(CmdOptions& op, std::string& error)
             return EXIT_FAILURE;
         }
 
+        const char* executable = op.executable().empty()
+            ? (const char*)argv[0] : op.executable().c_str();
+
         // Execute the process
-        if (execve((const char*)argv[0], (char* const*)argv, op.env()) < 0) {
-            err.write("Cannot execute '%s'", op.cmd());
+        if (execve(executable, (char* const*)argv, op.env()) < 0) {
+            err.write("Pid %d: cannot execute '%s'", getpid(), executable);
             perror(err.c_str());
+            // FIXME: for some reason simply exiting a process here doesn't
+            // send SIGCHLD to the parent. We use this brutal SIGSEGV to
+            // ensure proper signal delivery to parent
+            int* p = 0; *p = 0;
             return EXIT_FAILURE;
         }
         // On success execve never returns
         return EXIT_FAILURE;
     }
+
+    if (debug > 1)
+        fprintf(stderr, "Spawned child pid %d\r\n", pid);
 
     // I am the parent
     for (int i=STDIN_FILENO; i <= STDERR_FILENO; i++) {
@@ -1076,7 +1170,9 @@ int stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify)
         return 0;
     } else if (!ci.kill_cmd.empty()) {
         // This is the first attempt to kill this pid and kill command is provided.
-        CmdOptions co(ci.kill_cmd.c_str());
+        CmdArgsList kill_cmd;
+        kill_cmd.push_front(ci.kill_cmd.c_str());
+        CmdOptions co(kill_cmd);
         std::string err;
         ci.kill_cmd_pid = start_child(co, err);
         if (!err.empty() && debug)
@@ -1215,6 +1311,7 @@ bool process_pid_input(CmdInfo& ci)
 void process_pid_output(CmdInfo& ci, int maxsize)
 {
     char buf[4096];
+    bool dead = false;
 
     for (int i=STDOUT_FILENO; i <= STDERR_FILENO; i++) {
         int& fd = ci.stream_fd[i];
@@ -1237,11 +1334,15 @@ void process_pid_output(CmdInfo& ci, int maxsize)
                             ci.cmd_pid, stream_name(i), fd, strerror(errno));
                     close(fd);
                     fd = REDIRECT_CLOSE;
+                    dead = true;
                     break;
                 }
             }
         }
     }
+
+    if (dead)
+        check_child(ci.cmd_pid);
 }
 
 void erase_child(MapChildrenT::iterator& it)
@@ -1259,7 +1360,8 @@ void erase_child(MapChildrenT::iterator& it)
 double check_children(int& isTerminated, bool notify)
 {
     if (debug > 2)
-        fprintf(stderr, "Checking %ld exited children\r\n", exited_children.size());
+        fprintf(stderr, "Checking %ld running children (exited count=%ld)\r\n",
+            children.size(), exited_children.size());
 
     double wakeup = SLEEP_TIMEOUT_SEC;
 
@@ -1280,7 +1382,7 @@ double check_children(int& isTerminated, bool notify)
 
             if (n > 0) {
                 if (WIFEXITED(status) || WIFSIGNALED(status)) {
-                    exited_children.push_back(std::make_pair(pid <= 0 ? n : pid, status));
+                    add_exited_child(pid <= 0 ? n : pid, status);
                 } else if (WIFSTOPPED(status)) {
                     if (debug)
                         fprintf(stderr, "Pid %d %swas stopped by delivery of a signal %d\r\n",
@@ -1293,32 +1395,35 @@ double check_children(int& isTerminated, bool notify)
             } else
                 wakeup = std::min(std::max(0.0, diff), wakeup);
         } else if (n < 0 && errno == ESRCH) {
-            exited_children.push_back(std::make_pair(pid, -1));
+            add_exited_child(pid, -1);
         }
     }
 
+    if (debug > 2)
+        fprintf(stderr, "Checking %ld exited children (wakeup=%.3f)\r\n",
+            exited_children.size(), wakeup);
+
     // For each process info in the <exited_children> queue deliver it to the Erlang VM
     // and remove it from the managed <children> map.
-    while (!isTerminated && !exited_children.empty()) {
-        PidStatusT& item = exited_children.front();
-
-        MapChildrenT::iterator i = children.find(item.first);
+    for (ExitedChildrenT::iterator it=exited_children.begin(); !isTerminated && it!=exited_children.end();)
+    {
+        MapChildrenT::iterator i = children.find(it->first);
         MapKillPidT::iterator j;
         if (i != children.end()) {
             process_pid_output(i->second, INT_MAX);
             // Override status code if termination was requested by Erlang
-            PidStatusT ps(item.first, i->second.sigterm ? 0 : item.second);
+            PidStatusT ps(it->first, i->second.sigterm ? 0 : it->second);
             if (notify && send_pid_status_term(ps) < 0) {
                 isTerminated = 1;
                 return -1;
             }
             erase_child(i);
-        } else if ((j = transient_pids.find(item.first)) != transient_pids.end()) {
+        } else if ((j = transient_pids.find(it->first)) != transient_pids.end()) {
             // the pid is one of the custom 'kill' commands started by us.
             transient_pids.erase(j);
         }
 
-        exited_children.pop_front();
+        exited_children.erase(it++);
     }
 
     return wakeup;
@@ -1478,17 +1583,42 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
 
     m_nice = INT_MAX;
 
-    if (getCmd && eis.decodeString(m_cmd) < 0) {
-        m_err << "badarg: cmd string expected or string size too large";
-        return -1;
-    } else if ((sz = eis.decodeListSize()) < 0) {
+    if (getCmd) {
+        std::string s;
+
+        if (eis.decodeString(s) != -1) {
+            m_cmd.push_front(s);
+            m_shell=true;
+        } else if ((sz = eis.decodeListSize()) > 0) {
+            for (int i=0; i < sz; i++) {
+                if (eis.decodeString(s) < 0) {
+                    m_err << "badarg: invalid command argument #" << i;
+                    return -1;
+                }
+                m_cmd.push_back(s);
+            }
+            eis.decodeListEnd();
+            m_shell = false;
+        } else {
+            m_err << "badarg: cmd string or non-empty list is expected";
+            return -1;
+        }
+    }
+
+    if ((sz = eis.decodeListSize()) < 0) {
         m_err << "option list expected";
         return -1;
     }
 
     // Note: The STDIN, STDOUT, STDERR enums must occupy positions 0, 1, 2!!!
-    enum OptionT       { STDIN,  STDOUT,  STDERR,  CD,  ENV,  KILL,  KILL_TIMEOUT,  NICE,  USER,  GROUP} opt;
-    const char* opts[]={"stdin","stdout","stderr","cd","env","kill","kill_timeout","nice","user","group"};
+    enum OptionT       { STDIN,  STDOUT,  STDERR,
+                         CD,     ENV,     EXECUTABLE,
+                         KILL,   KILL_TIMEOUT,
+                         NICE,   USER,    GROUP} opt;
+    const char* opts[]={"stdin","stdout","stderr",
+                        "cd",   "env",   "executable",
+                        "kill", "kill_timeout",
+                        "nice", "user",  "group"};
 
     bool seen_opt[sizeof(opts) / sizeof(char*)] = {false};
 
@@ -1513,37 +1643,43 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
         seen_opt[opt] = true;
 
         switch (opt) {
+            case EXECUTABLE:
+                if (eis.decodeString(m_executable) < 0) {
+                    m_err << op << " - bad option value"; return -1;
+                }
+                break;
+
             case CD:
                 // {cd, Dir::string()}
-                if (eis.decodeString(val) < 0) {
-                    m_err << op << " bad option value"; return -1;
+                if (eis.decodeString(m_cd) < 0) {
+                    m_err << op << " - bad option value"; return -1;
                 }
-                m_cd = val;
                 break;
 
             case KILL:
                 // {kill, Cmd::string()}
-                if (eis.decodeString(val) < 0) {
-                    m_err << op << " bad option value"; return -1;
+                if (eis.decodeString(m_kill_cmd) < 0) {
+                    m_err << op << " - bad option value"; return -1;
                 }
-                m_kill_cmd = val;
                 break;
 
             case GROUP: {
                 // {group, integer() | string()}
                 type = eis.decodeType(arity);
                 if (type == etString) {
-                    if (eis.decodeString(val) < 0) { m_err << op << " bad group value"; return -1; }
+                    if (eis.decodeString(val) < 0) {
+                        m_err << op << " - bad group value"; return -1;
+                    }
                     struct group g;
                     char buf[1024];
                     struct group* res;
                     if (getgrnam_r(val.c_str(), &g, buf, sizeof(buf), &res) < 0) {
-                        m_err << op << " invalid group name: " << val;
+                        m_err << op << " - invalid group name: " << val;
                         return -1;
                     }
                     m_group = g.gr_gid;
                 } else if (eis.decodeInt(m_group) < 0) {
-                    m_err << op << " bad group value type (expected int or string)";
+                    m_err << op << " - bad group value type (expected int or string)";
                     return -1;
                 }
                 break;
@@ -1551,7 +1687,7 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
             case USER:
                 // {user, Dir::string()} | {kill, Cmd::string()}
                 if (eis.decodeString(val) < 0) {
-                    m_err << op << " bad option value"; return -1;
+                    m_err << op << " - bad option value"; return -1;
                 }
                 if      (opt == CD)     m_cd        = val;
                 else if (opt == KILL)   m_kill_cmd  = val;
@@ -1567,7 +1703,7 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
 
             case KILL_TIMEOUT:
                 if (eis.decodeInt(m_kill_timeout) < 0) {
-                    m_err << "invalid value of kill_timeout";
+                    m_err << op << " - invalid value";
                     return -1;
                 }
                 break;
@@ -1585,7 +1721,7 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
                 // obtained from environ global var
                 int opt_env_sz = eis.decodeListSize();
                 if (opt_env_sz < 0) {
-                    m_err << "env list expected";
+                    m_err << op << " - list expected";
                     return -1;
                 }
 
@@ -1613,7 +1749,7 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
                     }
 
                     if (!res) {
-                        m_err << "invalid env argument #" << i;
+                        m_err << op << " - invalid argument #" << i;
                         return -1;
                     }
                     m_env[key] = s;
@@ -1639,7 +1775,7 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
                     else if (type == ERL_STRING_EXT)
                         eis.decodeString(s);
                     else {
-                        m_err << "atom or string value in tuple required for option " << op;
+                        m_err << op << " - atom or string value in tuple required";
                         return -1;
                     }
 
@@ -1717,9 +1853,14 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
         return -1;
     }
 
-    if (debug > 1)
+    //if (cmd_is_list && m_shell)
+    //    m_shell = false;
+
+    if (debug > 1) {
         fprintf(stderr, "Parsed cmd '%s' options\r\n  (stdin=%s, stdout=%s, stderr=%s)\r\n",
-            m_cmd.c_str(), stream_fd_type(0), stream_fd_type(1), stream_fd_type(2));
+            m_cmd.front().c_str(),
+            stream_fd_type(0).c_str(), stream_fd_type(1).c_str(), stream_fd_type(2).c_str());
+    }
 
     return 0;
 }

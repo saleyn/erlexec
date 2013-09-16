@@ -21,7 +21,8 @@ lists:keymerge(1,
                     {"darwin",  "CXXFLAGS", "$CXXFLAGS -DHAVE_SETREUID -DHAVE_PTRACE"},
 
                     {"CC",  "g++"},
-                    {"CXX", "g++"}
+                    {"CXX", "g++"},
+                    {"CXXFLAGS", "$CXXFLAGS -O0"}
                    ]},
 
         {port_specs,[{filename:join(["priv", Arch, "exec-port"]), ["c_src/*.cpp"]}]},
