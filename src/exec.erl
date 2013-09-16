@@ -110,10 +110,48 @@
 %%         in the spawned port process.</dd>
 %% </dl>.
 
+-type cmd() :: string() | [string()].
+%% Command to be executed. If specified as a string, the specified command
+%% will be executed through the shell. The current shell is obtained
+%% from environtment variable `SHELL'. This can be useful if you
+%% are using Erlang primarily for the enhanced control flow it
+%% offers over most system shells and still want convenient
+%% access to other shell features such as shell pipes, filename
+%% wildcards, environment variable expansion, and expansion of
+%% `~' to a user's home directory.  All command arguments must
+%% be properly escaped including whitespace and shell
+%% metacharacters.
+%%
+%% <ul>
+%% <b><u>Warning:</u></b> Executing shell commands that
+%%  incorporate unsanitized input from an untrusted source makes
+%%  a program vulnerable to
+%%  [http://en.wikipedia.org/wiki/Shell_injection#Shell_injection shell injection],
+%%  a serious security flaw which can result in arbitrary command
+%%  execution. For this reason, the use of `shell' is strongly
+%%  discouraged in cases where the command string is constructed
+%%  from external input:
+%% </ul>
+%%
+%% ```
+%%  1> {ok, Filename} = io:read("Enter filename: ").
+%%  Enter filename: "non_existent; rm -rf / #".
+%%  {ok, "non_existent; rm -rf / #"}
+%%  2> exec(Filename, []) % Argh!!! This is not good!
+%% '''
+%%
+%% When command is given in the form of a list of strings,
+%% it is passed to `execve(3)' library call directly without
+%% involving the shell process, so the list of strings
+%% represents the program to be executed with arguments.
+%% In this case all shell-based features are disabled
+%% and there's no shell injection vulnerability.
+
 -type cmd_options() :: [cmd_option()].
 -type cmd_option()  ::
       monitor
     | sync
+    | {executable, string()}
     | {cd, WorkDir::string()}
     | {env, [string() | {Name :: string(), Value :: string()}, ...]}
     | {kill, KillCmd::string()}
@@ -130,6 +168,22 @@
 %% <dl>
 %% <dt>monitor</dt><dd>Set up a monitor for the spawned process</dd>
 %% <dt>sync</dt><dd>Block the caller until the OS command exits</dd>
+%% <dt>{executable, Executable::string()}</dt>
+%%     <dd>Specifies a replacement program to execute. It is very seldomly
+%%         needed. When the port program executes a child process using
+%%         `execve(3)' call, the call takes the following arguments:
+%%         `(Executable, Args, Env)'. When `Cmd' argument passed to the
+%%         `run/2' function is specified as the list of strings,
+%%         the executable replaces the first paramter in the call, and
+%%         the original args provided in the `Cmd' parameter are passed as
+%%         as the second parameter. Most programs treat the program
+%%         specified by args as the command name, which can then be different
+%%         from the program actually executed. On Unix, the args name becomes
+%%         the display name for the executable in utilities such as `ps'.
+%%
+%%         If `Cmd' argument passed to the `run/2' function is given as a
+%%         string, on Unix the `Executable' specifies a replacement shell
+%%         for the default `/bin/sh'.</dd>
 %% <dt>{cd, WorkDir}</dt><dd>Working directory</dd>
 %% <dt>{env, Env}</dt>
 %%     <dd>List of "VAR=VALUE" environment variables or
@@ -224,7 +278,7 @@ start(Options) when is_list(Options) ->
 %%      value is `{ok, Status}' where `Status' is OS process exit status.
 %% @end
 %%-------------------------------------------------------------------------
--spec run(Exe::string(), Options::cmd_options()) ->
+-spec run(cmd(), cmd_options()) ->
     {ok, pid(), ospid()} | {ok, [{stdout | stderr, [binary()]}]} | {error, any()}.
 run(Exe, Options) when is_list(Exe), is_list(Options) ->
     do_run({run, Exe, Options}, Options).
@@ -237,7 +291,7 @@ run(Exe, Options) when is_list(Exe), is_list(Options) ->
 %%      dies the OsPid will be killed.
 %% @end
 %%-------------------------------------------------------------------------
--spec run_link(string(), cmd_options()) ->
+-spec run_link(cmd(), cmd_options()) ->
     {ok, pid(), ospid()} | {ok, [{stdout | stderr, [binary()]}]} | {error, any()}.
 run_link(Exe, Options) when is_list(Exe), is_list(Options) ->
     do_run({run, Exe, Options}, [link | Options]).
@@ -769,6 +823,8 @@ check_cmd_options([sync|T], Pid, State, PortOpts, OtherOpts) ->
     check_cmd_options(T, Pid, State, PortOpts, OtherOpts);
 check_cmd_options([link|T], Pid, State, PortOpts, OtherOpts) ->
     check_cmd_options(T, Pid, State, PortOpts, OtherOpts);
+check_cmd_options([{executable,V}=H|T], Pid, State, PortOpts, OtherOpts) when is_list(V) ->
+    check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
 check_cmd_options([{cd, Dir}=H|T], Pid, State, PortOpts, OtherOpts) when is_list(Dir) ->
     check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
 check_cmd_options([{env, Env}=H|T], Pid, State, PortOpts, OtherOpts) when is_list(Env) ->
@@ -863,6 +919,8 @@ exec_test_() ->
             ?tt(test_stdin()),
             ?tt(test_std(stdout)),
             ?tt(test_std(stderr)),
+            ?tt(test_cmd()),
+            ?tt(test_executable()),
             ?tt(test_redirect()),
             ?tt(test_env()),
             ?tt(test_kill_timeout())
@@ -906,6 +964,43 @@ test_std(Stream) ->
     after
         ?assertEqual(ok, file:delete(Filename))
     end.
+
+test_cmd() ->
+    % Cmd given as string
+    ?assertMatch(
+        {ok, [{stdout, [<<"ok\n">>]}]},
+        exec:run("/bin/echo ok", [sync, stdout])),
+    % Cmd given as list
+    ?assertMatch(
+        {ok, [{stdout, [<<"ok\n">>]}]},
+        exec:run(["/bin/bash", "-c", "echo ok"], [sync, stdout])),
+    ?assertMatch(
+        {ok, [{stdout, [<<"ok\n">>]}]},
+        exec:run(["/bin/echo", "ok"], [sync, stdout])).
+
+test_executable() ->
+    % Cmd given as string
+    ?assertMatch(
+        [<<"Pid ", _/binary>>, <<" cannot execute '00kuku00': No such file or directory\n">>],
+        begin
+            {error, [{exit_status,_}, {stderr, [E]}]} =
+                exec:run("ls", [sync, {executable, "00kuku00"}, stdout, stderr]),
+            binary:split(E, <<":">>)
+        end),
+
+    ?assertMatch(
+        {ok, [{stdout,[<<"ok\n">>]}]},
+        exec:run("echo ok", [sync, {executable, "/bin/sh"}, stdout, stderr])),
+    
+    % Cmd given as list
+    ?assertMatch(
+        {ok, [{stdout,[<<"ok\n">>]}]},
+        exec:run(["/bin/bash", "-c", "/bin/echo ok"],
+                 [sync, {executable, "/bin/sh"}, stdout, stderr])),
+    ?assertMatch(
+        {ok, [{stdout,[<<"XYZ\n">>]}]},
+        exec:run(["/bin/echoXXXX abc", "XYZ"],
+                 [sync, {executable, "/bin/echo"}, stdout, stderr])).
 
 test_redirect() ->
     ?assertMatch({ok,[{stderr,[<<"TEST1\n">>]}]},

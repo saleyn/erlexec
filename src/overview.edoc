@@ -247,4 +247,19 @@ ok
 {ok, [{stdout, [<<"Test\n">>]}]}
 '''
 
+=== Running OS commands with/without shell ===
+```
+% Execute a command by an OS shell interpreter
+34> exec:run("/bin/echo ok", [sync, stdout]).
+{ok, [{stdout, [<<"ok\n">>]}]}
+
+% Execute an executable without a shell
+35> exec:run(["/bin/echo", "ok"], [sync, stdout])).
+{ok, [{stdout, [<<"ok\n">>]}]}
+
+% Execute a shell with custom options
+36> exec:run(["/bin/bash", "-c", "echo ok"], [sync, stdout])).
+{ok, [{stdout, [<<"ok\n">>]}]}
+'''
+
 @end
