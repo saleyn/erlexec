@@ -81,6 +81,10 @@
 
 #if defined(__CYGWIN__) || defined(__WIN32) || defined(__APPLE__)
 #  define sigtimedwait(a, b, c) 0
+#  define sigisemptyset(s) \
+    !(sigismember(s, SIGCHLD) || sigismember(s, SIGPIPE) || \
+      sigismember(s, SIGTERM) || sigismember(s, SIGINT) || \
+      sigismember(s, SIGHUP))
 #endif
 
 using namespace ei;
