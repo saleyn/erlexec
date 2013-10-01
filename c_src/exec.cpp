@@ -80,6 +80,7 @@
 #include "ei++.hpp"
 
 #if defined(__CYGWIN__) || defined(__WIN32) || defined(__APPLE__)
+#  define NO_SIGTIMEDWAIT
 #  define sigtimedwait(a, b, c) 0
 #  define sigisemptyset(s) \
     !(sigismember(s, SIGCHLD) || sigismember(s, SIGPIPE) || \
@@ -476,7 +477,9 @@ void add_exited_child(pid_t pid, exit_status_t status) {
 
 void check_pending()
 {
+    #if !defined(NO_SIGTIMEDWAIT)
     static const struct timespec timeout = {0, 0};
+    #endif
 
     sigset_t  set;
     siginfo_t info;
