@@ -739,8 +739,8 @@ notify_ospid_owner(OsPid, Status) ->
     [{_OsPid, Pid}] ->
         unlink(Pid),
         Pid ! {'DOWN', OsPid, {exit_status, Status}},
-        ets:delete(exec_mon, {Pid, OsPid}),
-        ets:delete(exec_mon, {OsPid, Pid});
+        ets:delete(exec_mon, Pid),
+        ets:delete(exec_mon, OsPid);
     [] ->
         %error_logger:warning_msg("Owner ~w not found\n", [OsPid]),
         ok
@@ -768,8 +768,8 @@ do_unlink_ospid(Pid, _Reason, State) ->
     case ets:lookup(exec_mon, Pid) of
     [{_Pid, OsPid}] when is_integer(OsPid) ->
         debug(State#state.debug, "Pid ~p died. Killing linked OsPid ~w\n", [Pid, OsPid]),
-        ets:delete(exec_mon, {Pid, OsPid}),
-        ets:delete(exec_mon, {OsPid, Pid}),
+        ets:delete(exec_mon, Pid),
+        ets:delete(exec_mon, OsPid),
         erlang:port_command(State#state.port, term_to_binary({0, {stop, OsPid}}));
     _ ->
         ok 
