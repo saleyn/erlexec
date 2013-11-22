@@ -446,10 +446,10 @@ void check_child(pid_t pid, int signal = -1)
         if (status != 0)
             exited_children.insert(std::make_pair(pid <= 0 ? ret : pid, status));
     } else if (pid <= 0 && ret > 0) {
-	exited_children.insert(std::make_pair(ret, status == 0 && signal == -1 ? 1 : status));
+        exited_children.insert(std::make_pair(ret, status == 0 && signal == -1 ? 1 : status));
     } else if (ret == pid || WIFEXITED(status) || WIFSIGNALED(status)) {
-	if (ret > 0)
-	    exited_children.insert(std::make_pair(pid, status));
+        if (ret > 0)
+            exited_children.insert(std::make_pair(pid, status));
     }
 
     if (oktojump) siglongjmp(jbuf, 1);
