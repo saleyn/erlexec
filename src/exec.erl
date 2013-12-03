@@ -315,15 +315,18 @@ which_children() ->
     gen_server:call(?MODULE, {port, {list}}).
 
 %%-------------------------------------------------------------------------
-%% @doc Send a `Signal' to a child `Pid' or `OsPid'.
+%% @doc Send a `Signal' to a child `Pid', `OsPid' or `Port'.
 %% @end
 %%-------------------------------------------------------------------------
 -spec kill(pid() | ospid(), integer()) -> ok | {error, any()}.
 kill(Pid, Signal) when is_pid(Pid); is_integer(Pid) ->
-    gen_server:call(?MODULE, {port, {kill, Pid, Signal}}).
+    gen_server:call(?MODULE, {port, {kill, Pid, Signal}});
+kill(Port, Signal) when is_port(Port) ->
+    {os_pid, Pid} = erlang:port_info(Port, os_pid),
+    kill(Pid, Signal).
 
 %%-------------------------------------------------------------------------
-%% @doc Terminate a managed `Pid' or `OsPid' process. The OS process is
+%% @doc Terminate a managed `Pid', `OsPid', or `Port' process. The OS process is
 %%      terminated gracefully.  If it was given a `{kill, Cmd}' option at
 %%      startup, that command is executed and a timer is started.  If
 %%      the program doesn't exit, then the default termination is
@@ -332,9 +335,12 @@ kill(Pid, Signal) when is_pid(Pid); is_integer(Pid) ->
 %%      killed.
 %% @end
 %%-------------------------------------------------------------------------
--spec stop(pid() | ospid()) -> ok | {error, any()}.
+-spec stop(pid() | ospid() | port()) -> ok | {error, any()}.
 stop(Pid) when is_pid(Pid); is_integer(Pid) ->
-    gen_server:call(?MODULE, {port, {stop, Pid}}, 30000).
+    gen_server:call(?MODULE, {port, {stop, Pid}}, 30000);
+stop(Port) when is_port(Port) ->
+    {os_pid, Pid} = erlang:port_info(Port, os_pid),
+    stop(Pid).
 
 %%-------------------------------------------------------------------------
 %% @doc Get `OsPid' of the given Erlang `Pid'.  The `Pid' must be created
