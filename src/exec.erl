@@ -298,7 +298,8 @@ run_link(Exe, Options) when is_list(Exe), is_list(Options) ->
 
 %%-------------------------------------------------------------------------
 %% @doc Manage an existing external process. `OsPid' is the OS process
-%%      identifier of the external OS process.  We can also pass it an Erlang `Port'.
+%%      identifier of the external OS process or an Erlang `Port' that
+%%      would be managed by erlexec.
 %% @end
 %%-------------------------------------------------------------------------
 -spec manage(ospid() | port(), Options::cmd_options()) ->
@@ -318,7 +319,7 @@ which_children() ->
     gen_server:call(?MODULE, {port, {list}}).
 
 %%-------------------------------------------------------------------------
-%% @doc Send a `Signal' to a child `Pid', `OsPid' or `Port'.
+%% @doc Send a `Signal' to a child `Pid', `OsPid' or an Erlang `Port'.
 %% @end
 %%-------------------------------------------------------------------------
 -spec kill(pid() | ospid(), integer()) -> ok | {error, any()}.
