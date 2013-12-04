@@ -303,7 +303,7 @@ run_link(Exe, Options) when is_list(Exe), is_list(Options) ->
 %%-------------------------------------------------------------------------
 -spec manage(ospid() | port(), Options::cmd_options()) ->
     {ok, pid(), ospid()} | {error, any()}.
-manage(Pid, Options) ->
+manage(Pid, Options) when is_integer(Pid) ->
     do_run({manage, Pid, Options}, Options);
 manage(Port, Options) when is_port(Port) ->
     {os_pid, OsPid} = erlang:port_info(Port, os_pid),
