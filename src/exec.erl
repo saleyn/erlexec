@@ -305,7 +305,7 @@ run_link(Exe, Options) when is_list(Exe), is_list(Options) ->
     {ok, pid(), ospid()} | {error, any()}.
 manage(Pid, Options) ->
     do_run({manage, Pid, Options}, Options);
-manage(Port, Options) ->
+manage(Port, Options) when is_port(Port) ->
     {os_pid, OsPid} = erlang:port_info(Port, os_pid),
     manage(OsPid, Options).
 
