@@ -298,13 +298,16 @@ run_link(Exe, Options) when is_list(Exe), is_list(Options) ->
 
 %%-------------------------------------------------------------------------
 %% @doc Manage an existing external process. `OsPid' is the OS process
-%%      identifier of the external OS process.
+%%      identifier of the external OS process.  We can also pass it an Erlang `Port'.
 %% @end
 %%-------------------------------------------------------------------------
--spec manage(ospid(), Options::cmd_options()) ->
+-spec manage(ospid() | port(), Options::cmd_options()) ->
     {ok, pid(), ospid()} | {error, any()}.
 manage(Pid, Options) ->
-    do_run({manage, Pid, Options}, Options).
+    do_run({manage, Pid, Options}, Options);
+manage(Port, Options) ->
+    {os_pid, OsPid} = erlang:port_info(Port, os_pid),
+    manage(OsPid, Options).
 
 %%-------------------------------------------------------------------------
 %% @doc Get a list of children managed by port program.
