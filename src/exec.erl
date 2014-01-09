@@ -41,7 +41,7 @@
 
 %% External exports
 -export([
-    start/1, start_link/1, run/2, run_link/2, manage/2, send/2,
+    start/0, start/1, start_link/1, run/2, run_link/2, manage/2, send/2,
     which_children/0, kill/2, stop/1, ospid/1, pid/1, status/1, signal/1
 ]).
 
@@ -268,6 +268,10 @@ start_link(Options) when is_list(Options) ->
 %% @doc Start of an external program manager without supervision.
 %% @end
 %%-------------------------------------------------------------------------
+-spec start() -> {ok, pid()} | {error, any()}.
+start() ->
+    start([]).
+
 -spec start(exec_options()) -> {ok, pid()} | {error, any()}.
 start(Options) when is_list(Options) ->
     gen_server:start({local, ?MODULE}, ?MODULE, [Options], []).
