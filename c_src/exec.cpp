@@ -938,7 +938,7 @@ int finalize()
     return old_terminated;
 }
 
-static int getpty(int& fdmp, int& fdsp, ei:StringBuffer<128>& err) {
+static int getpty(int& fdmp, int& fdsp, ei::StringBuffer<128>& err) {
     int fdm, fds;
     int rc;
 
