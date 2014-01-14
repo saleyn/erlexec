@@ -163,7 +163,8 @@
     | stdout | stderr
     | {stdout, stderr | output_dev_opt()}
     | {stderr, stdout | output_dev_opt()}
-    | {stdout | stderr, string(), [output_file_opt()]}.
+    | {stdout | stderr, string(), [output_file_opt()]}
+    | pty.
 %% Command options:
 %% <dl>
 %% <dt>monitor</dt><dd>Set up a monitor for the spawned process</dd>
@@ -227,6 +228,8 @@
 %%     <dd>Redirect process's standard error stream</dd>
 %% <dt>{stdout | stderr, Filename::string(), [output_dev_opt()]}</dt>
 %%     <dd>Redirect process's stdout/stderr stream to file</dd>
+%% <dt>pty</dt>
+%%     <dd>Use pseudo terminal for the process's stdin, stdout and stderr</dd>
 %% </dl>
 
 -type output_dev_opt() :: null | close | print | string() | pid()
@@ -856,6 +859,8 @@ check_cmd_options([{kill_timeout, I}=H|T], Pid, State, PortOpts, OtherOpts) when
 check_cmd_options([{nice, I}=H|T], Pid, State, PortOpts, OtherOpts) when is_integer(I), I >= -20, I =< 20 ->
     check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
 check_cmd_options([H|T], Pid, State, PortOpts, OtherOpts) when H=:=stdin; H=:=stdout; H=:=stderr ->
+    check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
+check_cmd_options([H|T], Pid, State, PortOpts, OtherOpts) when H=:=pty ->
     check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
 check_cmd_options([{stdin, I}=H|T], Pid, State, PortOpts, OtherOpts)
         when I=:=null; I=:=close; is_list(I) ->
