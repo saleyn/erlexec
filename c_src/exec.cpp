@@ -36,6 +36,7 @@
               stdin  | {stdin, null | close | File::string()} |
               stdout | {stdout, Device::string()} |
               stderr | {stderr, Device::string()} |
+              pty
 
     Device  = close | null | stderr | stdout | File::string() | {append, File::string()}
 
@@ -51,6 +52,7 @@
 */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <errno.h>
 #include <signal.h>
 #include <unistd.h>
@@ -223,6 +225,7 @@ private:
     ei::StringBuffer<256>   m_tmp;
     std::stringstream       m_err;
     bool                    m_shell;
+    bool                    m_pty;
     std::string             m_executable;
     CmdArgsList             m_cmd;
     std::string             m_cd;
@@ -252,7 +255,7 @@ private:
 public:
 
     CmdOptions()
-        : m_tmp(0, 256), m_shell(true)
+        : m_tmp(0, 256), m_shell(true), m_pty(false)
         , m_kill_timeout(KILL_TIMEOUT_SEC)
         , m_cenv(NULL), m_nice(INT_MAX), m_size(0), m_count(0)
         , m_group(INT_MAX), m_user(INT_MAX)
@@ -261,7 +264,7 @@ public:
     }
     CmdOptions(const CmdArgsList& cmd, const char* cd = NULL, const char** env = NULL,
                int user = INT_MAX, int nice = INT_MAX, int group = INT_MAX)
-        : m_shell(true), m_cmd(cmd), m_cd(cd ? cd : "")
+        : m_shell(true), m_pty(false), m_cmd(cmd), m_cd(cd ? cd : "")
         , m_kill_timeout(KILL_TIMEOUT_SEC)
         , m_cenv(NULL), m_nice(INT_MAX), m_size(0), m_count(0)
         , m_group(group), m_user(user)
@@ -277,6 +280,7 @@ public:
     const std::string&  executable()    const { return m_executable; }
     const CmdArgsList&  cmd()           const { return m_cmd; }
     bool                shell()         const { return m_shell; }
+    bool                pty()           const { return m_pty; }
     const char*  cd()                   const { return m_cd.c_str(); }
     char* const* env()                  const { return (char* const*)m_cenv; }
     const char*  kill_cmd()             const { return m_kill_cmd.c_str(); }
@@ -934,6 +938,44 @@ int finalize()
     return old_terminated;
 }
 
+static int getpty(int& fdmp, int& fdsp, ei:StringBuffer<128>& err) {
+    int fdm, fds;
+    int rc;
+
+    fdm = posix_openpt(O_RDWR);
+    if (fdm < 0) {
+        err.write("error %d on posix_openpt: %s\n", errno, strerror(errno));
+        return -1;
+    }
+
+    rc = grantpt(fdm);
+    if (rc != 0) {
+        close(fdm);
+        err.write("error %d on grantpt: %s\n", errno, strerror(errno));
+        return -1;
+    }
+
+    rc = unlockpt(fdm);
+    if (rc != 0) {
+        close(fdm);
+        err.write("error %d on unlockpt: %s\n", errno, strerror(errno));
+        return -1;
+    }
+
+    fds = open(ptsname(fdm), O_RDWR);
+
+    if (fds < 0) {
+        close(fdm);
+        err.write("error %d on open pty slave: %s\n", errno, strerror(errno));
+        return -1;
+    }
+
+    fdmp = fdm;
+    fdsp = fds;
+
+    return 0;
+}
+
 pid_t start_child(CmdOptions& op, std::string& error)
 {
     enum { RD = 0, WR = 1 };
@@ -946,6 +988,15 @@ pid_t start_child(CmdOptions& op, std::string& error)
     };
 
     ei::StringBuffer<128> err;
+
+    int fdm, fds;
+
+    if (op.pty()) {
+        if (getpty(fdm, fds, err) < 0) {
+            error = err.c_str();
+            return -1;
+        }
+    }
 
     // Optionally setup stdin/stdout/stderr redirect
     for (int i=STDIN_FILENO; i <= STDERR_FILENO; i++) {
@@ -968,9 +1019,19 @@ pid_t start_child(CmdOptions& op, std::string& error)
                     fprintf(stderr, "  Redirecting [%s -> %s]\r\n", stream_name(i), fd_type(cfd).c_str());
                 break;
             case REDIRECT_ERL:
-                if (open_pipe(sfd, stream_name(i), err) < 0) {
-                    error = err.c_str();
-                    return -1;
+                if (op.pty()) {
+                    if (i == STDIN_FILENO) {
+                        sfd[RD] = fds;
+                        sfd[WR] = fdm;
+                    } else {
+                        sfd[WR] = fds;
+                        sfd[RD] = fdm;
+                    }
+                } else {
+                    if (open_pipe(sfd, stream_name(i), err) < 0) {
+                        error = err.c_str();
+                        return -1;
+                    }
                 }
                 break;
             case REDIRECT_NULL:
@@ -1619,11 +1680,11 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
     }
 
     // Note: The STDIN, STDOUT, STDERR enums must occupy positions 0, 1, 2!!!
-    enum OptionT       { STDIN,  STDOUT,  STDERR,
+    enum OptionT       { STDIN,  STDOUT,  STDERR, PTY,
                          CD,     ENV,     EXECUTABLE,
                          KILL,   KILL_TIMEOUT,
                          NICE,   USER,    GROUP} opt;
-    const char* opts[]={"stdin","stdout","stderr",
+    const char* opts[]={"stdin","stdout","stderr","pty",
                         "cd",   "env",   "executable",
                         "kill", "kill_timeout",
                         "nice", "user",  "group"};
@@ -1766,6 +1827,9 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
                 break;
             }
 
+            case PTY:
+                m_pty = true;
+                break;
             case STDIN:
             case STDOUT:
             case STDERR: {
