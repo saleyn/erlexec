@@ -164,7 +164,8 @@
     | {stdout, stderr | output_dev_opt()}
     | {stderr, stdout | output_dev_opt()}
     | {stdout | stderr, string(), [output_file_opt()]}
-    | pty.
+    | pty
+    | echo | noecho.
 %% Command options:
 %% <dl>
 %% <dt>monitor</dt><dd>Set up a monitor for the spawned process</dd>
@@ -230,6 +231,8 @@
 %%     <dd>Redirect process's stdout/stderr stream to file</dd>
 %% <dt>pty</dt>
 %%     <dd>Use pseudo terminal for the process's stdin, stdout and stderr</dd>
+%% <dt>echo | noecho</dt>
+%%     <dd>Specify whether echo the user input into output, useful only pty is specified</dd>
 %% </dl>
 
 -type output_dev_opt() :: null | close | print | string() | pid()
@@ -861,6 +864,10 @@ check_cmd_options([{nice, I}=H|T], Pid, State, PortOpts, OtherOpts) when is_inte
 check_cmd_options([H|T], Pid, State, PortOpts, OtherOpts) when H=:=stdin; H=:=stdout; H=:=stderr ->
     check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
 check_cmd_options([H|T], Pid, State, PortOpts, OtherOpts) when H=:=pty ->
+    check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
+check_cmd_options([H|T], Pid, State, PortOpts, OtherOpts) when H=:=echo ->
+    check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
+check_cmd_options([H|T], Pid, State, PortOpts, OtherOpts) when H=:=noecho ->
     check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
 check_cmd_options([{stdin, I}=H|T], Pid, State, PortOpts, OtherOpts)
         when I=:=null; I=:=close; is_list(I) ->
