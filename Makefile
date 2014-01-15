@@ -5,7 +5,7 @@ PROJECT = $(notdir $(PWD))
 TARBALL = $(PROJECT)-$(VSN)
 
 DIALYZER = dialyzer
-REBAR = rebar
+REBAR = ./rebar
 
 .PHONY : all clean test docs doc clean-docs github-docs
 
