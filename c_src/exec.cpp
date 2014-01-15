@@ -57,6 +57,8 @@
 #include <signal.h>
 #include <unistd.h>
 #include <signal.h>
+#include <termios.h>
+#include <sys/ioctl.h>
 
 #ifdef HAVE_CAP
 #include <sys/prctl.h>
@@ -226,6 +228,7 @@ private:
     std::stringstream       m_err;
     bool                    m_shell;
     bool                    m_pty;
+    bool                    m_echo;
     std::string             m_executable;
     CmdArgsList             m_cmd;
     std::string             m_cd;
@@ -255,7 +258,7 @@ private:
 public:
 
     CmdOptions()
-        : m_tmp(0, 256), m_shell(true), m_pty(false)
+        : m_tmp(0, 256), m_shell(true), m_pty(false), m_echo(true)
         , m_kill_timeout(KILL_TIMEOUT_SEC)
         , m_cenv(NULL), m_nice(INT_MAX), m_size(0), m_count(0)
         , m_group(INT_MAX), m_user(INT_MAX)
@@ -264,7 +267,7 @@ public:
     }
     CmdOptions(const CmdArgsList& cmd, const char* cd = NULL, const char** env = NULL,
                int user = INT_MAX, int nice = INT_MAX, int group = INT_MAX)
-        : m_shell(true), m_pty(false), m_cmd(cmd), m_cd(cd ? cd : "")
+        : m_shell(true), m_pty(false), m_echo(true), m_cmd(cmd), m_cd(cd ? cd : "")
         , m_kill_timeout(KILL_TIMEOUT_SEC)
         , m_cenv(NULL), m_nice(INT_MAX), m_size(0), m_count(0)
         , m_group(group), m_user(user)
@@ -281,6 +284,7 @@ public:
     const CmdArgsList&  cmd()           const { return m_cmd; }
     bool                shell()         const { return m_shell; }
     bool                pty()           const { return m_pty; }
+    bool                echo()          const { return m_echo; }
     const char*  cd()                   const { return m_cd.c_str(); }
     char* const* env()                  const { return (char* const*)m_cenv; }
     const char*  kill_cmd()             const { return m_kill_cmd.c_str(); }
@@ -1114,6 +1118,27 @@ pid_t start_child(CmdOptions& op, std::string& error)
         for(int i=STDERR_FILENO+1; i < max_fds; i++)
             close(i);
 
+        if (op.pty()) {
+            struct termios ios;
+            tcgetattr(0, &ios);
+            if (op.echo()) {
+                ios.c_lflag |= ECHO;
+            } else {
+                ios.c_lflag &= ~ECHO;
+            }
+            tcsetattr(0, TCSANOW, &ios); 
+            
+
+            // Make the current process a new session leader
+            setsid();
+
+            // as a session leader, set the controlling terminal to be the 
+            // slave side
+            ioctl(0, TIOCSCTTY, 1);
+
+        }
+
+
         #if !defined(__CYGWIN__) && !defined(__WIN32)
         if (op.user() != INT_MAX && 
             #ifdef HAVE_SETRESUID
@@ -1680,11 +1705,11 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
     }
 
     // Note: The STDIN, STDOUT, STDERR enums must occupy positions 0, 1, 2!!!
-    enum OptionT       { STDIN,  STDOUT,  STDERR, PTY,
+    enum OptionT       { STDIN,  STDOUT,  STDERR, PTY,  ECHO_INPUT,  NOECHO_INPUT,
                          CD,     ENV,     EXECUTABLE,
                          KILL,   KILL_TIMEOUT,
                          NICE,   USER,    GROUP} opt;
-    const char* opts[]={"stdin","stdout","stderr","pty",
+    const char* opts[]={"stdin","stdout","stderr","pty","echo","noecho",
                         "cd",   "env",   "executable",
                         "kill", "kill_timeout",
                         "nice", "user",  "group"};
@@ -1829,6 +1854,12 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
 
             case PTY:
                 m_pty = true;
+                break;
+            case ECHO_INPUT:
+                m_echo = true;
+                break;
+            case NOECHO_INPUT:
+                m_echo = false;
                 break;
             case STDIN:
             case STDOUT:
