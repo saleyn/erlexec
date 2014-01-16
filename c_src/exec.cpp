@@ -65,6 +65,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/time.h>
+#include <sys/resource.h>
 #include <setjmp.h>
 #include <limits.h>
 #include <grp.h>
@@ -330,7 +331,7 @@ struct CmdInfo {
     int             kill_timeout;   // Pid shutdown interval in sec before it's killed with SIGKILL
     bool            managed;        // <true> if this pid is started externally, but managed by erlexec
     int             stream_fd[3];   // Pipe fd getting   process's stdin/stdout/stderr
-    int             stdin_wr_pos;   // Offset of the unwritten portion of the head item of stdin_queue 
+    int             stdin_wr_pos;   // Offset of the unwritten portion of the head item of stdin_queue
     std::list<std::string> stdin_queue;
 
     CmdInfo() {
@@ -362,7 +363,7 @@ struct CmdInfo {
     void include_stream_fd(int i, int& maxfd, fd_set* readfds, fd_set* writefds) {
         bool ok;
         fd_set* fds;
-       
+
         if (i == STDIN_FILENO) {
             ok = stream_fd[i] >= 0 && stdin_wr_pos > 0;
             if (ok && debug > 2)
@@ -1008,8 +1009,8 @@ pid_t start_child(CmdOptions& op, std::string& error)
             int i = 0;
             if (op.shell()) {
                 const char* s = getenv("SHELL");
-                fprintf(stderr, "  Args[%d]: %s\r\n", i++, s ? s : "(null)"); 
-                fprintf(stderr, "  Args[%d]: -c\r\n", i++); 
+                fprintf(stderr, "  Args[%d]: %s\r\n", i++, s ? s : "(null)");
+                fprintf(stderr, "  Args[%d]: -c\r\n", i++);
             }
             for(CmdArgsList::const_iterator it = op.cmd().begin(), end = op.cmd().end(); it != end; ++it)
                 fprintf(stderr, "  Args[%d]: %s\r\n", i++, it->c_str());
@@ -1054,7 +1055,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
             close(i);
 
         #if !defined(__CYGWIN__) && !defined(__WIN32)
-        if (op.user() != INT_MAX && 
+        if (op.user() != INT_MAX &&
             #ifdef HAVE_SETRESUID
                 setresuid(op.user(), op.user(), op.user())
             #elif HAVE_SETREUID
@@ -1825,7 +1826,7 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
                                  eis.decodeAtom(a) < 0 || a != "mode" || eis.decodeInt(mode) < 0) {
                             m_err << "option " << op << ": unsupported file option '" << a << "'";
                             return -1;
-                            
+
                         }
                     }
                     eis.decodeListEnd();
