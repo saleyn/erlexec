@@ -1028,10 +1028,12 @@ pid_t start_child(CmdOptions& op, std::string& error)
         for (int fd=STDIN_FILENO; fd <= STDERR_FILENO; fd++) {
             int crw       = fd==STDIN_FILENO ? RD : WR;
             int (&sfd)[2] = stream_fd[fd];
+            int cfd = sfd[fd==STDIN_FILENO ? WR : RD];
 
-            // Set up stdin/stdout/stderr redirect
-            close(sfd[fd==STDIN_FILENO ? WR : RD]);         // Close parent end of child pipes
-
+            if (cfd != REDIRECT_NODE) {
+                // Set up stdin/stdout/stderr redirect
+                close(sfd[fd==STDIN_FILENO ? WR : RD]);         // Close parent end of child pipes
+            }
             if (sfd[crw] == REDIRECT_CLOSE)
                 close(fd);
             else if (sfd[crw] >= 0) {                       // Child end of the parent pipe
