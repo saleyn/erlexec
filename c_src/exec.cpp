@@ -966,7 +966,8 @@ pid_t start_child(CmdOptions& op, std::string& error)
             case REDIRECT_STDERR:
                 sfd[crw] = cfd;
                 if (debug)
-                    fprintf(stderr, "  Redirecting [%s -> %s]\r\n", stream_name(i), fd_type(cfd).c_str());
+                    fprintf(stderr, "  Redirecting [%s -> %s]\r\n", stream_name(i),
+                            fd_type(cfd).c_str());
                 break;
             case REDIRECT_ERL:
                 if (open_pipe(sfd, stream_name(i), err) < 0) {
@@ -977,7 +978,8 @@ pid_t start_child(CmdOptions& op, std::string& error)
             case REDIRECT_NULL:
                 sfd[crw] = dev_null;
                 if (debug)
-                    fprintf(stderr, "  Redirecting [%s -> null]\r\n", stream_name(i));
+                    fprintf(stderr, "  Redirecting [%s -> null]\r\n",
+                            stream_name(i));
                 break;
             case REDIRECT_FILE: {
                 sfd[crw] = open_file(op.stream_file(i), op.stream_append(i),
@@ -1012,7 +1014,8 @@ pid_t start_child(CmdOptions& op, std::string& error)
                 fprintf(stderr, "  Args[%d]: %s\r\n", i++, s ? s : "(null)");
                 fprintf(stderr, "  Args[%d]: -c\r\n", i++);
             }
-            for(CmdArgsList::const_iterator it = op.cmd().begin(), end = op.cmd().end(); it != end; ++it)
+            typedef CmdArgsList::const_iterator const_iter;
+            for(const_iter it = op.cmd().begin(), end = op.cmd().end(); it != end; ++it)
                 fprintf(stderr, "  Args[%d]: %s\r\n", i++, it->c_str());
         }
     }
@@ -1030,7 +1033,6 @@ pid_t start_child(CmdOptions& op, std::string& error)
             int crw       = fd==STDIN_FILENO ? RD : WR;
             int (&sfd)[2] = stream_fd[fd];
 
-            // Set up stdin/stdout/stderr redirect
             close(sfd[fd==STDIN_FILENO ? WR : RD]);         // Close parent end of child pipes
 
             if (sfd[crw] == REDIRECT_CLOSE)
