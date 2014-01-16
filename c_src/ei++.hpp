@@ -125,7 +125,7 @@ namespace ei {
         size_t length()     const               { return strlen(base()); }
         void   clear()                          { m_buffer[m_headerSize] = '\0'; }
         /// Free heap allocated memory and shrink buffer to original statically allocated size.
-        void   reset()                          { if (allocated()) delete [] m_buffer; m_buffer = m_buff; clear(); }
+        void   reset()                          { if (allocated()) delete m_buffer; m_buffer = m_buff; clear(); }
         /// Pointer to a mutable char string of size <capacity()>.
         const char*  c_str() const              { return base(); }
         char*  c_str()                          { return base(); }
