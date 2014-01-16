@@ -1030,7 +1030,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
             int (&sfd)[2] = stream_fd[fd];
             int cfd = sfd[fd==STDIN_FILENO ? WR : RD];
 
-            if (cfd != REDIRECT_NODE) {
+            if (cfd != REDIRECT_NONE) {
                 // Set up stdin/stdout/stderr redirect
                 close(sfd[fd==STDIN_FILENO ? WR : RD]);         // Close parent end of child pipes
             }
