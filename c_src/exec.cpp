@@ -65,6 +65,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/time.h>
+#include <sys/resource.h>
 #include <setjmp.h>
 #include <limits.h>
 #include <grp.h>
@@ -330,7 +331,7 @@ struct CmdInfo {
     int             kill_timeout;   // Pid shutdown interval in sec before it's killed with SIGKILL
     bool            managed;        // <true> if this pid is started externally, but managed by erlexec
     int             stream_fd[3];   // Pipe fd getting   process's stdin/stdout/stderr
-    int             stdin_wr_pos;   // Offset of the unwritten portion of the head item of stdin_queue 
+    int             stdin_wr_pos;   // Offset of the unwritten portion of the head item of stdin_queue
     std::list<std::string> stdin_queue;
 
     CmdInfo() {
@@ -362,7 +363,7 @@ struct CmdInfo {
     void include_stream_fd(int i, int& maxfd, fd_set* readfds, fd_set* writefds) {
         bool ok;
         fd_set* fds;
-       
+
         if (i == STDIN_FILENO) {
             ok = stream_fd[i] >= 0 && stdin_wr_pos > 0;
             if (ok && debug > 2)
@@ -445,10 +446,11 @@ void check_child(pid_t pid, int signal = -1)
             status = 0;
         if (status != 0)
             exited_children.insert(std::make_pair(pid <= 0 ? ret : pid, status));
-    } else if (pid <= 0 && ret > 0)
+    } else if (pid <= 0 && ret > 0) {
         exited_children.insert(std::make_pair(ret, status == 0 && signal == -1 ? 1 : status));
-    else if (ret == pid || WIFEXITED(status) || WIFSIGNALED(status)) {
-        exited_children.insert(std::make_pair(pid, status));
+    } else if (ret == pid || WIFEXITED(status) || WIFSIGNALED(status)) {
+        if (ret > 0)
+            exited_children.insert(std::make_pair(pid, status));
     }
 
     if (oktojump) siglongjmp(jbuf, 1);
@@ -971,7 +973,8 @@ pid_t start_child(CmdOptions& op, std::string& error)
             case REDIRECT_STDERR:
                 sfd[crw] = cfd;
                 if (debug)
-                    fprintf(stderr, "  Redirecting [%s -> %s]\r\n", stream_name(i), fd_type(cfd).c_str());
+                    fprintf(stderr, "  Redirecting [%s -> %s]\r\n", stream_name(i),
+                            fd_type(cfd).c_str());
                 break;
             case REDIRECT_ERL:
                 if (open_pipe(sfd, stream_name(i), err) < 0) {
@@ -982,7 +985,8 @@ pid_t start_child(CmdOptions& op, std::string& error)
             case REDIRECT_NULL:
                 sfd[crw] = dev_null;
                 if (debug)
-                    fprintf(stderr, "  Redirecting [%s -> null]\r\n", stream_name(i));
+                    fprintf(stderr, "  Redirecting [%s -> null]\r\n",
+                            stream_name(i));
                 break;
             case REDIRECT_FILE: {
                 sfd[crw] = open_file(op.stream_file(i), op.stream_append(i),
@@ -1014,10 +1018,11 @@ pid_t start_child(CmdOptions& op, std::string& error)
             int i = 0;
             if (op.shell()) {
                 const char* s = getenv("SHELL");
-                fprintf(stderr, "  Args[%d]: %s\r\n", i++, s ? s : "(null)"); 
-                fprintf(stderr, "  Args[%d]: -c\r\n", i++); 
+                fprintf(stderr, "  Args[%d]: %s\r\n", i++, s ? s : "(null)");
+                fprintf(stderr, "  Args[%d]: -c\r\n", i++);
             }
-            for(CmdArgsList::const_iterator it = op.cmd().begin(), end = op.cmd().end(); it != end; ++it)
+            typedef CmdArgsList::const_iterator const_iter;
+            for(const_iter it = op.cmd().begin(), end = op.cmd().end(); it != end; ++it)
                 fprintf(stderr, "  Args[%d]: %s\r\n", i++, it->c_str());
         }
     }
@@ -1038,6 +1043,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
 
             if (sfd[prw] >= 0)
                 close(sfd[prw]);            // Close parent end of child pipes
+
             if (sfd[crw] == REDIRECT_CLOSE)
                 close(fd);
             else if (sfd[crw] >= 0) {       // Child end of the parent pipe
@@ -1060,7 +1066,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
             close(i);
 
         #if !defined(__CYGWIN__) && !defined(__WIN32)
-        if (op.user() != INT_MAX && 
+        if (op.user() != INT_MAX &&
             #ifdef HAVE_SETRESUID
                 setresuid(op.user(), op.user(), op.user())
             #elif HAVE_SETREUID
@@ -1831,7 +1837,7 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
                                  eis.decodeAtom(a) < 0 || a != "mode" || eis.decodeInt(mode) < 0) {
                             m_err << "option " << op << ": unsupported file option '" << a << "'";
                             return -1;
-                            
+
                         }
                     }
                     eis.decodeListEnd();
