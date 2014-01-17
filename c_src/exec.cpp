@@ -198,7 +198,7 @@ int     send_ospid_output(int pid, const char* type, const char* data, int len);
 
 pid_t   start_child(CmdOptions& op, std::string& err);
 int     kill_child(pid_t pid, int sig, int transId, bool notify=true);
-double  check_children(int& isTerminated, bool notify = true);
+int     check_children(const TimeVal& now, int& isTerminated, bool notify = true);
 bool    process_pid_input(CmdInfo& ci);
 void    process_pid_output(CmdInfo& ci, int maxsize = 4096);
 void    stop_child(pid_t pid, int transId, const TimeVal& now);
@@ -585,17 +585,21 @@ int main(int argc, char* argv[])
 
         int maxfd = eis.read_handle();
 
-        double wakeup = SLEEP_TIMEOUT_SEC;
+        TimeVal now(TimeVal::NOW);
 
-        while (!terminated && !exited_children.empty() && wakeup >= 0) {
-            double n = check_children(terminated);
-            wakeup = std::min(wakeup, n);
-        }
+        while (!terminated && !exited_children.empty())
+           if (check_children(now, terminated) < 0)
+               break;
+
+        double wakeup = SLEEP_TIMEOUT_SEC;
 
         // Set up all stdout/stderr input streams that we need to monitor and redirect to Erlang
         for(MapChildrenT::iterator it=children.begin(), end=children.end(); it != end; ++it)
-            for (int i=STDIN_FILENO; i <= STDERR_FILENO; i++)
+            for (int i=STDIN_FILENO; i <= STDERR_FILENO; i++) {
                 it->second.include_stream_fd(i, maxfd, &readfds, &writefds);
+                if (!it->second.deadline.zero())
+                    wakeup = std::max(0.0, std::min(wakeup, it->second.deadline.diff(now)));
+            }
 
         check_pending(); // Check for pending signals arrived while we were in the signal handler
 
@@ -616,7 +620,8 @@ int main(int argc, char* argv[])
             fprintf(stderr, "Select got %d events (maxfd=%d)\r\n", cnt, maxfd);
 
         if (interrupted || cnt == 0) {
-            if (check_children(terminated) < 0) {
+            now.now();
+            if (check_children(now, terminated) < 0) {
                 terminated = 11;
                 break;
             }
@@ -633,7 +638,6 @@ int main(int argc, char* argv[])
         } else if ( FD_ISSET (eis.read_handle(), &readfds) ) {
             /* Read from input stream a command sent by Erlang */
             if (process_command() < 0) {
-                terminated = 13;
                 break;
             }
         } else {
@@ -659,7 +663,10 @@ int process_command()
     // Note that if we were using non-blocking reads, we'd also need to check
     // for errno EWOULDBLOCK.
     if ((err = eis.read()) < 0) {
-        terminated = 90-err;
+        if (debug)
+            fprintf(stderr, "Broken Erlang command pipe (%d): %s\r\n",
+                errno, strerror(errno));
+        terminated = errno;
         return -1;
     }
 
@@ -903,7 +910,7 @@ int finalize()
 
         if (children.size() > 0 || !exited_children.empty()) {
             int term = 0;
-            check_children(term, pipe_valid);
+            check_children(now, term, pipe_valid);
         }
 
         for(MapChildrenT::iterator it=children.begin(), end=children.end(); it != end; ++it)
@@ -1025,19 +1032,17 @@ pid_t start_child(CmdOptions& op, std::string& error)
 
         // Setup stdin/stdout/stderr redirect
         for (int fd=STDIN_FILENO; fd <= STDERR_FILENO; fd++) {
-            int crw       = fd==STDIN_FILENO ? RD : WR;
             int (&sfd)[2] = stream_fd[fd];
-            int cfd = sfd[fd==STDIN_FILENO ? WR : RD];
+            int crw       = fd==STDIN_FILENO ? RD : WR;
+            int prw       = fd==STDIN_FILENO ? WR : RD;
 
-            if (cfd >= 0) {
-                // Set up stdin/stdout/stderr redirect
-                close(cfd);         // Close parent end of child pipes
-            }
+            if (sfd[prw] >= 0)
+                close(sfd[prw]);            // Close parent end of child pipes
             if (sfd[crw] == REDIRECT_CLOSE)
                 close(fd);
-            else if (sfd[crw] >= 0) {                       // Child end of the parent pipe
+            else if (sfd[crw] >= 0) {       // Child end of the parent pipe
                 dup2(sfd[crw], fd);
-                // Don't close sfd[rw] here, since if the same fd is used for redirecting
+                // Don't close sfd[crw] here, since if the same fd is used for redirecting
                 // stdout and stdin (e.g. /dev/null) if won't work correctly. Instead the loop
                 // following this one will close all extra fds.
 
@@ -1213,11 +1218,12 @@ int stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify)
         } else if (!ci.sigkill && (n = kill_child(ci.cmd_pid, SIGKILL, 0, false)) == 0) {
             if (debug)
                 fprintf(stderr, "Sent SIGKILL to pid %d\r\n", ci.cmd_pid);
-            ci.deadline = now;
-            ci.sigkill  = true;
+            ci.deadline.clear();
+            ci.sigkill = true;
         } else {
             n = 0; // FIXME
             // Failed to send SIGTERM & SIGKILL to the process - give up
+            ci.deadline.clear();
             ci.sigkill = true;
             if (debug)
                 fprintf(stderr, "Failed to kill process %d - leaving a zombie\r\n", ci.cmd_pid);
@@ -1366,26 +1372,23 @@ void erase_child(MapChildrenT::iterator& it)
     children.erase(it);
 }
 
-double check_children(int& isTerminated, bool notify)
+int check_children(const TimeVal& now, int& isTerminated, bool notify)
 {
     if (debug > 2)
         fprintf(stderr, "Checking %ld running children (exited count=%ld)\r\n",
             children.size(), exited_children.size());
 
-    double wakeup = SLEEP_TIMEOUT_SEC;
-
     for (MapChildrenT::iterator it=children.begin(), end=children.end(); it != end; ++it) {
-        TimeVal now(TimeVal::NOW);
-
         int   status = ECHILD;
         pid_t pid = it->first;
         int n = erl_exec_kill(pid, 0);
 
         if (n == 0) { // process is alive
-            double diff = 0;
             /* If a deadline has been set, and we're over it, wack it. */
-            if (!it->second.deadline.zero() && (diff = it->second.deadline.diff(now)) <= 0)
+            if (!it->second.deadline.zero() && it->second.deadline.diff(now) <= 0) {
                 stop_child(it->second, 0, now, false);
+                it->second.deadline.clear();
+            }
 
             while ((n = waitpid(pid, &status, WNOHANG)) < 0 && errno == EINTR);
 
@@ -1401,16 +1404,15 @@ double check_children(int& isTerminated, bool notify)
                         fprintf(stderr, "Pid %d %swas resumed by delivery of SIGCONT\r\n",
                             pid, it->second.managed ? "(managed) " : "");
                 }
-            } else
-                wakeup = std::min(std::max(0.0, diff), wakeup);
+            }
         } else if (n < 0 && errno == ESRCH) {
             add_exited_child(pid, -1);
         }
     }
 
     if (debug > 2)
-        fprintf(stderr, "Checking %ld exited children (wakeup=%.3f)\r\n",
-            exited_children.size(), wakeup);
+        fprintf(stderr, "Checking %ld exited children (notify=%d)\r\n",
+            exited_children.size(), notify);
 
     // For each process info in the <exited_children> queue deliver it to the Erlang VM
     // and remove it from the managed <children> map.
@@ -1418,6 +1420,7 @@ double check_children(int& isTerminated, bool notify)
     {
         MapChildrenT::iterator i = children.find(it->first);
         MapKillPidT::iterator j;
+
         if (i != children.end()) {
             process_pid_output(i->second, INT_MAX);
             // Override status code if termination was requested by Erlang
@@ -1435,7 +1438,7 @@ double check_children(int& isTerminated, bool notify)
         exited_children.erase(it++);
     }
 
-    return wakeup;
+    return 0;
 }
 
 int send_pid_list(int transId, const MapChildrenT& children)
@@ -1552,10 +1555,12 @@ int erl_exec_kill(pid_t pid, int signal) {
         return -1;
     }
 
-    if (debug && signal > 0)
-        fprintf(stderr, "Calling kill(pid=%d, sig=%d)\r\n", pid, signal);
+    int r = kill(pid, signal);
 
-    return kill(pid, signal);
+    if (debug && signal > 0)
+        fprintf(stderr, "Called kill(pid=%d, sig=%d) -> %d\r\n", pid, signal, r);
+
+    return r;
 }
 
 int set_nonblock_flag(pid_t pid, int fd, bool value)
