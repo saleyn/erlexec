@@ -283,6 +283,7 @@ namespace ei {
             return (double)tv.sec() + (double)tv.usec() / 1000000.0;
         }
 
+        void clear()                { m_tv.tv_sec = 0; m_tv.tv_usec = 0; }
         bool zero()                 { return sec() == 0 && usec() == 0; }
         void add(int _sec, int _us) { m_tv.tv_sec += _sec; m_tv.tv_usec += _us; if (_sec || _us) normalize(); }
         TimeVal& now(int addS=0, int addUS=0)   { gettimeofday(&m_tv, NULL); add(addS, addUS); return *this; }

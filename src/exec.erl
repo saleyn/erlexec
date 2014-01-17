@@ -651,13 +651,14 @@ wait_for_ospid_exit(OsPid, Ref, OutAcc, ErrAcc) ->
         wait_for_ospid_exit(OsPid, Ref, [Data | OutAcc], ErrAcc);
     {stderr, OsPid, Data} ->
         wait_for_ospid_exit(OsPid, Ref, OutAcc, [Data | ErrAcc]);
-    {'DOWN', Ref, process, _, R} ->
-        case R of
-        normal              -> {ok, sync_res(OutAcc, ErrAcc)};
-        noproc              -> {ok, sync_res(OutAcc, ErrAcc)};
-        {exit_status,_}=R   -> {error, [R | sync_res(OutAcc, ErrAcc)]};
-        Other               -> {error, [{reason, Other} | sync_res(OutAcc, ErrAcc)]}
-        end
+    {'DOWN', Ref, process, _, normal} ->
+        {ok, sync_res(OutAcc, ErrAcc)};
+    {'DOWN', Ref, process, _, noproc} ->
+        {ok, sync_res(OutAcc, ErrAcc)};
+    {'DOWN', Ref, process, _, {exit_status,_}=R} ->
+        {error, [R | sync_res(OutAcc, ErrAcc)]};
+    Other ->
+        {error, [{reason, Other} | sync_res(OutAcc, ErrAcc)]}
     end.
 
 sync_res([], []) -> [];
