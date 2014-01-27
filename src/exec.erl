@@ -164,8 +164,7 @@
     | {stdout, stderr | output_dev_opt()}
     | {stderr, stdout | output_dev_opt()}
     | {stdout | stderr, string(), [output_file_opt()]}
-    | pty
-    | echo | noecho.
+    | pty.
 %% Command options:
 %% <dl>
 %% <dt>monitor</dt><dd>Set up a monitor for the spawned process</dd>
@@ -231,8 +230,6 @@
 %%     <dd>Redirect process's stdout/stderr stream to file</dd>
 %% <dt>pty</dt>
 %%     <dd>Use pseudo terminal for the process's stdin, stdout and stderr</dd>
-%% <dt>echo | noecho</dt>
-%%     <dd>Specify whether echo the user input into output, useful only pty is specified</dd>
 %% </dl>
 
 -type output_dev_opt() :: null | close | print | string() | pid()
@@ -865,10 +862,6 @@ check_cmd_options([H|T], Pid, State, PortOpts, OtherOpts) when H=:=stdin; H=:=st
     check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
 check_cmd_options([H|T], Pid, State, PortOpts, OtherOpts) when H=:=pty ->
     check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
-check_cmd_options([H|T], Pid, State, PortOpts, OtherOpts) when H=:=echo ->
-    check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
-check_cmd_options([H|T], Pid, State, PortOpts, OtherOpts) when H=:=noecho ->
-    check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
 check_cmd_options([{stdin, I}=H|T], Pid, State, PortOpts, OtherOpts)
         when I=:=null; I=:=close; is_list(I) ->
     check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
@@ -949,7 +942,8 @@ exec_test_() ->
             ?tt(test_executable()),
             ?tt(test_redirect()),
             ?tt(test_env()),
-            ?tt(test_kill_timeout())
+            ?tt(test_kill_timeout()),
+            ?tt(test_pty())
         ]
     }.
 
@@ -1043,6 +1037,13 @@ test_kill_timeout() ->
     {ok, P, I} = exec:run("trap '' SIGTERM; sleep 30", [{kill_timeout, 1}, monitor]),
     exec:stop(I),
     ?receiveMatch({'DOWN', _, process, P, normal}, 5000).
+
+ 
+test_pty() ->
+    ?assertMatch({error,[{exit_status,256},{stdout,[<<"not a tty\n">>]}]},
+        exec:run("tty", [stdin, stdout, sync])),
+        ?assertMatch({ok,[{stdout,[<<"/dev/pts/", _/binary>>]}]},
+        exec:run("tty", [stdin, stdout, pty, sync])).
 
 temp_file() ->
     Dir =   case os:getenv("TEMP") of
