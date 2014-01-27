@@ -262,4 +262,15 @@ ok
 {ok, [{stdout, [<<"ok\n">>]}]}
 '''
 
+=== Running OS commands with pseudo terminal(pty) ===
+```
+% Execute a command without a pty
+37> exec:run("echo hello", [sync, stdout]).
+{ok, [{stdout,[<<"hello\n">>]}]}
+
+% Execute a command with a pty
+38> exec:run("echo hello", [sync, stdout, pty]).
+{ok,[{stdout,[<<"hello">>,<<"\r\n">>]}]}
+'''
+ 
 @end

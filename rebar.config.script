@@ -1,7 +1,7 @@
 Arch = erlang:system_info(system_architecture),
 Vsn  = string:strip(os:cmd("git describe --always --tags --abbrev=0 | sed 's/^v//'"), right, $\n),
 %% Check for Linux capability API.
-Cap  =  case file:read_file_info("/usr/include/sys/capability.h") of
+CapLinux  =  case file:read_file_info("/usr/include/sys/capability.h") of
         {ok, _} ->
             io:put_chars("INFO:  Detected support of linux capabilities.\n"),
             [{"linux", "CXXFLAGS", "$CXXFLAGS -DHAVE_CAP -DHAVE_SETRESUID -DHAVE_PTRACE"},
@@ -9,6 +9,17 @@ Cap  =  case file:read_file_info("/usr/include/sys/capability.h") of
         _ ->
             [{"linux", "CXXFLAGS", "$CXXFLAGS -DHAVE_SETRESUID -DHAVE_PTRACE"}]
         end,
+
+CapDarwin = case Arch of
+        "x86_64" ++ _E ->
+            io:put_chars("INFO: Detected 64 bit darwin system.\n"),
+            [{"darwin",  "CXXFLAGS", "$CXXFLAGS -m64 -DHAVE_SETREUID -DHAVE_PTRACE"},
+             {"darwin",  "LDFLAGS", "$LDFLAGS -m64"}];
+        _ ->
+            [{"darwin",  "CXXFLAGS", "$CXXFLAGS -DHAVE_SETREUID -DHAVE_PTRACE"}]
+        end,
+
+Cap = CapLinux ++ CapDarwin,
 
 % Replace configuration options read from rebar.config with those dynamically set below
 lists:keymerge(1,
@@ -18,7 +29,6 @@ lists:keymerge(1,
                     {"solaris", "CXXFLAGS", "$CXXFLAGS -m64 -DHAVE_PTRACE"},
                     {"solaris", "LDFLAGS",  "$LDFLAGS -m64 -lrt"},
 
-                    {"darwin",  "CXXFLAGS", "$CXXFLAGS -DHAVE_SETREUID -DHAVE_PTRACE"},
 
                     {"CC",  "g++"},
                     {"CXX", "g++"},
