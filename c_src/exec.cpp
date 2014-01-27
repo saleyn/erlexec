@@ -57,7 +57,6 @@
 #include <signal.h>
 #include <unistd.h>
 #include <signal.h>
-#include <termios.h>
 #include <sys/ioctl.h>
 
 #ifdef HAVE_CAP
