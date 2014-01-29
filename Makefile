@@ -34,7 +34,8 @@ github-docs:
 	else \
 		git checkout -b gh-pages; \
 	fi
-	git checkout master src include Makefile rebar.*
+	git checkout master -- src include
+	git checkout master -- Makefile rebar.*
 	make docs
 	mv doc/*.* .
 	make clean
