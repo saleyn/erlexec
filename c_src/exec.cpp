@@ -1131,8 +1131,12 @@ pid_t start_child(CmdOptions& op, std::string& error)
         if (op.pty()) {
             struct termios ios;
             tcgetattr(0, &ios);
-            ios.c_lflag &= ~ECHO;
-            tcsetattr(0, TCSANOW, &ios);
+            ios.c_lflag &= ~(ECHO | ECHONL);
+            if (tcsetattr(0, TCSANOW, &ios) < 0) {
+                err.write("Cannot disable pty echo");
+                perror(err.c_str());
+                return EXIT_FAILURE;
+            }
 
             // Make the current process a new session leader
             setsid();
@@ -1141,7 +1145,6 @@ pid_t start_child(CmdOptions& op, std::string& error)
             // slave side
             ioctl(0, TIOCSCTTY, 1);
         }
-
 
         #if !defined(__CYGWIN__) && !defined(__WIN32)
         if (op.user() != INT_MAX &&
