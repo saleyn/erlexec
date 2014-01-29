@@ -57,6 +57,7 @@
 #include <signal.h>
 #include <unistd.h>
 #include <signal.h>
+#include <termios.h>
 #include <sys/ioctl.h>
 
 #ifdef HAVE_CAP
@@ -1128,13 +1129,17 @@ pid_t start_child(CmdOptions& op, std::string& error)
             close(i);
 
         if (op.pty()) {
+            struct termios ios;
+            tcgetattr(0, &ios);
+            ios.c_lflag &= ~ECHO;
+            tcsetattr(0, TCSANOW, &ios);
+
             // Make the current process a new session leader
             setsid();
 
             // as a session leader, set the controlling terminal to be the 
             // slave side
             ioctl(0, TIOCSCTTY, 1);
-
         }
 
 

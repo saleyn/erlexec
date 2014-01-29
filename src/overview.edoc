@@ -47,6 +47,7 @@ OS processes.
 <li>Redirecting STDOUT and STDERR of an OS process to a file, erlang process,
   or a custom function. When redirected to a file, the file can be
   open in append/truncate mode, and given creation access mask.</li>
+<li>Running interactive processes with psudo-terminal pty support.</li>
 </ol>
 
 == Supported Platforms ==
@@ -262,7 +263,7 @@ ok
 {ok, [{stdout, [<<"ok\n">>]}]}
 '''
 
-=== Running OS commands with pseudo terminal(pty) ===
+=== Running OS commands with pseudo terminal (pty) ===
 ```
 % Execute a command without a pty
 37> exec:run("echo hello", [sync, stdout]).

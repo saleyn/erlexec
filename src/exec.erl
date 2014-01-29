@@ -1043,8 +1043,13 @@ test_kill_timeout() ->
 test_pty() ->
     ?assertMatch({error,[{exit_status,256},{stdout,[<<"not a tty\n">>]}]},
         exec:run("tty", [stdin, stdout, sync])),
-        ?assertMatch({ok,[{stdout,[<<"/dev/pts/", _/binary>>]}]},
-        exec:run("tty", [stdin, stdout, pty, sync])).
+    ?assertMatch({ok,[{stdout,[<<"/dev/pts/", _/binary>>]}]},
+        exec:run("tty", [stdin, stdout, pty, sync])),
+    {ok, P, I} = exec:run("/bin/bash --norc -i", [stdin, stdout, pty, monitor]),
+    exec:send(I, <<"echo ok\n">>),
+    ?receiveMatch({stdout, I, <<"ok\r\n">>}, 1000),
+    exec:send(I, <<"exit\n">>),
+    ?receiveMatch({'DOWN', _, process, P, normal}, 1000).
 
 temp_file() ->
     Dir =   case os:getenv("TEMP") of

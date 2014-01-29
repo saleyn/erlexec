@@ -1,39 +1,36 @@
 Arch = erlang:system_info(system_architecture),
 Vsn  = string:strip(os:cmd("git describe --always --tags --abbrev=0 | sed 's/^v//'"), right, $\n),
-%% Check for Linux capability API.
-CapLinux  =  case file:read_file_info("/usr/include/sys/capability.h") of
-        {ok, _} ->
-            io:put_chars("INFO:  Detected support of linux capabilities.\n"),
-            [{"linux", "CXXFLAGS", "$CXXFLAGS -DHAVE_CAP -DHAVE_SETRESUID -DHAVE_PTRACE"},
-             {"linux", "LDFLAGS", "$LDFLAGS -lcap"}];
-        _ ->
-            [{"linux", "CXXFLAGS", "$CXXFLAGS -DHAVE_SETRESUID -DHAVE_PTRACE"}]
-        end,
+%% Check for Linux capability API (Install package: libcap-devel).
+{LinCXX, LinLD} =
+    case file:read_file_info("/usr/include/sys/capability.h") of
+    {ok, _} ->
+        io:put_chars("INFO:  Detected support of linux capabilities.\n"),
+        {" -DHAVE_CAP", " -lcap"};
+    _ ->
+        {"", ""}
+    end,
 
-CapDarwin = case Arch of
-        "x86_64" ++ _E ->
-            io:put_chars("INFO: Detected 64 bit darwin system.\n"),
-            [{"darwin",  "CXXFLAGS", "$CXXFLAGS -m64 -DHAVE_SETREUID -DHAVE_PTRACE"},
-             {"darwin",  "LDFLAGS", "$LDFLAGS -m64"}];
-        _ ->
-            [{"darwin",  "CXXFLAGS", "$CXXFLAGS -DHAVE_SETREUID -DHAVE_PTRACE"}]
-        end,
-
-Cap = CapLinux ++ CapDarwin,
+X64 = case Arch of
+    "x86_64" ++ _E -> " -m64";
+    _              -> ""
+    end,
 
 % Replace configuration options read from rebar.config with those dynamically set below
 lists:keymerge(1,
     lists:keysort(1, [
-        {port_env, Cap ++ [
-                    %% XXXjh Force 64bit build, assume default g++ and native ld.
-                    {"solaris", "CXXFLAGS", "$CXXFLAGS -m64 -DHAVE_PTRACE"},
-                    {"solaris", "LDFLAGS",  "$LDFLAGS -m64 -lrt"},
+        {port_env,  [{"solaris", "CXXFLAGS", "$CXXFLAGS -DHAVE_PTRACE" ++ X64},
+                     {"solaris", "LDFLAGS",  "$LDFLAGS -lrt" ++ X64},
 
+                     {"darwin",  "CXXFLAGS", "$CXXFLAGS -DHAVE_SETREUID -DHAVE_PTRACE" ++ X64},
+                     {"darwin",  "LDFLAGS", "$LDFLAGS" ++ X64},
 
-                    {"CC",  "g++"},
-                    {"CXX", "g++"},
-                    {"CXXFLAGS", "$CXXFLAGS -O0"}
-                   ]},
+                     {"linux", "CXXFLAGS", "$CXXFLAGS -DHAVE_SETRESUID -DHAVE_PTRACE" ++ LinCXX},
+                     {"linux", "LDFLAGS", "$LDFLAGS" ++ LinLD},
+
+                     {"CC",  "g++"},
+                     {"CXX", "g++"},
+                     {"CXXFLAGS", "$CXXFLAGS -O0"}
+                    ]},
 
         {port_specs,[{filename:join(["priv", Arch, "exec-port"]), ["c_src/*.cpp"]}]},
         {edoc_opts, [{overview,     "src/overview.edoc"},
