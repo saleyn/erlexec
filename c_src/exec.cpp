@@ -136,7 +136,7 @@ static const char* CS_DEV_NULL  = "/dev/null";
 // Types & variables
 //-------------------------------------------------------------------------
 
-class CmdInfo;
+struct CmdInfo;
 
 typedef unsigned char byte;
 typedef int   exit_status_t;
@@ -188,8 +188,7 @@ std::string fd_type(int tp) {
     return std::string(); // Keep the compiler happy
 }
 
-class CmdOptions;
-class CmdInfo;
+struct CmdOptions;
 
 //-------------------------------------------------------------------------
 // Local Functions
@@ -237,8 +236,6 @@ private:
     MapEnv                  m_env;
     const char**            m_cenv;
     long                    m_nice;     // niceness level
-    size_t                  m_size;
-    size_t                  m_count;
     int                     m_group;    // used in setgid()
     int                     m_user;     // run as
     std::string             m_std_stream[3];
@@ -260,7 +257,7 @@ public:
     CmdOptions()
         : m_tmp(0, 256), m_shell(true), m_pty(false)
         , m_kill_timeout(KILL_TIMEOUT_SEC)
-        , m_cenv(NULL), m_nice(INT_MAX), m_size(0), m_count(0)
+        , m_cenv(NULL), m_nice(INT_MAX)
         , m_group(INT_MAX), m_user(INT_MAX)
     {
         init_streams();
@@ -269,13 +266,13 @@ public:
                int user = INT_MAX, int nice = INT_MAX, int group = INT_MAX)
         : m_shell(true), m_pty(false), m_cmd(cmd), m_cd(cd ? cd : "")
         , m_kill_timeout(KILL_TIMEOUT_SEC)
-        , m_cenv(NULL), m_nice(INT_MAX), m_size(0), m_count(0)
+        , m_cenv(NULL), m_nice(INT_MAX)
         , m_group(group), m_user(user)
     {
         init_streams();
     }
     ~CmdOptions() {
-        if (m_cenv != environ) delete [] m_cenv;
+        if (m_cenv != (const char**)environ) delete [] m_cenv;
         m_cenv = NULL;
     }
 

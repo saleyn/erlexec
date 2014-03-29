@@ -4,3 +4,4 @@
 *.tgz
 /priv
 /ebin
+.rebar/*

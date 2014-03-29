@@ -355,7 +355,7 @@ namespace ei {
         StringBuffer<1024> m_rbuf;  // for reading input commands
         size_t  m_readOffset,   m_writeOffset;
         size_t  m_readPacketSz, m_writePacketSz;
-        int     m_wIdx, m_rIdx, m_rsize;
+        int     m_wIdx, m_rIdx;
         int     m_fin,  m_fout;
         bool    m_debug;
 
@@ -374,7 +374,7 @@ namespace ei {
             : m_wbuf(_headerSz), m_rbuf(_headerSz)
             , m_readOffset(0), m_writeOffset(0)
             , m_readPacketSz(0), m_writePacketSz(0)
-            , m_wIdx(0), m_rIdx(0), m_rsize(0)
+            , m_wIdx(0), m_rIdx(0)
             , m_fin(0), m_fout(1), m_debug(false)
             , tuple(*this)
         {
