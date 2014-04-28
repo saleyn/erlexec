@@ -814,7 +814,7 @@ is_port_command({stop, OsPid}=T, _Pid, _State) when is_integer(OsPid) ->
     {ok, T, undefined, []};
 is_port_command({stop, Pid}, _Pid, _State) when is_pid(Pid) ->
     case ets:lookup(exec_mon, Pid) of
-    [{_Pid, OsPid}] -> {ok, {stop, OsPid}, undefined, []};
+    [{_StoredPid, OsPid}] -> {ok, {stop, OsPid}, undefined, []};
     []              -> throw({error, no_process})
     end;
 is_port_command({{manage, OsPid, Options}, Link}, Pid, State) when is_integer(OsPid) ->
