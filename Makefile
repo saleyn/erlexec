@@ -7,7 +7,7 @@ TARBALL = $(PROJECT)-$(VSN)
 DIALYZER = dialyzer
 REBAR = rebar
 
-.PHONY : all clean test docs doc clean-docs github-docs
+.PHONY : all clean test docs doc clean-docs github-docs dialyzer
 
 all:
 	@$(REBAR) compile
@@ -59,3 +59,9 @@ tar:
 		--exclude="Makefile" --exclude="rebar.*" --exclude="*.mk" \
 		--exclude="*.o" --exclude=".git*" $(PROJECT) && \
 		mv $(TARBALL).tgz $(PROJECT)/ && echo "Created $(TARBALL).tgz"
+
+dialyzer: build.plt
+	$(DIALYZER) -nn --plt $< ebin
+
+build.plt:
+	$(DIALYZER) -q --build_plt --apps erts kernel stdlib --output_plt $@
