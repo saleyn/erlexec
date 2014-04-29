@@ -592,9 +592,10 @@ int main(int argc, char* argv[])
 
         TimeVal now(TimeVal::NOW);
 
-        while (!terminated && !exited_children.empty())
-           if (check_children(now, terminated) < 0)
-               break;
+        while (!terminated && !exited_children.empty()) {
+            if (check_children(now, terminated) < 0)
+                break;
+        }
 
         double wakeup = SLEEP_TIMEOUT_SEC;
 
@@ -913,6 +914,7 @@ int finalize()
     while (children.size() > 0) {
         sigsetjmp(jbuf, 1);
 
+        now.now();
         if (children.size() > 0 || !exited_children.empty()) {
             int term = 0;
             check_children(now, term, pipe_valid);

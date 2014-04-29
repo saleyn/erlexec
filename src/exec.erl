@@ -42,7 +42,7 @@
 %% External exports
 -export([
     start/0, start/1, start_link/1, run/2, run_link/2, manage/2, send/2,
-    which_children/0, kill/2, stop/1, ospid/1, pid/1, status/1, signal/1
+    which_children/0, kill/2, stop/1, stop_and_wait/2, ospid/1, pid/1, status/1, signal/1
 ]).
 
 %% Internal exports
@@ -354,6 +354,26 @@ stop(Port) when is_port(Port) ->
     stop(Pid).
 
 %%-------------------------------------------------------------------------
+%% @doc Terminate a managed `Pid', `OsPid', or `Port' process, like
+%% `stop/1`,  and wait for it to exit.
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec stop_and_wait(pid() | ospid() | port(), integer()) -> term() | {error, any()}.
+stop_and_wait(Pid, Timeout) when is_pid(Pid); is_integer(Pid) ->
+    gen_server:call(?MODULE, {port, {stop, Pid}}, Timeout),
+    receive
+        {'DOWN', _Ref, process, Pid, ExitStatus} ->
+            ExitStatus
+    after Timeout ->
+            {error, timeout}
+    end;
+
+stop_and_wait(Port, Timeout) when is_port(Port) ->
+    {os_pid, Pid} = erlang:port_info(Port, os_pid),
+    stop_and_wait(Pid, Timeout).
+
+%%-------------------------------------------------------------------------
 %% @doc Get `OsPid' of the given Erlang `Pid'.  The `Pid' must be created
 %%      previously by running the run/2 or run_link/2 commands.
 %% @end
@@ -652,14 +672,14 @@ do_run(Cmd, Options) ->
            end,
     Cmd2 = {port, {Cmd, Link}},
     case {Mon, gen_server:call(?MODULE, Cmd2, 30000)} of
-    {true, {ok, Pid, OsPid} = R} ->
-        Ref = monitor(process, Pid),
-        case Sync of
-        true -> wait_for_ospid_exit(OsPid, Ref, [], []);
-        _    -> R
-        end;
-    {_, R} ->
-        R
+        {true, {ok, Pid, OsPid} = R} ->
+            Ref = monitor(process, Pid),
+            case Sync of
+                true -> wait_for_ospid_exit(OsPid, Ref, [], []);
+                _    -> R
+            end;
+        {_, R} ->
+            R
     end.
 
 wait_for_ospid_exit(OsPid, Ref, OutAcc, ErrAcc) ->
@@ -814,7 +834,7 @@ is_port_command({stop, OsPid}=T, _Pid, _State) when is_integer(OsPid) ->
     {ok, T, undefined, []};
 is_port_command({stop, Pid}, _Pid, _State) when is_pid(Pid) ->
     case ets:lookup(exec_mon, Pid) of
-    [{_Pid, OsPid}] -> {ok, {stop, OsPid}, undefined, []};
+    [{_StoredPid, OsPid}] -> {ok, {stop, OsPid}, undefined, []};
     []              -> throw({error, no_process})
     end;
 is_port_command({{manage, OsPid, Options}, Link}, Pid, State) when is_integer(OsPid) ->
