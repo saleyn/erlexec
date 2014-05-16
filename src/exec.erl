@@ -363,7 +363,7 @@ stop(Port) when is_port(Port) ->
 stop_and_wait(Pid, Timeout) when is_pid(Pid); is_integer(Pid) ->
     gen_server:call(?MODULE, {port, {stop, Pid}}, Timeout),
     receive
-        {'DOWN', _Ref, process, Pid, ExitStatus} ->
+        {'DOWN', _Ref, process, _Pid, ExitStatus} ->
             ExitStatus
     after Timeout ->
             {error, timeout}
