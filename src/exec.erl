@@ -362,7 +362,7 @@ stop(Port) when is_port(Port) ->
 -spec stop_and_wait(pid() | ospid() | port(), integer()) -> term() | {error, any()}.
 stop_and_wait(Port, Timeout) when is_port(Port) ->
     {os_pid, OsPid} = erlang:port_info(Port, os_pid),
-    stop_and_wait(Pid, Timeout);
+    stop_and_wait(OsPid, Timeout);
 
 stop_and_wait(OsPid, Timeout) when is_integer(OsPid) ->
     [{_, Pid}] = ets:lookup(exec_mon, OsPid),
