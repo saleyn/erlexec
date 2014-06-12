@@ -102,17 +102,26 @@ ok                                                      % Note that this could a
 Note that killing a process can be accomplished by running kill(3) command
 in an external shell, or by executing exec:kill/2.
 ```
-4> f(I), {ok, _, I} = exec:run_link("sleep 1000", []).
+1> f(I), {ok, _, I} = exec:run_link("sleep 1000", []).
 {ok,<0.37.0>,2350}
-5> exec:kill(I, 15).
+2> exec:kill(I, 15).
 ok
 ** exception error: {exit_status,15}                    % Our shell died because we linked to the
                                                         % killed shell process via exec:run_link/2.
 
-6> exec:status(15).                                     % Examine the exit status.
+3> exec:status(15).                                     % Examine the exit status.
 {signal,15,false}                                       % The program got SIGTERM signal and produced
                                                         % no core file.
 '''
+
+=== Using a custom success return code ===
+```
+1> exec:start_link([]).
+{ok,<0.35.0>}
+2> exec:run_link("sleep 1", [{success_exit_code, 0}, sync]).
+{ok,[]}
+3> exec:run("sleep 1", [{success_exit_code, 1}, sync]).
+{error,[{exit_status,1}]}                               % Note that the command returns exit code 1
 
 === Redirecting OS process stdout to a file ===
 ```
