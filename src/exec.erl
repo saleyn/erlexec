@@ -358,7 +358,7 @@ stop(Port) when is_port(Port) ->
 
 %%-------------------------------------------------------------------------
 %% @doc Terminate a managed `Pid', `OsPid', or `Port' process, like
-%% `stop/1`,  and wait for it to exit.
+%%      `stop/1', and wait for it to exit.
 %% @end
 %%-------------------------------------------------------------------------
 
