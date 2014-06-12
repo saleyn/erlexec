@@ -159,6 +159,7 @@
     | {group, GID :: string() | integer()}
     | {user, RunAsUser :: string()}
     | {nice, Priority :: integer()}
+    | {success_exit_code, ExitCode :: integer() }
     | stdin  | {stdin, null | close | string()}
     | stdout | stderr
     | {stdout, stderr | output_dev_opt()}
@@ -208,6 +209,8 @@
 %%         enabled and has a suid bit set, it's capable of running
 %%         commands with a different RunAsUser effective user. Passing
 %%         "root" value of `RunAsUser' is prohibited.</dd>
+%% <dt>{success_exit_code, IntExitCode}</dt>
+%%     <dd>On success use `IntExitCode' return value instead of default 0.</dd>
 %% <dt>{nice, Priority}</dt>
 %%     <dd>Set process priority between -20 and 20. Note that
 %%         negative values can be specified only when `exec-port'
@@ -886,6 +889,9 @@ check_cmd_options([{kill, Cmd}=H|T], Pid, State, PortOpts, OtherOpts) when is_li
 check_cmd_options([{kill_timeout, I}=H|T], Pid, State, PortOpts, OtherOpts) when is_integer(I), I >= 0 ->
     check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
 check_cmd_options([{nice, I}=H|T], Pid, State, PortOpts, OtherOpts) when is_integer(I), I >= -20, I =< 20 ->
+    check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+check_cmd_options([{success_exit_code, I}=H|T], Pid, State, PortOpts, OtherOpts)
+  when is_integer(I), I >= 0, I < 256 ->
     check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
 check_cmd_options([H|T], Pid, State, PortOpts, OtherOpts) when H=:=stdin; H=:=stdout; H=:=stderr ->
     check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);

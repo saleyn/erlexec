@@ -36,7 +36,7 @@
               stdin  | {stdin, null | close | File::string()} |
               stdout | {stdout, Device::string()} |
               stderr | {stderr, Device::string()} |
-              pty
+              pty    | {success_exit_code, N::integer()}
 
     Device  = close | null | stderr | stdout | File::string() | {append, File::string()}
 
@@ -238,6 +238,7 @@ private:
     long                    m_nice;     // niceness level
     int                     m_group;    // used in setgid()
     int                     m_user;     // run as
+    int                     m_success_exit_code;
     std::string             m_std_stream[3];
     bool                    m_std_stream_append[3];
     int                     m_std_stream_fd[3];
@@ -259,6 +260,7 @@ public:
         , m_kill_timeout(KILL_TIMEOUT_SEC)
         , m_cenv(NULL), m_nice(INT_MAX)
         , m_group(INT_MAX), m_user(INT_MAX)
+        , m_success_exit_code(0)
     {
         init_streams();
     }
@@ -287,6 +289,7 @@ public:
     int          kill_timeout()         const { return m_kill_timeout; }
     int          group()                const { return m_group; }
     int          user()                 const { return m_user; }
+    int          success_exit_code()    const { return m_success_exit_code; }
     int          nice()                 const { return m_nice; }
     const char*  stream_file(int i)     const { return m_std_stream[i].c_str(); }
     bool         stream_append(int i)   const { return m_std_stream_append[i]; }
@@ -326,37 +329,39 @@ public:
 struct CmdInfo {
     CmdArgsList     cmd;            // Executed command
     pid_t           cmd_pid;        // Pid of the custom kill command
-    std::string     kill_cmd;       // Kill command to use (if provided - otherwise use SIGTERM)
+    std::string     kill_cmd;       // Kill command to use (default: use SIGTERM)
     kill_cmd_pid_t  kill_cmd_pid;   // Pid of the command that <pid> is supposed to kill
     ei::TimeVal     deadline;       // Time when the <cmd_pid> is supposed to be killed using SIGTERM.
     bool            sigterm;        // <true> if sigterm was issued.
     bool            sigkill;        // <true> if sigkill was issued.
     int             kill_timeout;   // Pid shutdown interval in sec before it's killed with SIGKILL
+    int             success_code;   // Exit code to use on success
     bool            managed;        // <true> if this pid is started externally, but managed by erlexec
     int             stream_fd[3];   // Pipe fd getting   process's stdin/stdout/stderr
     int             stdin_wr_pos;   // Offset of the unwritten portion of the head item of stdin_queue
     std::list<std::string> stdin_queue;
 
     CmdInfo() {
-        new (this) CmdInfo(CmdArgsList(), "", 0);
+        new (this) CmdInfo(CmdArgsList(), "", 0, 0);
     }
     CmdInfo(const CmdInfo& ci) {
-        new (this) CmdInfo(ci.cmd, ci.kill_cmd.c_str(), ci.cmd_pid, ci.managed,
+        new (this) CmdInfo(ci.cmd, ci.kill_cmd.c_str(), ci.cmd_pid,
+                           ci.success_code, ci.managed,
                            ci.stream_fd[STDIN_FILENO], ci.stream_fd[STDOUT_FILENO],
                            ci.stream_fd[STDERR_FILENO]);
     }
-    CmdInfo(bool managed, const char* _kill_cmd, pid_t _cmd_pid) {
-        new (this) CmdInfo(cmd, _kill_cmd, _cmd_pid, managed);
+    CmdInfo(bool managed, const char* _kill_cmd, pid_t _cmd_pid, int _ok_code) {
+        new (this) CmdInfo(cmd, _kill_cmd, _cmd_pid, _ok_code, managed);
     }
     CmdInfo(const CmdArgsList& _cmd, const char* _kill_cmd, pid_t _cmd_pid,
-            bool _managed = false,
+            int _success_code, bool _managed = false,
             int _stdin_fd = REDIRECT_NULL, int _stdout_fd = REDIRECT_NONE,
             int _stderr_fd = REDIRECT_NONE,
             int _kill_timeout = KILL_TIMEOUT_SEC)
         : cmd(_cmd), cmd_pid(_cmd_pid), kill_cmd(_kill_cmd), kill_cmd_pid(-1)
         , sigterm(false), sigkill(false)
-        , kill_timeout(_kill_timeout), managed(_managed)
-        , stdin_wr_pos(0)
+        , kill_timeout(_kill_timeout), success_code(_success_code)
+        , managed(_managed), stdin_wr_pos(0)
     {
         stream_fd[STDIN_FILENO]  = _stdin_fd;
         stream_fd[STDOUT_FILENO] = _stdout_fd;
@@ -715,7 +720,7 @@ int process_command()
             }
             realpid = pid;
 
-            CmdInfo ci(true, po.kill_cmd(), realpid);
+            CmdInfo ci(true, po.kill_cmd(), realpid, po.success_exit_code());
             ci.kill_timeout = po.kill_timeout();
             children[realpid] = ci;
 
@@ -736,7 +741,8 @@ int process_command()
             if ((pid = start_child(po, err)) < 0)
                 send_error_str(transId, false, "Couldn't start pid: %s", err.c_str());
             else {
-                CmdInfo ci(po.cmd(), po.kill_cmd(), pid, false,
+                CmdInfo ci(po.cmd(), po.kill_cmd(), pid,
+                           po.success_exit_code(), false,
                            po.stream_fd(STDIN_FILENO),
                            po.stream_fd(STDOUT_FILENO),
                            po.stream_fd(STDERR_FILENO),
@@ -1510,7 +1516,12 @@ int check_children(const TimeVal& now, int& isTerminated, bool notify)
         if (i != children.end()) {
             process_pid_output(i->second, INT_MAX);
             // Override status code if termination was requested by Erlang
-            PidStatusT ps(it->first, i->second.sigterm ? 0 : it->second);
+            PidStatusT ps(it->first,
+                i->second.sigterm
+                ? 0 // Override status code if termination was requested by Erlang
+                : i->second.success_code && !it->second
+                    ? i->second.success_code // Override success status code
+                    : it->second);
             if (notify && send_pid_status_term(ps) < 0) {
                 isTerminated = 1;
                 return -1;
@@ -1711,11 +1722,13 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
     }
 
     // Note: The STDIN, STDOUT, STDERR enums must occupy positions 0, 1, 2!!!
-    enum OptionT       { STDIN,  STDOUT,  STDERR, PTY,
+    enum OptionT       { STDIN,  STDOUT,  STDERR,
+                         PTY,    SUCCESS_EXIT_CODE,
                          CD,     ENV,     EXECUTABLE,
                          KILL,   KILL_TIMEOUT,
                          NICE,   USER,    GROUP} opt;
-    const char* opts[]={"stdin","stdout","stderr","pty",
+    const char* opts[]={"stdin","stdout","stderr",
+                        "pty",  "success_exit_code",
                         "cd",   "env",   "executable",
                         "kill", "kill_timeout",
                         "nice", "user",  "group"};
@@ -1861,6 +1874,17 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
             case PTY:
                 m_pty = true;
                 break;
+
+            case SUCCESS_EXIT_CODE:
+                if (eis.decodeInt(m_success_exit_code) < 0 ||
+                    m_success_exit_code < 0 ||
+                    m_success_exit_code > 255)
+                {
+                    m_err << "success exit code must be an integer between 0 and 255";
+                    return -1;
+                }
+                break;
+
             case STDIN:
             case STDOUT:
             case STDERR: {
