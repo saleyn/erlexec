@@ -122,6 +122,7 @@ ok
 {ok,[]}
 3> exec:run("sleep 1", [{success_exit_code, 1}, sync]).
 {error,[{exit_status,1}]}                               % Note that the command returns exit code 1
+'''
 
 === Redirecting OS process stdout to a file ===
 ```
