@@ -1591,7 +1591,7 @@ int send_pid_status_term(const PidStatusT& stat)
     eis.encodeTupleSize(3);
     eis.encode(atom_t("exit_status"));
     eis.encode(stat.first);
-    eis.encode(stat.second);
+    eis.encode(WEXITSTATUS(stat.second));
     return eis.write();
 }
 
