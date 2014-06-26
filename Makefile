@@ -23,7 +23,7 @@ doc ebin:
 	mkdir -p $@
 
 test:
-	@$(REBAR) eunit
+	@$(REBAR) -DTEST eunit
 
 clean-docs:
 	rm -f doc/*.{css,html,png} doc/edoc-info

@@ -1135,20 +1135,19 @@ pid_t start_child(CmdOptions& op, std::string& error)
 
         if (op.pty()) {
             struct termios ios;
-            tcgetattr(0, &ios);
+            tcgetattr(STDIN_FILENO, &ios);
+            // Disable the ECHO mode
             ios.c_lflag &= ~(ECHO | ECHONL);
-            if (tcsetattr(0, TCSANOW, &ios) < 0) {
-                err.write("Cannot disable pty echo");
-                perror(err.c_str());
-                return EXIT_FAILURE;
-            }
+            // We don't check if it succeeded because if the STDIN is not a terminal
+            // it won't be able to disable the ECHO anyway.
+            tcsetattr(STDIN_FILENO, TCSANOW, &ios);
 
             // Make the current process a new session leader
             setsid();
 
             // as a session leader, set the controlling terminal to be the 
             // slave side
-            ioctl(0, TIOCSCTTY, 1);
+            ioctl(STDIN_FILENO, TIOCSCTTY, 1);
         }
 
         #if !defined(__CYGWIN__) && !defined(__WIN32)
