@@ -988,6 +988,10 @@ static int getpty(int& fdmp, int& fdsp, ei::StringBuffer<128>& err) {
     fdmp = fdm;
     fdsp = fds;
 
+    if (debug)
+        fprintf(stderr, "  Opened PTY pair (master=%d, slave=%d)\r\n",
+                fdm, fds);
+
     return 0;
 }
 
