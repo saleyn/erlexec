@@ -1004,6 +1004,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
 
     ei::StringBuffer<128> err;
 
+    // Optionally setup pseudoterminal
     int fdm, fds;
 
     if (op.pty()) {
@@ -1043,11 +1044,12 @@ pid_t start_child(CmdOptions& op, std::string& error)
                         sfd[WR] = fds;
                         sfd[RD] = fdm;
                     }
-                } else {
-                    if (open_pipe(sfd, stream_name(i), err) < 0) {
-                        error = err.c_str();
-                        return -1;
-                    }
+                    if (debug)
+                        fprintf(stderr, "  Redirecting [%s -> pipe:{r=%d,w=%d}] (PTY)\r\n",
+                            stream_name(i), sfd[0], sfd[1]);
+                } else if (open_pipe(sfd, stream_name(i), err) < 0) {
+                    error = err.c_str();
+                    return -1;
                 }
                 break;
             case REDIRECT_NULL:
