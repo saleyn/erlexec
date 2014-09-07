@@ -511,6 +511,20 @@ void check_pending()
     }
 }
 
+int set_nice(pid_t pid,int nice, std::string& error)
+{
+    ei::StringBuffer<128> err;
+
+    if (nice != INT_MAX && setpriority(PRIO_PROCESS, pid, nice) < 0) {
+        err.write("Cannot set priority of pid %d to %d", pid, nice);
+        error = err.c_str();
+        if (debug)
+            fprintf(stderr, "%s\r\n", error.c_str());
+        return -1;
+    }
+    return 0;
+}
+
 void usage(char* progname) {
     fprintf(stderr,
         "Usage:\n"
@@ -723,6 +737,10 @@ int process_command()
             CmdInfo ci(true, po.kill_cmd(), realpid, po.success_exit_code());
             ci.kill_timeout = po.kill_timeout();
             children[realpid] = ci;
+
+            // Set nice priority for managed process if option is present
+            std::string error;
+            set_nice(realpid,po.nice(),error);
 
             send_ok(transId, pid);
             break;
@@ -1252,12 +1270,8 @@ pid_t start_child(CmdOptions& op, std::string& error)
         }
     }
 
-    if (op.nice() != INT_MAX && setpriority(PRIO_PROCESS, pid, op.nice()) < 0) {
-        err.write("Cannot set priority of pid %d to %d", pid, op.nice());
-        error = err.c_str();
-        if (debug)
-            fprintf(stderr, "%s\r\n", error.c_str());
-    }
+    set_nice(pid,op.nice(),error);
+
     return pid;
 }
 
