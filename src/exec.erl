@@ -42,7 +42,8 @@
 %% External exports
 -export([
     start/0, start/1, start_link/1, run/2, run_link/2, manage/2, send/2,
-    which_children/0, kill/2, stop/1, stop_and_wait/2, ospid/1, pid/1, status/1, signal/1
+    which_children/0, kill/2,       setpgid/2, stop/1, stop_and_wait/2,
+    ospid/1, pid/1,   status/1,     signal/1
 ]).
 
 %% Internal exports
@@ -156,6 +157,7 @@
     | {env, [string() | {Name :: string(), Value :: string()}, ...]}
     | {kill, KillCmd::string()}
     | {kill_timeout, Sec::non_neg_integer()}
+    | kill_group
     | {group, GID :: string() | integer()}
     | {user, RunAsUser :: string()}
     | {nice, Priority :: integer()}
@@ -202,8 +204,12 @@
 %%     <dd>Number of seconds to wait after issueing a SIGTERM or
 %%         executing the custom `kill' command (if specified) before
 %%         killing the process with the `SIGKILL' signal</dd>
+%% <dt>kill_group</dt>
+%%     <dd>At process exit kill the whole process group associated with this pid.
+%%         The process group is obtained by the call to getpgid(3).</dd>
 %% <dt>{group, GID}</dt>
-%%     <dd>Sets the effective group ID of the spawned process</dd>
+%%     <dd>Sets the effective group ID of the spawned process. The value 0
+%%         means to create a new group ID equal to the OS pid of the process.</dd>
 %% <dt>{user, RunAsUser}</dt>
 %%     <dd>When exec-port was compiled with capability (Linux) support
 %%         enabled and has a suid bit set, it's capable of running
@@ -260,6 +266,8 @@
 
 -type ospid() :: integer().
 %% Representation of OS process ID.
+-type osgid() :: integer().
+%% Representation of OS group ID.
 
 %%-------------------------------------------------------------------------
 %% @doc Supervised start an external program manager.
@@ -340,6 +348,14 @@ kill(Port, Signal) when is_port(Port) ->
     kill(Pid, Signal).
 
 %%-------------------------------------------------------------------------
+%% @doc Change group ID of a given `OsPid' to `Gid'.
+%% @end
+%%-------------------------------------------------------------------------
+-spec setpgid(ospid(), osgid()) -> ok | {error, any()}.
+setpgid(OsPid, Gid) when is_integer(OsPid), is_integer(Gid) ->
+    gen_server:call(?MODULE, {port, {setpgid, OsPid, Gid}}).
+
+%%-------------------------------------------------------------------------
 %% @doc Terminate a managed `Pid', `OsPid', or `Port' process. The OS process is
 %%      terminated gracefully.  If it was given a `{kill, Cmd}' option at
 %%      startup, that command is executed and a timer is started.  If
@@ -374,10 +390,8 @@ stop_and_wait(OsPid, Timeout) when is_integer(OsPid) ->
 stop_and_wait(Pid, Timeout) when is_pid(Pid) ->
     gen_server:call(?MODULE, {port, {stop, Pid}}, Timeout),
     receive
-        {'DOWN', _Ref, process, Pid, ExitStatus} ->
-            ExitStatus
-    after Timeout ->
-            {error, timeout}
+    {'DOWN', _Ref, process, Pid, ExitStatus} -> ExitStatus
+    after Timeout                            -> {error, timeout}
     end;
 
 stop_and_wait(Port, Timeout) when is_port(Port) ->
@@ -860,6 +874,8 @@ is_port_command({send, OsPid, Data}, _Pid, _State) when is_integer(OsPid), is_bi
     {ok, {stdin, OsPid, Data}};
 is_port_command({kill, OsPid, Sig}=T, _Pid, _State) when is_integer(OsPid),is_integer(Sig) -> 
     {ok, T, undefined, []};
+is_port_command({setpgid, OsPid, Gid}=T, _Pid, _State) when is_integer(OsPid),is_integer(Gid) -> 
+    {ok, T, undefined, []};
 is_port_command({kill, Pid, Sig}, _Pid, _State) when is_pid(Pid),is_integer(Sig) -> 
     case ets:lookup(exec_mon, Pid) of
     [{Pid, OsPid}]  -> {ok, {kill, OsPid, Sig}, undefined, []};
@@ -887,6 +903,8 @@ check_cmd_options([{env, Env}=H|T], Pid, State, PortOpts, OtherOpts) when is_lis
 check_cmd_options([{kill, Cmd}=H|T], Pid, State, PortOpts, OtherOpts) when is_list(Cmd) ->
     check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
 check_cmd_options([{kill_timeout, I}=H|T], Pid, State, PortOpts, OtherOpts) when is_integer(I), I >= 0 ->
+    check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+check_cmd_options([kill_group=H|T], Pid, State, PortOpts, OtherOpts) ->
     check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
 check_cmd_options([{nice, I}=H|T], Pid, State, PortOpts, OtherOpts) when is_integer(I), I >= -20, I =< 20 ->
     check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
@@ -978,7 +996,8 @@ exec_test_() ->
             ?tt(test_redirect()),
             ?tt(test_env()),
             ?tt(test_kill_timeout()),
-            ?tt(test_pty())
+            ?tt(test_pty()),
+            ?tt(test_setpgid())
         ]
     }.
 
@@ -1092,5 +1111,14 @@ temp_file() ->
             end,
     {I1, I2, I3}  = now(),
     filename:join(Dir, io_lib:format("exec_temp_~w_~w_~w", [I1, I2, I3])).
+
+test_setpgid() ->
+    % Cmd given as string
+    {ok, P0, P} = exec:run("sleep 1", [{group, 0}, kill_group, monitor]),
+    {ok, P1, _} = exec:run("sleep 15", [{group, P}, monitor]),
+    {ok, P2, _} = exec:run("sleep 15", [{group, P}, monitor]),
+    ?receiveMatch({'DOWN',_,process, P0, normal}, 5000),
+    ?receiveMatch({'DOWN',_,process, P1, {exit_status, 15}}, 5000),
+    ?receiveMatch({'DOWN',_,process, P2, {exit_status, 15}}, 5000).
 
 -endif.
