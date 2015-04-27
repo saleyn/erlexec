@@ -38,6 +38,7 @@ OS processes.
 <li>Providing custom termination command for killing a process or relying
     on default SIGTERM/SIGKILL behavior.  Specifying custom timeout
     for SIGKILL after the termination command or SIGTERM was executed.</li>
+<li>Terminating all processing beloging to a process group</li>
 <li>Ability to link Erlang processes to OS processes (via intermediate
     Erlang Pids that are linked to an associated OS process).</li>
 <li>Ability to monitor the termination of OS processes.</li>
