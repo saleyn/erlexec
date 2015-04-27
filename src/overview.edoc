@@ -284,4 +284,14 @@ ok
 {ok,[{stdout,[<<"hello">>,<<"\r\n">>]}]}
 '''
  
+=== Kill a process group at process exit ===
+```
+% In the following scenario the process P0 will create a new process group
+% equal to the OS pid of that process (value = GID). The next two commands
+% are assigned to the same process group GID. As soon as the P0 process exits
+% P1 and P2 will also get terminated by signal 15 (SIGTERM):
+39> {ok, P0, GID} = exec:run("sleep 1",  [{group, 0},   kill_group]).
+40> {ok, P1,   _} = exec:run("sleep 15", [{group, GID}, monitor]).
+41> {ok, P2,   _} = exec:run("sleep 15", [{group, GID}, monitor]).
+'''
 @end

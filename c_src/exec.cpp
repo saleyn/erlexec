@@ -30,6 +30,7 @@
               {env, [string() | {string(), string()}]} |
               {kill, Cmd::string()} |
               {kill_timeout, Sec::integer()} |
+              kill_group |
               {group, integer() | string()} |
               {user, User::string()} |
               {nice, Priority::integer()} |
@@ -233,6 +234,7 @@ private:
     std::string             m_cd;
     std::string             m_kill_cmd;
     int                     m_kill_timeout;
+    bool                    m_kill_group;
     MapEnv                  m_env;
     const char**            m_cenv;
     long                    m_nice;     // niceness level
@@ -254,10 +256,10 @@ private:
     }
 
 public:
-
     CmdOptions()
         : m_tmp(0, 256), m_shell(true), m_pty(false)
         , m_kill_timeout(KILL_TIMEOUT_SEC)
+        , m_kill_group(false)
         , m_cenv(NULL), m_nice(INT_MAX)
         , m_group(INT_MAX), m_user(INT_MAX)
         , m_success_exit_code(0)
@@ -268,6 +270,7 @@ public:
                int user = INT_MAX, int nice = INT_MAX, int group = INT_MAX)
         : m_shell(true), m_pty(false), m_cmd(cmd), m_cd(cd ? cd : "")
         , m_kill_timeout(KILL_TIMEOUT_SEC)
+        , m_kill_group(false)
         , m_cenv(NULL), m_nice(INT_MAX)
         , m_group(group), m_user(user)
     {
@@ -287,6 +290,7 @@ public:
     char* const* env()                  const { return (char* const*)m_cenv; }
     const char*  kill_cmd()             const { return m_kill_cmd.c_str(); }
     int          kill_timeout()         const { return m_kill_timeout; }
+    bool         kill_group()           const { return m_kill_group; }
     int          group()                const { return m_group; }
     int          user()                 const { return m_user; }
     int          success_exit_code()    const { return m_success_exit_code; }
@@ -329,12 +333,14 @@ public:
 struct CmdInfo {
     CmdArgsList     cmd;            // Executed command
     pid_t           cmd_pid;        // Pid of the custom kill command
+    pid_t           cmd_gid;        // Command's group ID
     std::string     kill_cmd;       // Kill command to use (default: use SIGTERM)
     kill_cmd_pid_t  kill_cmd_pid;   // Pid of the command that <pid> is supposed to kill
     ei::TimeVal     deadline;       // Time when the <cmd_pid> is supposed to be killed using SIGTERM.
     bool            sigterm;        // <true> if sigterm was issued.
     bool            sigkill;        // <true> if sigkill was issued.
     int             kill_timeout;   // Pid shutdown interval in sec before it's killed with SIGKILL
+    bool            kill_group;     // Indicates if at exit the whole group needs to be killed
     int             success_code;   // Exit code to use on success
     bool            managed;        // <true> if this pid is started externally, but managed by erlexec
     int             stream_fd[3];   // Pipe fd getting   process's stdin/stdout/stderr
@@ -342,25 +348,35 @@ struct CmdInfo {
     std::list<std::string> stdin_queue;
 
     CmdInfo() {
-        new (this) CmdInfo(CmdArgsList(), "", 0, 0);
+        new (this) CmdInfo(CmdArgsList(), "", 0, INT_MAX, 0);
     }
     CmdInfo(const CmdInfo& ci) {
-        new (this) CmdInfo(ci.cmd, ci.kill_cmd.c_str(), ci.cmd_pid,
+        new (this) CmdInfo(ci.cmd, ci.kill_cmd.c_str(), ci.cmd_pid, ci.cmd_gid,
                            ci.success_code, ci.managed,
                            ci.stream_fd[STDIN_FILENO], ci.stream_fd[STDOUT_FILENO],
-                           ci.stream_fd[STDERR_FILENO]);
+                           ci.stream_fd[STDERR_FILENO], ci.kill_timeout, ci.kill_group);
     }
-    CmdInfo(bool managed, const char* _kill_cmd, pid_t _cmd_pid, int _ok_code) {
-        new (this) CmdInfo(cmd, _kill_cmd, _cmd_pid, _ok_code, managed);
+    CmdInfo(bool managed, const char* _kill_cmd, pid_t _cmd_pid, int _ok_code,
+            bool _kill_group = false) {
+        new (this) CmdInfo(cmd, _kill_cmd, _cmd_pid, getpgid(_cmd_pid), _ok_code, managed);
+        kill_group = _kill_group;
     }
-    CmdInfo(const CmdArgsList& _cmd, const char* _kill_cmd, pid_t _cmd_pid,
-            int _success_code, bool _managed = false,
-            int _stdin_fd = REDIRECT_NULL, int _stdout_fd = REDIRECT_NONE,
-            int _stderr_fd = REDIRECT_NONE,
-            int _kill_timeout = KILL_TIMEOUT_SEC)
-        : cmd(_cmd), cmd_pid(_cmd_pid), kill_cmd(_kill_cmd), kill_cmd_pid(-1)
+    CmdInfo(const CmdArgsList& _cmd, const char* _kill_cmd, pid_t _cmd_pid, pid_t _cmd_gid,
+            int  _success_code,
+            bool _managed      = false,
+            int  _stdin_fd     = REDIRECT_NULL,
+            int  _stdout_fd    = REDIRECT_NONE,
+            int  _stderr_fd    = REDIRECT_NONE,
+            int  _kill_timeout = KILL_TIMEOUT_SEC,
+            bool _kill_group   = false)
+        : cmd(_cmd)
+        , cmd_pid(_cmd_pid)
+        , cmd_gid(_cmd_gid)
+        , kill_cmd(_kill_cmd), kill_cmd_pid(-1)
         , sigterm(false), sigkill(false)
-        , kill_timeout(_kill_timeout), success_code(_success_code)
+        , kill_timeout(_kill_timeout)
+        , kill_group(_kill_group)
+        , success_code(_success_code)
         , managed(_managed), stdin_wr_pos(0)
     {
         stream_fd[STDIN_FILENO]  = _stdin_fd;
@@ -734,7 +750,7 @@ int process_command()
             }
             realpid = pid;
 
-            CmdInfo ci(true, po.kill_cmd(), realpid, po.success_exit_code());
+            CmdInfo ci(true, po.kill_cmd(), realpid, po.success_exit_code(), po.kill_group());
             ci.kill_timeout = po.kill_timeout();
             children[realpid] = ci;
 
@@ -760,11 +776,13 @@ int process_command()
                 send_error_str(transId, false, "Couldn't start pid: %s", err.c_str());
             else {
                 CmdInfo ci(po.cmd(), po.kill_cmd(), pid,
+                           getpgid(pid),
                            po.success_exit_code(), false,
                            po.stream_fd(STDIN_FILENO),
                            po.stream_fd(STDOUT_FILENO),
                            po.stream_fd(STDERR_FILENO),
-                           po.kill_timeout());
+                           po.kill_timeout(),
+                           po.kill_group());
                 children[pid] = ci;
                 send_ok(transId, pid);
             }
@@ -783,7 +801,7 @@ int process_command()
         case KILL: {
             // {kill, OsPid::integer(), Signal::integer()}
             long pid, sig;
-            if (arity != 3 || eis.decodeInt(pid) < 0 || (eis.decodeInt(sig)) < 0) {
+            if (arity != 3 || eis.decodeInt(pid) < 0 || eis.decodeInt(sig) < 0 || pid == -1) {
                 send_error_str(transId, true, "badarg");
                 break;
             } else if (pid < 0) {
@@ -806,6 +824,7 @@ int process_command()
             break;
         }
         case STDIN: {
+            // {stdin, OsPid::integer(), Data::binary()}
             long pid;
             std::string data;
             if (arity != 3 || eis.decodeInt(pid) < 0 || eis.decodeBinary(data) < 0) {
@@ -930,7 +949,7 @@ int finalize()
     int old_terminated = terminated;
     terminated = 0;
 
-    erl_exec_kill(0, SIGTERM); // Kill all children in our process group
+    kill(0, SIGTERM); // Kill all children in our process group
 
     TimeVal now(TimeVal::NOW);
     TimeVal deadline(now, FINALIZE_DEADLINE_SEC, 0);
@@ -1190,7 +1209,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
         }
         #endif
 
-        if (op.group() != INT_MAX && setgid(op.group()) < 0) {
+        if (op.group() != INT_MAX && setpgid(0, op.group()) < 0) {
             err.write("Cannot set effective group to %d", op.group());
             perror(err.c_str());
             exit(EXIT_FAILURE);
@@ -1237,10 +1256,32 @@ pid_t start_child(CmdOptions& op, std::string& error)
         exit(EXIT_FAILURE);
     }
 
+    // I am the parent
+
     if (debug > 1)
         fprintf(stderr, "Spawned child pid %d\r\n", pid);
 
-    // I am the parent
+    // Either the parent or the child could use setpgid() to change
+    // the process group ID of the child. However, because the scheduling
+    // of the parent and child is indeterminate after a fork(), we can’t
+    // rely on the parent changing the child’s process group ID before the
+    // child does an exec(); nor can we rely on the child changing its
+    // process group ID before the parent tries to send any job-control
+    // signals to it (dependence on either one of these behaviors would
+    // result in a race condition). Therefore, here the parent and the
+    // child process both call setpgid() to change the child’s process
+    // group ID to the same value immediately after a fork(), and the
+    // parent ignores any occurrence of the EACCES error on the setpgid() call.
+
+    if (op.group() != INT_MAX) {
+        pid_t gid = op.group() ? op.group() : pid;
+        if (setpgid(pid, gid) == -1 && errno != EACCES && debug)
+            fprintf(stderr, "  Parent failed to set group of pid %d to %d: %s\r\n",
+                    pid, gid, strerror(errno));
+        else if (debug)
+            fprintf(stderr, "  Set group of pid %d to %d\r\n", pid, gid);
+    }
+
     for (int i=STDIN_FILENO; i <= STDERR_FILENO; i++) {
         int  wr  = i==STDIN_FILENO ? WR : RD;
         int& cfd = op.stream_fd(i);
@@ -1281,7 +1322,7 @@ int stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify)
         // There was already an attempt to kill it.
         if (ci.sigterm && now.diff(ci.deadline) > 0) {
             // More than KILL_TIMEOUT_SEC secs elapsed since the last kill attempt
-            erl_exec_kill(ci.cmd_pid, SIGKILL);
+            erl_exec_kill(ci.kill_group ? -ci.cmd_gid : ci.cmd_pid, SIGKILL);
             if (ci.kill_cmd_pid > 0)
                 erl_exec_kill(ci.kill_cmd_pid, SIGKILL);
 
@@ -1317,14 +1358,17 @@ int stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify)
 
     if (use_kill) {
         // Use SIGTERM / SIGKILL to nuke the pid
-        int n;
-        if (!ci.sigterm && (n = kill_child(ci.cmd_pid, SIGTERM, transId, notify)) == 0) {
+        pid_t       pid  = ci.kill_group ? -ci.cmd_gid : ci.cmd_pid;
+        const char* spid = ci.kill_group ? "gid" : "pid";
+        int         n;
+        if (!ci.sigterm && (n = kill_child(pid, SIGTERM, transId, notify)) == 0) {
             if (debug)
-                fprintf(stderr, "Sent SIGTERM to pid %d (timeout=%ds)\r\n", ci.cmd_pid, ci.kill_timeout);
+                fprintf(stderr, "Sent SIGTERM to %s %d (timeout=%ds)\r\n",
+                        spid, abs(pid), ci.kill_timeout);
             ci.deadline.set(now, ci.kill_timeout);
-        } else if (!ci.sigkill && (n = kill_child(ci.cmd_pid, SIGKILL, 0, false)) == 0) {
+        } else if (!ci.sigkill && (n = kill_child(pid, SIGKILL, 0, false)) == 0) {
             if (debug)
-                fprintf(stderr, "Sent SIGKILL to pid %d\r\n", ci.cmd_pid);
+                fprintf(stderr, "Sent SIGKILL to %s %d\r\n", spid, abs(pid));
             ci.deadline.clear();
             ci.sigkill = true;
         } else {
@@ -1333,7 +1377,7 @@ int stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify)
             ci.deadline.clear();
             ci.sigkill = true;
             if (debug)
-                fprintf(stderr, "Failed to kill process %d - leaving a zombie\r\n", ci.cmd_pid);
+                fprintf(stderr, "Failed to kill %s %d - leaving a zombie\r\n", spid, abs(pid));
             MapChildrenT::iterator it = children.find(ci.cmd_pid);
             if (it != children.end())
                 erase_child(it);
@@ -1359,17 +1403,19 @@ void stop_child(pid_t pid, int transId, const TimeVal& now)
     stop_child(it->second, transId, now);
 }
 
-int kill_child(pid_t pid, int signal, int transId, bool notify)
+int send_std_error(int err, bool notify, int transId)
 {
-    // We can't use -pid here to kill the whole process group, because our process is
-    // the group leader.
-    int err = erl_exec_kill(pid, signal);
-    switch (err) {
-        case 0:
-            if (notify) send_ok(transId);
+    if (err == 0) {
+        if (notify) send_ok(transId);
+        return 0;
+    }
+
+    switch (errno) {
+        case EACCES:
+            if (notify) send_error_str(transId, true, "eacces");
             break;
         case EINVAL:
-            if (notify) send_error_str(transId, false, "Invalid signal: %d", signal);
+            if (notify) send_error_str(transId, true, "einval");
             break;
         case ESRCH:
             if (notify) send_error_str(transId, true, "esrch");
@@ -1378,7 +1424,23 @@ int kill_child(pid_t pid, int signal, int transId, bool notify)
             if (notify) send_error_str(transId, true, "eperm");
             break;
         default:
-            if (notify) send_error_str(transId, true, strerror(err));
+            if (notify) send_error_str(transId, false, strerror(errno));
+            break;
+    }
+    return err;
+}
+
+int kill_child(pid_t pid, int signal, int transId, bool notify)
+{
+    // We can't use -pid here to kill the whole process group, because our process is
+    // the group leader.
+    int err = erl_exec_kill(pid, signal);
+    switch (err) {
+        case EINVAL:
+            if (notify) send_error_str(transId, false, "Invalid signal: %d", signal);
+            break;
+        default:
+            send_std_error(err, notify, transId);
             break;
     }
     return err;
@@ -1537,6 +1599,10 @@ int check_children(const TimeVal& now, int& isTerminated, bool notify)
                 : i->second.success_code && !it->second
                     ? i->second.success_code // Override success status code
                     : it->second);
+            // The process exited and it requires to kill all other processes in the group
+            if (i->second.kill_group && i->second.cmd_gid != INT_MAX && i->second.cmd_gid)
+                erl_exec_kill(-(i->second.cmd_gid), SIGTERM); // Kill all children in this group
+
             if (notify && send_pid_status_term(ps) < 0) {
                 isTerminated = 1;
                 return -1;
@@ -1661,7 +1727,7 @@ int open_pipe(int fds[2], const char* stream, ei::StringBuffer<128>& err)
  * happen. */
 
 int erl_exec_kill(pid_t pid, int signal) {
-    if (pid < 0) {
+    if (pid == -1 || pid == 0) {
         if (debug)
             fprintf(stderr, "kill(%d, %d) attempt prohibited!\r\n", pid, signal);
         return -1;
@@ -1737,16 +1803,18 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
     }
 
     // Note: The STDIN, STDOUT, STDERR enums must occupy positions 0, 1, 2!!!
-    enum OptionT       { STDIN,  STDOUT,  STDERR,
-                         PTY,    SUCCESS_EXIT_CODE,
-                         CD,     ENV,     EXECUTABLE,
-                         KILL,   KILL_TIMEOUT,
-                         NICE,   USER,    GROUP} opt;
-    const char* opts[]={"stdin","stdout","stderr",
-                        "pty",  "success_exit_code",
-                        "cd",   "env",   "executable",
-                        "kill", "kill_timeout",
-                        "nice", "user",  "group"};
+    enum OptionT {
+        STDIN,      STDOUT,            STDERR,
+        PTY,        SUCCESS_EXIT_CODE, CD,     ENV,
+        EXECUTABLE, KILL,              KILL_TIMEOUT,
+        KILL_GROUP, NICE,              USER,    GROUP
+    } opt;
+    const char* opts[] = {
+        "stdin",      "stdout",            "stderr",
+        "pty",        "success_exit_code", "cd", "env",
+        "executable", "kill",              "kill_timeout",
+        "kill_group", "nice",              "user",  "group"
+    };
 
     bool seen_opt[sizeof(opts) / sizeof(char*)] = {false};
 
@@ -1830,13 +1898,19 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
                 break;
 
             case KILL_TIMEOUT:
+                // {kill_timeout, Timeout::int()}
                 if (eis.decodeInt(m_kill_timeout) < 0) {
                     m_err << op << " - invalid value";
                     return -1;
                 }
                 break;
 
+            case KILL_GROUP:
+                m_kill_group = true;
+                break;
+
             case NICE:
+                // {nice, Level::int()}
                 if (eis.decodeInt(m_nice) < 0 || m_nice < -20 || m_nice > 20) {
                     m_err << "nice option must be an integer between -20 and 20";
                     return -1;
