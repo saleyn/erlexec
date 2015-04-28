@@ -981,6 +981,14 @@ print(Stream, OsPid, Data) ->
 
 -define(tt(F), {timeout, 20, ?_test(F)}).
 
+temp_file() ->
+    Dir =   case os:getenv("TEMP") of
+            false -> "/tmp";
+            Path  -> Path
+            end,
+    {I1, I2, I3}  = now(),
+    filename:join(Dir, io_lib:format("exec_temp_~w_~w_~w", [I1, I2, I3])).
+
 exec_test_() ->
     {setup,
         fun()    -> {ok, Pid} = exec:start([{debug, 3}]), Pid end,
@@ -996,8 +1004,8 @@ exec_test_() ->
             ?tt(test_redirect()),
             ?tt(test_env()),
             ?tt(test_kill_timeout()),
-            ?tt(test_pty()),
-            ?tt(test_setpgid())
+            ?tt(test_setpgid()),
+            ?tt(test_pty())
         ]
     }.
 
@@ -1092,7 +1100,15 @@ test_kill_timeout() ->
     exec:stop(I),
     ?receiveMatch({'DOWN', _, process, P, normal}, 5000).
 
- 
+test_setpgid() ->
+    % Cmd given as string
+    {ok, P0, P} = exec:run("sleep  1", [{group, 0}, kill_group, monitor]),
+    {ok, P1, _} = exec:run("sleep 15", [{group, P}, monitor]),
+    {ok, P2, _} = exec:run("sleep 15", [{group, P}, monitor]),
+    ?receiveMatch({'DOWN',_,process, P0, normal}, 5000),
+    ?receiveMatch({'DOWN',_,process, P1, {exit_status, 15}}, 5000),
+    ?receiveMatch({'DOWN',_,process, P2, {exit_status, 15}}, 5000).
+
 test_pty() ->
     ?assertMatch({error,[{exit_status,256},{stdout,[<<"not a tty\n">>]}]},
         exec:run("tty", [stdin, stdout, sync])),
@@ -1100,25 +1116,15 @@ test_pty() ->
         exec:run("tty", [stdin, stdout, pty, sync])),
     {ok, P, I} = exec:run("/bin/bash --norc -i", [stdin, stdout, pty, monitor]),
     exec:send(I, <<"echo ok\n">>),
-    ?receiveMatch({stdout, I, <<"ok\r\n">>}, 1000),
+    receive
+    {stdout, I, <<"echo ok\r\n">>} ->
+        ?receiveMatch({stdout, I, <<"ok\r\n">>}, 1000);
+    {stdout, I, <<"ok\r\n">>} ->
+        ok
+    after 1000 ->
+        ?assertMatch({stdout, I, <<"ok\r\n">>}, timeout)
+    end,
     exec:send(I, <<"exit\n">>),
     ?receiveMatch({'DOWN', _, process, P, normal}, 1000).
-
-temp_file() ->
-    Dir =   case os:getenv("TEMP") of
-            false -> "/tmp";
-            Path  -> Path
-            end,
-    {I1, I2, I3}  = now(),
-    filename:join(Dir, io_lib:format("exec_temp_~w_~w_~w", [I1, I2, I3])).
-
-test_setpgid() ->
-    % Cmd given as string
-    {ok, P0, P} = exec:run("sleep 1", [{group, 0}, kill_group, monitor]),
-    {ok, P1, _} = exec:run("sleep 15", [{group, P}, monitor]),
-    {ok, P2, _} = exec:run("sleep 15", [{group, P}, monitor]),
-    ?receiveMatch({'DOWN',_,process, P0, normal}, 5000),
-    ?receiveMatch({'DOWN',_,process, P1, {exit_status, 15}}, 5000),
-    ?receiveMatch({'DOWN',_,process, P2, {exit_status, 15}}, 5000).
 
 -endif.
