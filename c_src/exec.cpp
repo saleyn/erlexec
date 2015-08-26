@@ -155,6 +155,7 @@ typedef std::map<pid_t, exit_status_t>      ExitedChildrenT;
 MapChildrenT    children;       // Map containing all managed processes started by this port program.
 MapKillPidT     transient_pids; // Map of pids of custom kill commands.
 ExitedChildrenT exited_children;// Set of processed SIGCHLD events
+pid_t           self_pid;
 
 #define SIGCHLD_MAX_SIZE 4096
 
@@ -449,7 +450,7 @@ void check_child(pid_t pid, int signal = -1)
     int status = 0;
     pid_t ret;
 
-    if (pid == getpid())    // Safety check. Never kill itself
+    if (pid == self_pid)    // Safety check. Never kill itself
         return;
 
     if (exited_children.find(pid) != exited_children.end())
@@ -577,6 +578,8 @@ int main(int argc, char* argv[])
     sigaction(SIGTERM, &sterm, NULL);
     sigaction(SIGHUP,  &sterm, NULL);
     sigaction(SIGPIPE, &sterm, NULL);
+
+    self_pid = getpid();
 
     sact.sa_handler = NULL;
     sact.sa_sigaction = gotsigchild;
@@ -741,14 +744,22 @@ int process_command()
         case MANAGE: {
             // {manage, Cmd::string(), Options::list()}
             CmdOptions po;
-            long pid;
-            pid_t realpid;
+            long       pid;
+            pid_t      realpid;
+            int        status, ret;
 
-            if (arity != 3 || (eis.decodeInt(pid)) < 0 || po.ei_decode(eis) < 0) {
+            if (arity != 3 || (eis.decodeInt(pid)) < 0 || po.ei_decode(eis) < 0 || pid <= 0) {
                 send_error_str(transId, true, "badarg");
                 return 0;
             }
             realpid = pid;
+
+            while ((ret = waitpid(pid, &status, WNOHANG)) < 0 && errno == EINTR);
+
+            if (ret < 0 || WIFEXITED(status) || WIFSIGNALED(status)) {
+                send_error_str(transId, true, "not_found");
+                return 0;
+            }
 
             CmdInfo ci(true, po.kill_cmd(), realpid, po.success_exit_code(), po.kill_group());
             ci.kill_timeout = po.kill_timeout();
