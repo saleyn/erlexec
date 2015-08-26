@@ -85,7 +85,8 @@
 #include <ei.h>
 #include "ei++.hpp"
 
-#if defined(__CYGWIN__) || defined(__WIN32) || defined(__APPLE__)
+#if defined(__CYGWIN__) || defined(__WIN32) || defined(__APPLE__) \
+     || (defined(__sun) && defined(__SVR4))
 #  define NO_SIGTIMEDWAIT
 #  define sigtimedwait(a, b, c) 0
 #  define sigisemptyset(s) \
