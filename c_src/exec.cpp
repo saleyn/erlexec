@@ -747,7 +747,7 @@ int process_command()
             CmdOptions po;
             long       pid;
             pid_t      realpid;
-            int        status, ret;
+            int        ret;
 
             if (arity != 3 || (eis.decodeInt(pid)) < 0 || po.ei_decode(eis) < 0 || pid <= 0) {
                 send_error_str(transId, true, "badarg");
@@ -755,9 +755,9 @@ int process_command()
             }
             realpid = pid;
 
-            while ((ret = waitpid(pid, &status, WNOHANG)) < 0 && errno == EINTR);
+            while ((ret = kill(pid, 0)) < 0 && errno == EINTR);
 
-            if (ret < 0 || WIFEXITED(status) || WIFSIGNALED(status)) {
+            if (ret < 0) {
                 send_error_str(transId, true, "not_found");
                 return 0;
             }
