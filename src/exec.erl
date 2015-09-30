@@ -628,6 +628,8 @@ handle_info({Port, {data, Bin}}, #state{port=Port, debug=Debug} = State) ->
              (Status band 16#FF00 bsr 8), Status band 127]),
         notify_ospid_owner(OsPid, Status),
         {noreply, State};
+    {0, ok} ->
+        {noreply, State};
     {0, Ignore} ->
         error_logger:warning_msg("~w [~w] unknown msg: ~p\n", [self(), ?MODULE, Ignore]),
         {noreply, State}
