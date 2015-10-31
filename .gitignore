@@ -1,7 +1,9 @@
 *.beam
 *.o
+*.d
 *.swp
 *.tgz
 /priv
 /ebin
 .rebar/*
+.eunit

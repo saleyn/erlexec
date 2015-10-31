@@ -11,11 +11,11 @@ erlexec
     send POSIX signals, know process IDs of the started OS process, set up
     a monitor and/or link to it, run interactive commands with psudo
     terminals. This application provides better control
-    over OS processes than built-in erlang:open_port/2 command with a
-    {spawn, Command} option, and performs proper OS child process cleanup
+    over OS processes than built-in `erlang:open_port/2` command with a
+    `{spawn, Command}` option, and performs proper OS child process cleanup
     when the emulator exits. 
 
-    See [http://saleyn.github.com/erlexec] for more information.
+    See http://saleyn.github.com/erlexec for more information.
 
 SUPPORTED OS's
 ==============
