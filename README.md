@@ -9,7 +9,7 @@ erlexec
 
     It makes possible for an Erlang process to start, stop an OS process,
     send POSIX signals, know process IDs of the started OS process, set up
-    a monitor and/or link to it, run interactive commands with psudo
+    a monitor and/or link to it, run interactive commands with pseudo
     terminals. This application provides better control
     over OS processes than built-in `erlang:open_port/2` command with a
     `{spawn, Command}` option, and performs proper OS child process cleanup
