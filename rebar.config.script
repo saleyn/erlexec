@@ -4,7 +4,7 @@ Vsn  = string:strip(os:cmd("git describe --always --tags --abbrev=0 | sed 's/^v/
 {LinCXX, LinLD} =
     case file:read_file_info("/usr/include/sys/capability.h") of
     {ok, _} ->
-        io:put_chars("INFO:  Detected support of linux capabilities.\n"),
+        %io:put_chars("INFO:  Detected support of linux capabilities.\n"),
         {" -DHAVE_CAP", " -lcap"};
     _ ->
         {"", ""}
