@@ -7,3 +7,5 @@
 /ebin
 .rebar/*
 .eunit
+rebar.lock
+_build

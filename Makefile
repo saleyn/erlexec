@@ -22,7 +22,7 @@ clean:
 	@rm -fr ebin doc
 
 docs: doc ebin clean-docs
-	@$(REBAR) doc skip_deps=true
+	@$(REBAR) edoc skip_deps=true
 
 doc ebin:
 	mkdir -p $@
@@ -42,6 +42,7 @@ github-docs:
 	else \
 		git checkout -b gh-pages; \
 	fi
+	rm -f rebar.lock
 	git checkout master -- src include
 	git checkout master -- Makefile rebar.*
 	make docs
