@@ -23,8 +23,9 @@ Linux, Solaris, MacOS X
 See http://saleyn.github.io/erlexec
 
 ## BUILDING ##
-Make sure you have rebar (http://github.com/basho/rebar) installed
-locally and the rebar script is in the path.
+Make sure you have rebar (http://github.com/basho/rebar or
+http://github.com/basho/rebar3) installed locally and the rebar script
+is in the path.
 
 If you are deploying the application on Linux and would like to
 take advantage of exec-port running tasks using effective user IDs
