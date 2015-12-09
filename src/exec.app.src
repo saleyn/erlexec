@@ -1,7 +1,7 @@
 {application, exec,
  [
   {description, "OS Process Manager"},
-  {vsn, git},
+  {vsn, "1.0.1"},
   {id, "exec"},
   {modules, []},
   {registered, [ exec ] },
@@ -11,6 +11,10 @@
   %% mod: Specify the module name to start the application, plus args
   %%
   {mod, {exec_app, []}},
-  {env, []}
+  {env, []},
+
+  {maintainers, ["Serge Aleynikov"]},
+  {licenses,    ["BSD"]},
+  {links,       [{"Github", "https://github.com/saleyn/erlexec"}]}
  ]
 }.

@@ -5,7 +5,12 @@ PROJECT = $(notdir $(PWD))
 TARBALL = $(PROJECT)-$(VSN)
 
 DIALYZER = dialyzer
-REBAR = rebar
+REBAR   := $(shell which rebar3 2>/dev/null)
+REBAR   := $(if $(REBAR),$(REBAR),$(which rebar 2>/dev/null))
+
+ifeq (,$(REBAR))
+$(error rebar or rebar3 not found!)
+endif
 
 .PHONY : all clean test docs doc clean-docs github-docs dialyzer
 
