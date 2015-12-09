@@ -30,6 +30,9 @@ doc ebin:
 test:
 	@$(REBAR) eunit
 
+publish:
+	$(REBAR) hex publish
+
 clean-docs:
 	rm -f doc/*.{css,html,png} doc/edoc-info
 

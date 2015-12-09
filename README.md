@@ -1,5 +1,5 @@
-erlexec
-=======
+exec
+====
 
     Execute and control OS processes from Erlang/OTP.
 
@@ -21,6 +21,10 @@ SUPPORTED OS's
 ==============
     Linux, Solaris, MacOS X
 
+DOCUMENTATION
+=============
+    See http://saleyn.github.io/erlexec
+
 BUILDING
 ========
     Make sure you have rebar (http://github.com/basho/rebar) installed
@@ -38,11 +42,6 @@ BUILDING
 
     $ git clone git@github.com:saleyn/erlexec.git
     $ make
-
-DEPLOYING
-=========
-    Run "make tar".  This produces a tarball which you can deploy to your
-    destination environment and untar the content.
 
 LICENSE
 =======
