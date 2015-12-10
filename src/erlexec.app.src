@@ -1,0 +1,20 @@
+{application, erlexec,
+ [
+  {description, "OS Process Manager"},
+  {vsn, "1.0.1"},
+  {id, "erlexec"},
+  {modules, []},
+  {registered, [ exec ] },
+  %% NOTE: do not list applications which are load-only!
+  {applications, [ kernel, stdlib ] },
+  %%
+  %% mod: Specify the module name to start the application, plus args
+  %%
+  {mod, {exec_app, []}},
+  {env, []},
+
+  {maintainers, ["Serge Aleynikov"]},
+  {licenses,    ["BSD"]},
+  {links,       [{"Github", "https://github.com/saleyn/erlexec"}]}
+ ]
+}.
