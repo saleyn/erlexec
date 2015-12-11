@@ -1,0 +1,1 @@
+2015-12-10: Renamed exec.app to erlexec.app to match project name

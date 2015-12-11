@@ -3,9 +3,8 @@
 *.d
 *.swp
 *.tgz
-/priv
-/ebin
+priv
+ebin
 .rebar/*
 .eunit
-rebar.lock
 _build
