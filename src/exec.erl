@@ -975,7 +975,7 @@ print(Stream, OsPid, Data) ->
 -define(receiveMatch(A, Timeout),
     (fun() ->
         receive
-            _M -> ?assertMatch(A, _M)
+            A -> true
         after Timeout ->
             ?assertMatch(A, timeout)
         end
@@ -988,7 +988,7 @@ temp_file() ->
             false -> "/tmp";
             Path  -> Path
             end,
-    {I1, I2, I3}  = now(),
+    {I1, I2, I3}  = erlang:timestamp(),
     filename:join(Dir, io_lib:format("exec_temp_~w_~w_~w", [I1, I2, I3])).
 
 exec_test_() ->
@@ -1067,7 +1067,7 @@ test_executable() ->
     ?assertMatch(
         [<<"Pid ", _/binary>>, <<" cannot execute '00kuku00': No such file or directory\n">>],
         begin
-            {error, [{exit_status,_}, {stderr, [E]}]} =
+            {error,[{exit_status,256},{stderr, [E]}]} =
                 exec:run("ls", [sync, {executable, "00kuku00"}, stdout, stderr]),
             binary:split(E, <<":">>)
         end),
