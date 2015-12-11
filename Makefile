@@ -65,7 +65,7 @@ tar:
     tar zcf $(TARBALL).tgz --exclude="core*" --exclude="erl_crash.dump" \
 		--exclude="*.tgz" --exclude="*.swp" --exclude="c_src" \
 		--exclude="Makefile" --exclude="rebar.*" --exclude="*.mk" \
-		--exclude="*.o" --exclude=".git*" $(PROJECT) && \
+		--exclude="*.o" --exclude="_build" --exclude=".git*" $(PROJECT) && \
 		mv $(TARBALL).tgz $(PROJECT)/ && echo "Created $(TARBALL).tgz"
 
 dialyzer: build.plt
