@@ -1,5 +1,5 @@
 
-   Exec - OS Process Manager for Erlang VM.
+   Erlexec - OS Process Manager for Erlang VM.
 
 @author Serge Aleynikov <saleyn at gmail dot com>
 @version {@vsn}
