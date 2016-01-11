@@ -720,9 +720,7 @@ wait_for_ospid_exit(OsPid, Ref, OutAcc, ErrAcc) ->
     {'DOWN', Ref, process, _, noproc} ->
         {ok, sync_res(OutAcc, ErrAcc)};
     {'DOWN', Ref, process, _, {exit_status,_}=R} ->
-        {error, [R | sync_res(OutAcc, ErrAcc)]};
-    Other ->
-        {error, [{reason, Other} | sync_res(OutAcc, ErrAcc)]}
+        {error, [R | sync_res(OutAcc, ErrAcc)]}
     end.
 
 sync_res([], []) -> [];
