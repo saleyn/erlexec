@@ -548,7 +548,7 @@ void usage(char* progname) {
         "   %s [-n] [-root] [-alarm N] [-debug [Level]] [-user User]\n"
         "Options:\n"
         "   -n              - Use marshaling file descriptors 3&4 instead of default 0&1.\n"
-        "   -root           - Allow running as root.\n"
+        "   -root           - Allow running child processes as root.\n"
         "   -alarm N        - Allow up to <N> seconds to live after receiving SIGTERM/SIGINT (default %d)\n"
         "   -debug [Level]  - Turn on debug mode (default Level: 1)\n"
         "   -user User      - If started by root, run as User\n"
@@ -869,7 +869,7 @@ void initialize(int userid, bool use_alt_fds, bool run_as_root)
     // unless run_as_root is set
     if (getuid() == 0 && !run_as_root) {
         if (userid == 0) {
-            fprintf(stderr, "When running as root, \"-user User\" option must be provided!\r\n");
+            fprintf(stderr, "When running as root, \"-user User\" or \"-root\" option must be provided!\r\n");
             exit(4);
         }
 
