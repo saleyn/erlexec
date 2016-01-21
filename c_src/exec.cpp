@@ -126,7 +126,6 @@ static int  alarm_max_time  = FINALIZE_DEADLINE_SEC + 2;
 static int  debug           = 0;
 static bool oktojump        = false;
 static int  terminated      = 0;    // indicates that we got a SIGINT / SIGTERM event
-static bool superuser       = false;
 static bool pipe_valid      = true;
 static int  max_fds;
 static int  dev_null;
@@ -819,7 +818,7 @@ int process_command()
             } else if (pid < 0) {
                 send_error_str(transId, false, "Not allowed to send signal to all processes");
                 break;
-            } else if (superuser && children.find(pid) == children.end()) {
+            } else if (children.find(pid) == children.end()) {
                 send_error_str(transId, false, "Cannot kill a pid not managed by this application");
                 break;
             }
@@ -864,7 +863,6 @@ void initialize(int userid, bool use_alt_fds)
     // If we are root, switch to non-root user and set capabilities
     // to be able to adjust niceness and run commands as other users.
     if (getuid() == 0) {
-        superuser = true;
         if (userid == 0) {
             fprintf(stderr, "When running as root, \"-user User\" option must be provided!\r\n");
             exit(4);
