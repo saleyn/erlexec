@@ -86,7 +86,7 @@
 %% <dt>debug</dt><dd>Same as {debug, 1}</dd>
 %% <dt>{debug, Level}</dt><dd>Enable port-programs debug trace at `Level'.</dd>
 %% <dt>verbose</dt><dd>Enable verbose prints of the Erlang process.</dd>
-%% <dt>root</dt><dd>Allow running as root.</dd>
+%% <dt>root</dt><dd>Allow running child processes as root.</dd>
 %% <dt>{args, Args}</dt><dd>Append `Args' to the port command.</dd>
 %% <dt>{alarm, Secs}</dt>
 %%     <dd>Give `Secs' deadline for the port program to clean up
