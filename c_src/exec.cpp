@@ -126,7 +126,6 @@ static int  alarm_max_time  = FINALIZE_DEADLINE_SEC + 2;
 static int  debug           = 0;
 static bool oktojump        = false;
 static int  terminated      = 0;    // indicates that we got a SIGINT / SIGTERM event
-static bool superuser       = false;
 static bool pipe_valid      = true;
 static int  max_fds;
 static int  dev_null;
@@ -213,7 +212,7 @@ int     stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify = t
 void    erase_child(MapChildrenT::iterator& it);
 
 int     process_command();
-void    initialize(int userid, bool use_alt_fds);
+void    initialize(int userid, bool use_alt_fds, bool run_as_root);
 int     finalize();
 int     set_nonblock_flag(pid_t pid, int fd, bool value);
 int     erl_exec_kill(pid_t pid, int signal);
@@ -546,9 +545,10 @@ int set_nice(pid_t pid,int nice, std::string& error)
 void usage(char* progname) {
     fprintf(stderr,
         "Usage:\n"
-        "   %s [-n] [-alarm N] [-debug [Level]] [-user User]\n"
+        "   %s [-n] [-root] [-alarm N] [-debug [Level]] [-user User]\n"
         "Options:\n"
         "   -n              - Use marshaling file descriptors 3&4 instead of default 0&1.\n"
+        "   -root           - Allow running child processes as root.\n"
         "   -alarm N        - Allow up to <N> seconds to live after receiving SIGTERM/SIGINT (default %d)\n"
         "   -debug [Level]  - Turn on debug mode (default Level: 1)\n"
         "   -user User      - If started by root, run as User\n"
@@ -570,6 +570,7 @@ int main(int argc, char* argv[])
     struct sigaction sact, sterm;
     int userid = 0;
     bool use_alt_fds = false;
+    bool run_as_root = false;
 
     sterm.sa_handler = gotsignal;
     sigemptyset(&sterm.sa_mask);
@@ -612,11 +613,13 @@ int main(int argc, char* argv[])
                     exit(3);
                 }
                 userid = pw->pw_uid;
+            } else if (strcmp(argv[res], "-root") == 0) {
+                run_as_root = true;
             }
         }
     }
 
-    initialize(userid, use_alt_fds);
+    initialize(userid, use_alt_fds, run_as_root);
 
     while (!terminated) {
 
@@ -819,7 +822,7 @@ int process_command()
             } else if (pid < 0) {
                 send_error_str(transId, false, "Not allowed to send signal to all processes");
                 break;
-            } else if (superuser && children.find(pid) == children.end()) {
+            } else if (children.find(pid) == children.end()) {
                 send_error_str(transId, false, "Cannot kill a pid not managed by this application");
                 break;
             }
@@ -859,14 +862,14 @@ int process_command()
     return 0;
 }
 
-void initialize(int userid, bool use_alt_fds)
+void initialize(int userid, bool use_alt_fds, bool run_as_root)
 {
     // If we are root, switch to non-root user and set capabilities
     // to be able to adjust niceness and run commands as other users.
-    if (getuid() == 0) {
-        superuser = true;
+    // unless run_as_root is set
+    if (getuid() == 0 && !run_as_root) {
         if (userid == 0) {
-            fprintf(stderr, "When running as root, \"-user User\" option must be provided!\r\n");
+            fprintf(stderr, "When running as root, \"-user User\" or \"-root\" option must be provided!\r\n");
             exit(4);
         }
 
