@@ -294,6 +294,8 @@ start(Options) when is_list(Options) ->
 %% @doc Run an external program. `OsPid' is the OS process identifier of
 %%      the new process. If `sync' is specified in `Options' the return
 %%      value is `{ok, Status}' where `Status' is OS process exit status.
+%%      The `Status` can be decoded with `status/1' to determine the
+%%      process's exit code and if it was killed by signal.
 %% @end
 %%-------------------------------------------------------------------------
 -spec run(cmd(), cmd_options()) ->
@@ -307,6 +309,8 @@ run(Exe, Options) when is_list(Exe), is_list(Options) ->
 %%      the calling process will be killed or if it's trapping exits,
 %%      it'll get {'EXIT', OsPid, Status} message.  If the calling process
 %%      dies the OsPid will be killed.
+%%      The `Status` can be decoded with `status/1' to determine the
+%%      process's exit code and if it was killed by signal.
 %% @end
 %%-------------------------------------------------------------------------
 -spec run_link(cmd(), cmd_options()) ->
