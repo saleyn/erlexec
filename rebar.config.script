@@ -1,8 +1,27 @@
-Arch = erlang:system_info(system_architecture),
+%% For cross building using erlang:system_info() does not work as rebar runs
+%% using the build hosts Erlang runtime.
+%% If CXX envrionment variable is defined we are most likely running in a cross environment.
+{CXX,Target,Sysroot} = case os:getenv("CXX") of
+    false -> {"g++",erlang:system_info(system_architecture),""};
+    Compiler -> {Compiler,string:strip(os:cmd(Compiler ++ " -dumpmachine"), right, $\n),string:strip(os:cmd(Compiler ++ " -print-sysroot"), right, $\n)}
+end,
+
+%% Commonly on Linux, compilers report the target triplet as <arch>-<vendor>-linux,
+%% however, Erlang runtime reports and expects it as <arch>-<vendor>-linux-gnu.
+%% Fix by appending "-gnu".
+Mach = case string:str(Target,"linux") of
+    0 -> Target;
+    _ -> case string:words(Target,$-) of
+        4 -> Target;
+        _ -> Target ++ "-gnu"
+        end
+    end,
+
 Vsn  = string:strip(os:cmd("git describe --always --tags --abbrev=0 | sed 's/^v//'"), right, $\n),
+
 %% Check for Linux capability API (Install package: libcap-devel).
 {LinCXX, LinLD} =
-    case file:read_file_info("/usr/include/sys/capability.h") of
+    case file:read_file_info(Sysroot ++ "/usr/include/sys/capability.h") of
     {ok, _} ->
         %io:put_chars("INFO:  Detected support of linux capabilities.\n"),
         {" -DHAVE_CAP", " -lcap"};
@@ -10,7 +29,7 @@ Vsn  = string:strip(os:cmd("git describe --always --tags --abbrev=0 | sed 's/^v/
         {"", ""}
     end,
 
-X64 = case Arch of
+X64 = case Mach of
     "x86_64" ++ _E -> " -m64";
     _              -> ""
     end,
@@ -27,12 +46,12 @@ lists:keymerge(1,
                      {"linux", "CXXFLAGS", "$CXXFLAGS -DHAVE_SETRESUID -DHAVE_PTRACE" ++ LinCXX},
                      {"linux", "LDFLAGS", "$LDFLAGS" ++ LinLD},
 
-                     {"CC",  "g++"},
-                     {"CXX", "g++"},
+                     {"CC",  CXX},
+                     {"CXX", CXX},
                      {"CXXFLAGS", "$CXXFLAGS -O0"}
                     ]},
 
-        {port_specs,[{filename:join(["priv", Arch, "exec-port"]), ["c_src/*.cpp"]}]},
+        {port_specs,[{filename:join(["priv", Mach, "exec-port"]), ["c_src/*.cpp"]}]},
         {edoc_opts, [{overview,     "src/overview.edoc"},
                      {title,        "The exec application"},
                      {includes,     ["include"]},
@@ -41,4 +60,3 @@ lists:keymerge(1,
                      {app_default,  "http://www.erlang.org/doc/man"}]}
     ]),
     lists:keysort(1, CONFIG)).
-
