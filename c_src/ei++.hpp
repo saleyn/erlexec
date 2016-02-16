@@ -105,7 +105,7 @@ namespace ei {
 
         StringBuffer( const std::string& s)
             : m_buffer(m_buff), m_size(N), m_minAlloc(DEF_QUANTUM), m_headerSize(0), m_maxMsgSize(0)
-        { copy(s.c_str()); }
+        { copy(s.c_str(), 0, s.size()); }
 
         ~StringBuffer() { reset(); }
 
@@ -194,7 +194,7 @@ namespace ei {
 
         char* copy( const char* s, size_t pos, size_t len)
         {
-            assert( pos > 0 && len > 0 && (pos+len) < m_size );
+            assert( pos >= 0 && len > 0 && (pos+len) < m_size );
             if ( resize( len + pos + 1, pos != 0 ) == NULL )
                 return NULL;
             memcpy( base() + pos, s, len );
@@ -514,7 +514,7 @@ namespace ei {
         template <int N>
         int  decodeString(StringBuffer<N>& s) {
             int size;
-            if (decodeType(size) != etString || !s.resize(size) || ei_decode_string(&m_rbuf, &m_rIdx, s.c_str()))
+            if (decodeType(size) != etString || !s.resize(size+1) || ei_decode_string(&m_rbuf, &m_rIdx, s.c_str()))
                 return -1;
             return size;
         }
@@ -568,6 +568,11 @@ namespace ei {
         int  wcopy( const Serializer& ser)  { return m_wbuf.copy( ser.write_buffer(), 0, ser.write_idx()) != 0 ? 0 : -1; }
         /// Copy the content of read buffer from another serializer
         int  rcopy( const Serializer& ser)  { return m_rbuf.copy( ser.read_buffer(), 0, ser.read_idx() ) != 0 ? 0 : -1; }
+
+        void set_rbuf(const char* a_bytes, size_t a_sz) {
+            m_rbuf.reset();
+            m_rbuf.copy(a_bytes, 0, a_sz);
+        }
 
         /// dump read/write buffer's content to stream
         std::ostream& dump(std::ostream& os, bool outWriteBuffer);
