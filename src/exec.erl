@@ -155,6 +155,7 @@
 -type cmd_option()  ::
       monitor
     | sync
+    | link    
     | {executable, string()}
     | {cd, WorkDir::string()}
     | {env, [string() | {Name :: string(), Value :: string()}, ...]}
@@ -536,9 +537,9 @@ default(Option) ->
 %%-----------------------------------------------------------------------
 init([Options]) ->
     process_flag(trap_exit, true),
-    Opts0 = proplists:expand([{debug,   {debug, 1}},
-                              {root,    {root, true}},
-                              {verbose, {verbose, true}}], Options),
+    Opts0 = proplists:expand([{debug,   [{debug, 1}]},
+                              {root,    [{root, true}]},
+                              {verbose, [{verbose, true}]}], Options),
     Opts1 = [T || T = {O,_} <- Opts0, 
                 lists:member(O, [debug, verbose, root, args, alarm, user])],
     Opts  = proplists:normalize(Opts1, [{aliases, [{args, ''}]}]),
