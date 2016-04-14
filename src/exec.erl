@@ -155,6 +155,7 @@
 -type cmd_option()  ::
       monitor
     | sync
+    | link    
     | {executable, string()}
     | {cd, WorkDir::string()}
     | {env, [string() | {Name :: string(), Value :: string()}, ...]}
@@ -392,8 +393,12 @@ stop_and_wait(Port, Timeout) when is_port(Port) ->
     stop_and_wait(OsPid, Timeout);
 
 stop_and_wait(OsPid, Timeout) when is_integer(OsPid) ->
-    [{_, Pid}] = ets:lookup(exec_mon, OsPid),
-    stop_and_wait(Pid, Timeout);
+    case ets:lookup(exec_mon, OsPid) of
+    [{_, Pid}] ->
+        stop_and_wait(Pid, Timeout);
+    [] ->
+        {error, not_found}
+    end;
 
 stop_and_wait(Pid, Timeout) when is_pid(Pid) ->
     gen_server:call(?MODULE, {port, {stop, Pid}}, Timeout),
@@ -536,9 +541,9 @@ default(Option) ->
 %%-----------------------------------------------------------------------
 init([Options]) ->
     process_flag(trap_exit, true),
-    Opts0 = proplists:expand([{debug,   {debug, 1}},
-                              {root,    {root, true}},
-                              {verbose, {verbose, true}}], Options),
+    Opts0 = proplists:expand([{debug,   [{debug, 1}]},
+                              {root,    [{root, true}]},
+                              {verbose, [{verbose, true}]}], Options),
     Opts1 = [T || T = {O,_} <- Opts0, 
                 lists:member(O, [debug, verbose, root, args, alarm, user])],
     Opts  = proplists:normalize(Opts1, [{aliases, [{args, ''}]}]),
