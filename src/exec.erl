@@ -440,7 +440,9 @@ pid(OsPid) when is_integer(OsPid) ->
 %% @end
 %%-------------------------------------------------------------------------
 -spec send(OsPid :: ospid() | pid(), binary()) -> ok.
-send(OsPid, Data) when (is_integer(OsPid) orelse is_pid(OsPid)) andalso is_binary(Data) ->
+send(OsPid, Data)
+  when (is_integer(OsPid) orelse is_pid(OsPid)),
+       is_binary(Data) orelse Data =:= eof ->
     gen_server:call(?MODULE, {port, {send, OsPid, Data}}).
 
 %%-------------------------------------------------------------------------
@@ -883,12 +885,14 @@ is_port_command({stop, Pid}, _Pid, _State) when is_pid(Pid) ->
 is_port_command({{manage, OsPid, Options}, Link}, Pid, State) when is_integer(OsPid) ->
     {PortOpts, _Other} = check_cmd_options(Options, Pid, State, [], []),
     {ok, {manage, OsPid, PortOpts}, Link, []};
-is_port_command({send, Pid, Data}, _Pid, _State) when is_pid(Pid), is_binary(Data) ->
+is_port_command({send, Pid, Data}, _Pid, _State)
+  when is_pid(Pid), is_binary(Data) orelse Data =:= eof ->
     case ets:lookup(exec_mon, Pid) of
     [{Pid, OsPid}]  -> {ok, {stdin, OsPid, Data}};
     []              -> throw({error, no_process})
     end;
-is_port_command({send, OsPid, Data}, _Pid, _State) when is_integer(OsPid), is_binary(Data) ->
+is_port_command({send, OsPid, Data}, _Pid, _State)
+  when is_integer(OsPid), is_binary(Data) orelse Data =:= eof ->
     {ok, {stdin, OsPid, Data}};
 is_port_command({kill, OsPid, Sig}=T, _Pid, _State) when is_integer(OsPid),is_integer(Sig) -> 
     {ok, T, undefined, []};
@@ -1015,6 +1019,7 @@ exec_test_() ->
             ?tt(test_monitor()),
             ?tt(test_sync()),
             ?tt(test_stdin()),
+            ?tt(test_stdin_eof()),
             ?tt(test_std(stdout)),
             ?tt(test_std(stderr)),
             ?tt(test_cmd()),
@@ -1039,6 +1044,13 @@ test_stdin() ->
     {ok, P, I} = exec:run("read x; echo \"Got: $x\"", [stdin, stdout, monitor]),
     ok = exec:send(I, <<"Test data\n">>),
     ?receiveMatch({stdout,I,<<"Got: Test data\n">>}, 3000),
+    ?receiveMatch({'DOWN', _, process, P, normal}, 5000).
+
+test_stdin_eof() ->
+    {ok, P, I} = exec:run("tac", [stdin, stdout, monitor]),
+    [ok = exec:send(I, Data)
+     || Data <- [<<"foo\n">>, <<"bar\n">>, <<"baz\n">>, eof]],
+    ?receiveMatch({stdout,I,<<"baz\nbar\nfoo\n">>}, 3000),
     ?receiveMatch({'DOWN', _, process, P, normal}, 5000).
 
 test_std(Stream) ->
