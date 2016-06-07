@@ -234,6 +234,23 @@ ok
 {'DOWN',#Ref<0.0.0.1837>,process,<0.427.0>,normal}
 '''
 
+=== Communicating with an OS process via STDIN and sending end-of-file ===
+```
+2> Watcher = spawn(fun F() -> receive Msg -> io:format("Got: ~p\n", [Msg]), F() end end).
+<0.112.0>
+3> f(Pid), f(OsPid), {ok, Pid, OsPid} = exec:run("tac", [stdin, {stdout, Watcher}, {stderr, Watcher}]).
+{ok,<0.114.0>,26143}
+4> exec:send(Pid, <<"foo\n">>).
+ok
+5> exec:send(Pid, <<"bar\n">>).
+ok
+6> exec:send(Pid, <<"baz\n">>).
+ok
+7> exec:send(Pid, eof).
+ok
+Got: {stdout,26143,<<"baz\nbar\nfoo\n">>}
+'''
+
 === Running OS commands synchronously ===
 ```
 % Execute an shell script that blocks for 1 second and return its termination code
