@@ -842,7 +842,12 @@ int process_command()
             // {stdin, OsPid::integer(), Data::binary()}
             long pid;
             std::string data;
-            if (arity != 3 || eis.decodeInt(pid) < 0 || eis.decodeBinary(data) < 0) {
+            std::string s;
+            bool eof = false;
+            if (arity != 3 || eis.decodeInt(pid) < 0 ||
+                    (eis.decodeBinary(data) < 0 &&
+                     (eis.decodeAtom(s) < 0 || !(eof = (s == "eof")))
+                     )) {
                 send_error_str(transId, true, "badarg");
                 break;
             }
@@ -854,6 +859,22 @@ int process_command()
                         data.size(), pid);
                 break;
             }
+
+            if (eof) {
+                CmdInfo& ci = it->second;
+                int& fd = ci.stream_fd[STDIN_FILENO];
+
+                if (fd < 0) break;
+                if (debug)
+                    fprintf(stderr, "Eof writing pid %d's stdin, closing fd=%d: %s\r\n",
+                            ci.cmd_pid, fd, strerror(errno));
+                ci.stdin_wr_pos = 0;
+                close(fd);
+                fd = REDIRECT_CLOSE;
+                ci.stdin_queue.clear();
+                break;
+            }
+
             it->second.stdin_queue.push_front(data);
             process_pid_input(it->second);
             break;
