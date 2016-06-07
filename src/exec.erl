@@ -442,7 +442,7 @@ pid(OsPid) when is_integer(OsPid) ->
 -spec send(OsPid :: ospid() | pid(), binary()) -> ok.
 send(OsPid, Data)
   when (is_integer(OsPid) orelse is_pid(OsPid)),
-       is_binary(Data) orelse Data =:= eof ->
+       (is_binary(Data)   orelse Data =:= eof) ->
     gen_server:call(?MODULE, {port, {send, OsPid, Data}}).
 
 %%-------------------------------------------------------------------------
