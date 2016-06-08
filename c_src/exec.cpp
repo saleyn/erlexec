@@ -206,6 +206,7 @@ pid_t   start_child(CmdOptions& op, std::string& err);
 int     kill_child(pid_t pid, int sig, int transId, bool notify=true);
 int     check_children(const TimeVal& now, int& isTerminated, bool notify = true);
 bool    process_pid_input(CmdInfo& ci);
+void    close_stdin(CmdInfo& ci);
 void    process_pid_output(CmdInfo& ci, int maxsize = 4096);
 void    stop_child(pid_t pid, int transId, const TimeVal& now);
 int     stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify = true);
@@ -861,17 +862,7 @@ int process_command()
             }
 
             if (eof) {
-                CmdInfo& ci = it->second;
-                int& fd = ci.stream_fd[STDIN_FILENO];
-
-                if (fd < 0) break;
-                if (debug)
-                    fprintf(stderr, "Eof writing pid %d's stdin, closing fd=%d: %s\r\n",
-                            ci.cmd_pid, fd, strerror(errno));
-                ci.stdin_wr_pos = 0;
-                close(fd);
-                fd = REDIRECT_CLOSE;
-                ci.stdin_queue.clear();
+                close_stdin(it->second);
                 break;
             }
 
@@ -1511,13 +1502,7 @@ bool process_pid_input(CmdInfo& ci)
         } else if (n < 0 && errno == EAGAIN) {
             break;
         } else if (n <= 0) {
-            if (debug)
-                fprintf(stderr, "Eof writing pid %d's stdin, closing fd=%d: %s\r\n",
-                    ci.cmd_pid, fd, strerror(errno));
-            ci.stdin_wr_pos = 0;
-            close(fd);
-            fd = REDIRECT_CLOSE;
-            ci.stdin_queue.clear();
+            close_stdin(ci);
             return true;
         }
 
@@ -1526,6 +1511,21 @@ bool process_pid_input(CmdInfo& ci)
     }
 
     return true;
+}
+
+void close_stdin(CmdInfo& ci)
+{
+    int& fd = ci.stream_fd[STDIN_FILENO];
+
+    if (fd < 0) return;
+    if (debug)
+        fprintf(stderr, "Eof writing pid %d's stdin, closing fd=%d: %s\r\n",
+                ci.cmd_pid, fd, strerror(errno));
+    ci.stdin_wr_pos = 0;
+    close(fd);
+    fd = REDIRECT_CLOSE;
+    ci.stdin_queue.clear();
+    return;
 }
 
 void process_pid_output(CmdInfo& ci, int maxsize)
