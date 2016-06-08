@@ -437,9 +437,13 @@ pid(OsPid) when is_integer(OsPid) ->
 
 %%-------------------------------------------------------------------------
 %% @doc Send `Data' to stdin of the OS process identified by `OsPid'.
+%%
+%% Sending eof instead of binary Data causes close of stdin of the
+%% corresponding process. Data sent to closed stdin is ignored.
+%%
 %% @end
 %%-------------------------------------------------------------------------
--spec send(OsPid :: ospid() | pid(), binary()) -> ok.
+-spec send(OsPid :: ospid() | pid(), binary() | 'eof') -> ok.
 send(OsPid, Data)
   when (is_integer(OsPid) orelse is_pid(OsPid)),
        (is_binary(Data)   orelse Data =:= eof) ->
