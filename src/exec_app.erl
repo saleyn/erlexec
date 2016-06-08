@@ -72,7 +72,7 @@ init([]) ->
     }}.
  
 add_option(Option, Acc) ->
-    case application:get_env(exec, Option) of
+    case application:get_env(erlexec, Option) of
     {ok, Value} -> [{Option, Value} | Acc];
     undefined   -> Acc
     end.
