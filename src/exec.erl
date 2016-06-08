@@ -81,7 +81,9 @@
     | {limit_users, [string(), ...]}
     | {portexe, string()}
     | {env, [{string(), string()}, ...]}.
-%% Options passed to the exec process at startup.
+%% Options passed to the exec process at startup. They can be specified in the
+%% `sys.config' file for the `erlexec' application to customize application
+%% startup.
 %% <dl>
 %% <dt>debug</dt><dd>Same as {debug, 1}</dd>
 %% <dt>{debug, Level}</dt><dd>Enable port-programs debug trace at `Level'.</dd>
