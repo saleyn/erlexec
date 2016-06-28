@@ -514,7 +514,8 @@ namespace ei {
         template <int N>
         int  decodeString(StringBuffer<N>& s) {
             int size;
-            if (decodeType(size) != etString || !s.resize(size+1) || ei_decode_string(&m_rbuf, &m_rIdx, s.c_str()))
+            ErlTypeT tp = decodeType(size);
+            if ((tp != etString && tp != etNil) || !s.resize(size+1) || ei_decode_string(&m_rbuf, &m_rIdx, s.c_str()))
                 return -1;
             return size;
         }

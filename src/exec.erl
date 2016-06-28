@@ -1044,7 +1044,10 @@ test_monitor() ->
 
 test_sync() ->
     ?assertMatch({ok, [{stdout, [<<"Test\n">>]}, {stderr, [<<"ERR\n">>]}]},
-        exec:run("echo Test; echo ERR 1>&2", [stdout, stderr, sync])).
+        exec:run("echo Test; echo ERR 1>&2", [stdout, stderr, sync])),
+    ?assertMatch({ok,[{stdout,[<<"\n">>]}]},
+         exec:run(["/bin/echo", ""], [sync, stdout])).
+
 
 test_stdin() ->
     {ok, P, I} = exec:run("read x; echo \"Got: $x\"", [stdin, stdout, monitor]),
