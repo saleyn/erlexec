@@ -728,8 +728,20 @@ do_run(Cmd, Options) ->
         {true, {ok, Pid, OsPid} = R} ->
             Ref = monitor(process, Pid),
             case Sync of
-                true -> wait_for_ospid_exit(OsPid, Ref, [], []);
-                _    -> R
+                true ->
+                    wait_for_ospid_exit(OsPid, Ref, [], []);
+                _    ->
+                    % Since there is a race condition in calling the monitor
+                    % function above, check if the process still exists. If
+                    % not, replace the queued message with the normal monitor
+                    % exit:
+                    receive
+                    {'DOWN', Ref, process, _, noproc} ->
+                        self() ! {'DOWN', Ref, process, Pid, normal}
+                    after 0 ->
+                        ok
+                    end,
+                    R
             end;
         {_, R} ->
             R
@@ -1104,8 +1116,8 @@ test_executable() ->
     ?assertMatch(
         [<<"Pid ", _/binary>>, <<" cannot execute '00kuku00': No such file or directory\n">>],
         begin
-            {error,[{exit_status,256},{stderr, [E]}]} =
-                exec:run("ls", [sync, {executable, "00kuku00"}, stdout, stderr]),
+            Res = exec:run("ls", [sync, {executable, "00kuku00"}, stdout, stderr]),
+            {error,[{exit_status,256},{stderr, [E]}]} = Res,
             binary:split(E, <<":">>)
         end),
 
