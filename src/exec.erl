@@ -772,8 +772,6 @@ maybe_add_monitor(Reply, _Pid, _MonType, _Sync, _PidOpts, _Debug) ->
     Reply.
 
 %%----------------------------------------------------------------------
-%% @spec (Pid, OsPid::integer(), LinkType, Parent, PidOpts::list(), Debug::boolean()) ->
-%%          void()
 %% @doc Every OsPid is associated with an Erlang process started with
 %%      this function. The `Parent' is the ?MODULE port manager that
 %%      spawned this process and linked to it. `Pid' is the process
@@ -782,6 +780,9 @@ maybe_add_monitor(Reply, _Pid, _MonType, _Sync, _PidOpts, _Debug) ->
 %% @end
 %% @private
 %%----------------------------------------------------------------------
+-spec ospid_init(Pid::pid(), OsPid::integer(), link | monitor | undefined,
+                 Sync::boolean(), Parent::pid(), list(), Debug::boolean()) ->
+        no_return().
 ospid_init(Pid, OsPid, LinkType, Sync, Parent, PidOpts, Debug) ->
     process_flag(trap_exit, true),
     StdOut = proplists:get_value(stdout, PidOpts),
