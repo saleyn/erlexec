@@ -181,7 +181,7 @@
 %%         a standard `erlang:montior/2' function call, but it's emulated
 %%         by ensuring that the monitoring process receives notification
 %%         in the form:
-%%          ``{'DOWN', OsPid::integer(), process, Pid::pid(), Reason}``.
+%%          {'DOWN', OsPid::integer(), process, Pid::pid(), Reason}.
 %%         If the `Reason' is `normal', then process exited with status `0',
 %%         otherwise there was an error.
 %%     </dd>
