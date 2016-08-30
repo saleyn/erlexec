@@ -176,7 +176,15 @@
     | pty.
 %% Command options:
 %% <dl>
-%% <dt>monitor</dt><dd>Set up a monitor for the spawned process</dd>
+%% <dt>monitor</dt>
+%%     <dd>Set up a monitor for the spawned process. The monitor is not
+%%         a standard `erlang:montior/2' function call, but it's emulated
+%%         by ensuring that the monitoring process receives notification
+%%         in the form:
+%%          ``{'DOWN', OsPid::integer(), process, Pid::pid(), Reason}``.
+%%         If the `Reason' is `normal', then process exited with status `0',
+%%         otherwise there was an error.
+%%     </dd>
 %% <dt>sync</dt><dd>Block the caller until the OS command exits</dd>
 %% <dt>{executable, Executable::string()}</dt>
 %%     <dd>Specifies a replacement program to execute. It is very seldomly
@@ -598,10 +606,10 @@ handle_call({port, Instruction}, From, #state{last_trans=Last} = State) ->
     {ok, Term} ->
         erlang:port_command(State#state.port, term_to_binary({0, Term})),
         {reply, ok, State};
-    {ok, Term, Link, PidOpts} ->
+    {ok, Term, Link, Sync, PidOpts} ->
         Next = next_trans(Last),
         erlang:port_command(State#state.port, term_to_binary({Next, Term})),
-        {noreply, State#state{trans = queue:in({Next, From, Link, PidOpts}, State#state.trans)}}
+        {noreply, State#state{trans = queue:in({Next, From, Link, Sync, PidOpts}, State#state.trans)}}
     catch _:{error, Why} ->
         {reply, {error, Why}, State}
     end;
@@ -638,8 +646,8 @@ handle_info({Port, {data, Bin}}, #state{port=Port, debug=Debug} = State) ->
     case Msg of
     {N, Reply} when N =/= 0 ->
         case get_transaction(State#state.trans, N) of
-        {true, {Pid,_} = From, MonType, PidOpts, Q} ->
-            NewReply = maybe_add_monitor(Reply, Pid, MonType, PidOpts, Debug),
+        {true, {Pid,_} = From, MonType, Sync, PidOpts, Q} ->
+            NewReply = maybe_add_monitor(Reply, Pid, MonType, Sync, PidOpts, Debug),
             gen_server:reply(From, NewReply);
         {false, Q} ->
             ok
@@ -717,47 +725,33 @@ wait_port_exit(Port) ->
 -spec do_run(Cmd::any(), Options::cmd_options()) ->
     {ok, pid(), ospid()} | {ok, [{stdout | stderr, [binary()]}]} | {error, any()}.
 do_run(Cmd, Options) ->
-    Sync = proplists:get_value(sync, Options, false),
-    Mon  = Sync =:= true orelse proplists:get_value(monitor, Options),
-    Link = case proplists:get_value(link, Options) of
-           true -> link;
-           _    -> nolink
+    Link = case {proplists:get_bool(link,    Options),
+                 proplists:get_bool(monitor, Options)} of
+           {true, _} -> link;
+           {_, true} -> monitor;
+           _         -> undefined
            end,
-    Cmd2 = {port, {Cmd, Link}},
-    case {Mon, gen_server:call(?MODULE, Cmd2, 30000)} of
-        {true, {ok, Pid, OsPid} = R} ->
-            Ref = monitor(process, Pid),
-            case Sync of
-                true ->
-                    wait_for_ospid_exit(OsPid, Ref, [], []);
-                _    ->
-                    % Since there is a race condition in calling the monitor
-                    % function above, check if the process still exists. If
-                    % not, replace the queued message with the normal monitor
-                    % exit:
-                    receive
-                    {'DOWN', Ref, process, _, noproc} ->
-                        self() ! {'DOWN', Ref, process, Pid, normal}
-                    after 0 ->
-                        ok
-                    end,
-                    R
-            end;
-        {_, R} ->
-            R
+    Sync = proplists:get_value(sync, Options, false),
+    Cmd2 = {port, {Cmd, Link, Sync}},
+    case gen_server:call(?MODULE, Cmd2, 30000) of
+    {ok, Pid, OsPid, _Sync = true} ->
+        wait_for_ospid_exit(OsPid, Pid, [], []);
+    {ok, Pid, OsPid, _} ->
+        {ok, Pid, OsPid}
     end.
 
-wait_for_ospid_exit(OsPid, Ref, OutAcc, ErrAcc) ->
+wait_for_ospid_exit(OsPid, Pid, OutAcc, ErrAcc) ->
+    % Note when a monitored process exits
     receive
     {stdout, OsPid, Data} ->
-        wait_for_ospid_exit(OsPid, Ref, [Data | OutAcc], ErrAcc);
+        wait_for_ospid_exit(OsPid, Pid, [Data | OutAcc], ErrAcc);
     {stderr, OsPid, Data} ->
-        wait_for_ospid_exit(OsPid, Ref, OutAcc, [Data | ErrAcc]);
-    {'DOWN', Ref, process, _, normal} ->
+        wait_for_ospid_exit(OsPid, Pid, OutAcc, [Data | ErrAcc]);
+    {'DOWN', OsPid, process, Pid, normal} ->
         {ok, sync_res(OutAcc, ErrAcc)};
-    {'DOWN', Ref, process, _, noproc} ->
+    {'DOWN', OsPid, process, Pid, noproc} ->
         {ok, sync_res(OutAcc, ErrAcc)};
-    {'DOWN', Ref, process, _, {exit_status,_}=R} ->
+    {'DOWN', OsPid, process, Pid, {exit_status,_}=R} ->
         {error, [R | sync_res(OutAcc, ErrAcc)]}
     end.
 
@@ -766,15 +760,15 @@ sync_res([], L)  -> [{stderr, lists:reverse(L)}];
 sync_res(LO, LE) -> [{stdout, lists:reverse(LO)} | sync_res([], LE)].
 
 %% Add a link for Pid to OsPid if requested.
-maybe_add_monitor({ok, OsPid}, Pid, MonType, PidOpts, Debug) when is_integer(OsPid) ->
+maybe_add_monitor({ok, OsPid}, Pid, MonType, Sync, PidOpts, Debug) when is_integer(OsPid) ->
     % This is a reply to a run/run_link command. The port program indicates
     % of creating a new OsPid process.
     % Spawn a light-weight process responsible for monitoring this OsPid
     Self = self(),
-    LWP  = spawn_link(fun() -> ospid_init(Pid, OsPid, MonType, Self, PidOpts, Debug) end),
+    LWP  = spawn_link(fun() -> ospid_init(Pid, OsPid, MonType, Sync, Self, PidOpts, Debug) end),
     ets:insert(exec_mon, [{OsPid, LWP}, {LWP, OsPid}]),
-    {ok, LWP, OsPid};
-maybe_add_monitor(Reply, _Pid, _MonType, _PidOpts, _Debug) ->
+    {ok, LWP, OsPid, Sync};
+maybe_add_monitor(Reply, _Pid, _MonType, _Sync, _PidOpts, _Debug) ->
     Reply.
 
 %%----------------------------------------------------------------------
@@ -788,17 +782,18 @@ maybe_add_monitor(Reply, _Pid, _MonType, _PidOpts, _Debug) ->
 %% @end
 %% @private
 %%----------------------------------------------------------------------
-ospid_init(Pid, OsPid, LinkType, Parent, PidOpts, Debug) ->
+ospid_init(Pid, OsPid, LinkType, Sync, Parent, PidOpts, Debug) ->
     process_flag(trap_exit, true),
     StdOut = proplists:get_value(stdout, PidOpts),
     StdErr = proplists:get_value(stderr, PidOpts),
-    case LinkType of
-    link -> link(Pid); % The caller pid that requested to run the OsPid command & link to it. 
-    _    -> ok
-    end,
-    ospid_loop({Pid, OsPid, Parent, StdOut, StdErr, Debug}).
+    % The caller pid that requested to run the OsPid command & link to it. 
+    LinkType =:= link andalso link(Pid),
+    % We need to emulate a monitor by sending the 'DOWN' message to the
+    % caller's Pid if it requested to monitor or it's a syncronous call:
+    IsMon  = LinkType =:= monitor orelse Sync =:= true,
+    ospid_loop({Pid, OsPid, Parent, StdOut, StdErr, IsMon, Debug}).
 
-ospid_loop({Pid, OsPid, Parent, StdOut, StdErr, Debug} = State) ->
+ospid_loop({Pid, OsPid, Parent, StdOut, StdErr, IsMon, Debug} = State) ->
     receive
     {{From, Ref}, ospid} ->
         From ! {Ref, OsPid},
@@ -810,24 +805,31 @@ ospid_loop({Pid, OsPid, Parent, StdOut, StdErr, Debug} = State) ->
         ospid_deliver_output(StdErr, {stderr, OsPid, Data}),
         ospid_loop(State);
     {'DOWN', OsPid, {exit_status, Status}} ->
-        debug(Debug, "~w ~w got down message (~w)\n", [self(), OsPid, status(Status)]),
+        debug(Debug, "~w ~w got down message (~w) (ismon=~w)\n",
+                     [self(), OsPid, status(Status), IsMon]),
         % OS process died
         case Status of
-        0 -> exit(normal);
-        _ -> exit({exit_status, Status})
+        0 -> notify_and_exit(IsMon, Pid, OsPid, normal);
+        _ -> notify_and_exit(IsMon, Pid, OsPid, {exit_status, Status})
         end;
     {'EXIT', Pid, Reason} ->
         % Pid died
         debug(Debug, "~w ~w got exit from linked ~w: ~p\n", [self(), OsPid, Pid, Reason]),
-        exit({owner_died, Reason});
+        exit({owner_died, Pid, Reason});
     {'EXIT', Parent, Reason} ->
         % Port program died
         debug(Debug, "~w ~w got exit from parent ~w: ~p\n", [self(), OsPid, Parent, Reason]),
-        exit({port_closed, Reason});
+        notify_and_exit(IsMon, Pid, OsPid, port_closed);
     Other ->
         error_logger:warning_msg("~w - unknown msg: ~p\n", [self(), Other]),
         ospid_loop(State)
     end.
+
+notify_and_exit(true, Pid, OsPid, Reason) ->
+    Pid ! {'DOWN', OsPid, process, self(), Reason},
+    exit(Reason);
+notify_and_exit(_, _Pid, _OsPid, Reason) ->
+    exit(Reason).
 
 ospid_deliver_output(DestPid, Msg) when is_pid(DestPid) ->
     DestPid ! Msg;
@@ -880,29 +882,29 @@ get_transaction(Q, I) ->
     get_transaction(Q, I, Q).
 get_transaction(Q, I, OldQ) ->
     case queue:out(Q) of
-    {{value, {I, From, LinkType, PidOpts}}, Q2} ->
-        {true, From, LinkType, PidOpts, Q2};
+    {{value, {I, From, LinkType, Sync, PidOpts}}, Q2} ->
+        {true, From, LinkType, Sync, PidOpts, Q2};
     {empty, _} ->
         {false, OldQ};
     {_, Q2} ->
         get_transaction(Q2, I, OldQ)
     end.
     
-is_port_command({{run, Cmd, Options}, Link}, Pid, State) ->
+is_port_command({{run, Cmd, Options}, Link, Sync}, Pid, State) ->
     {PortOpts, Other} = check_cmd_options(Options, Pid, State, [], []),
-    {ok, {run, Cmd, PortOpts}, Link, Other};
+    {ok, {run, Cmd, PortOpts}, Link, Sync, Other};
 is_port_command({list} = T, _Pid, _State) -> 
-    {ok, T, undefined, []};
+    {ok, T, undefined, undefined, []};
 is_port_command({stop, OsPid}=T, _Pid, _State) when is_integer(OsPid) -> 
-    {ok, T, undefined, []};
+    {ok, T, undefined, undefined, []};
 is_port_command({stop, Pid}, _Pid, _State) when is_pid(Pid) ->
     case ets:lookup(exec_mon, Pid) of
-    [{_StoredPid, OsPid}] -> {ok, {stop, OsPid}, undefined, []};
+    [{_StoredPid, OsPid}] -> {ok, {stop, OsPid}, undefined, undefined, []};
     []              -> throw({error, no_process})
     end;
-is_port_command({{manage, OsPid, Options}, Link}, Pid, State) when is_integer(OsPid) ->
+is_port_command({{manage, OsPid, Options}, Link, Sync}, Pid, State) when is_integer(OsPid) ->
     {PortOpts, _Other} = check_cmd_options(Options, Pid, State, [], []),
-    {ok, {manage, OsPid, PortOpts}, Link, []};
+    {ok, {manage, OsPid, PortOpts}, Link, Sync, []};
 is_port_command({send, Pid, Data}, _Pid, _State)
   when is_pid(Pid), is_binary(Data) orelse Data =:= eof ->
     case ets:lookup(exec_mon, Pid) of
@@ -913,12 +915,12 @@ is_port_command({send, OsPid, Data}, _Pid, _State)
   when is_integer(OsPid), is_binary(Data) orelse Data =:= eof ->
     {ok, {stdin, OsPid, Data}};
 is_port_command({kill, OsPid, Sig}=T, _Pid, _State) when is_integer(OsPid),is_integer(Sig) -> 
-    {ok, T, undefined, []};
+    {ok, T, undefined, undefined, []};
 is_port_command({setpgid, OsPid, Gid}=T, _Pid, _State) when is_integer(OsPid),is_integer(Gid) -> 
-    {ok, T, undefined, []};
+    {ok, T, undefined, undefined, []};
 is_port_command({kill, Pid, Sig}, _Pid, _State) when is_pid(Pid),is_integer(Sig) -> 
     case ets:lookup(exec_mon, Pid) of
-    [{Pid, OsPid}]  -> {ok, {kill, OsPid, Sig}, undefined, []};
+    [{Pid, OsPid}]  -> {ok, {kill, OsPid, Sig}, undefined, undefined, []};
     []              -> throw({error, no_process})
     end.
 
