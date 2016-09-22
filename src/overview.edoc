@@ -29,6 +29,17 @@ OS processes.
 <li>Git clone command: `git clone https://github.com/saleyn/erlexec.git'</li>
 </ul>
 
+== Build ==
+
+``make``
+
+On Linux the `exec-port` process can be enabled to execute commands under
+different effective users. In order to accomplish that, you need to set
+Linux capabilities on `exec-port` using the following command:
+
+``sudo setcap cap_setuid,cap_kill,cap_sys_nice+eip \
+    _build/default/lib/erlexec/priv/*/exec-port``
+
 == Features ==
 
 <ol>
@@ -96,6 +107,52 @@ See description of types in {@link exec:exec_options()}.
 3> exec:stop(I).                                        % Kill the shell command.
 ok                                                      % Note that this could also be accomplished
                                                         % by doing exec:stop(pid(0,34,0)).
+'''
+
+=== Running exec-port as another effective user ===
+
+The current user must have `sudo` rights in order to be able to use this feature
+```
+$ whoami
+serge
+
+$ erl
+1> exec:start([{user, "wheel"}]).                       % Start the port program as effective user "wheel".
+{ok,<0.32.0>}
+
+$ ps haxo user,comm | grep exec-port
+wheel      exec-port
+'''
+
+=== Allowing exec-port to run commands as other effective users ===
+
+The current user must have `sudo` rights or `exec-port` must have the SUID bit set
+in order to be able to use this feature, and the `exec-port` must have the
+capabilities set as described in the "Build" section above.
+
+```
+$ whoami
+serge
+
+$ erl
+1> Opts = [root, {user, "wheel"}, {limit_users, "alex","guest"}}],
+2> exec:start(Opts).                                    % Start the port program as effective user "wheel"
+                                                        % and allow it to execute commands as "alex" or "guest".
+{ok,<0.32.0>}
+3> exec:run("echo ok", [sync, {user, "alex"}, stdout]). % Command is executed under effective user "alex"
+{ok,[{stdout,[<<"ok\n">>]}]}
+
+$ ps haxo user,comm | grep exec-port
+wheel      exec-port
+'''
+
+=== Running exec-port as another effective user ===
+```
+1> exec:start([{user, "wheel"]).                        % Start the port program as effective user "wheel".
+{ok,<0.32.0>}
+
+$ ps haxo user,comm | grep exec-port
+wheel      exec-port
 '''
 
 === Killing an OS process ===
