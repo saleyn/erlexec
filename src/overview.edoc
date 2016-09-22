@@ -31,7 +31,9 @@ OS processes.
 
 == Build ==
 
-`make'
+```
+make
+'''
 
 On Linux the `exec-port' process can be enabled to execute commands under
 different effective users. In order to accomplish that, you need to set
@@ -112,7 +114,7 @@ ok                                                      % Note that this could a
 
 === Running exec-port as another effective user ===
 
-The current user must have `sudo` rights in order to be able to use this feature
+The current user must have `sudo' rights in order to be able to use this feature
 ```
 $ whoami
 serge
@@ -127,8 +129,8 @@ wheel      exec-port
 
 === Allowing exec-port to run commands as other effective users ===
 
-The current user must have `sudo` rights or `exec-port` must have the SUID bit set
-in order to be able to use this feature, and the `exec-port` must have the
+The current user must have `sudo' rights or `exec-port' must have the SUID bit set
+in order to be able to use this feature, and the `exec-port' must have the
 capabilities set as described in the "Build" section above.
 
 ```
