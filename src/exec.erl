@@ -54,6 +54,7 @@
          code_change/3, terminate/2]).
 
 -include("exec.hrl").
+-include_lib("kernel/include/file.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -563,32 +564,68 @@ init([Options]) ->
     Opts1 = [T || T = {O,_} <- Opts0, 
                 lists:member(O, [debug, verbose, root, args, alarm, user])],
     Opts  = proplists:normalize(Opts1, [{aliases, [{args, ''}]}]),
-    Args  = lists:foldl(
+    Args0 = lists:foldl(
         fun
            (Opt, Acc) when is_atom(Opt) ->
                 [" -"++atom_to_list(Opt)++" " | Acc];
+           ({Opt, I}, Acc) when is_atom(I) ->
+                [" -"++atom_to_list(Opt)++" "++atom_to_list(I) | Acc];
            ({Opt, I}, Acc) when is_list(I), I =/= ""   ->
                 [" -"++atom_to_list(Opt)++" "++I | Acc];
            ({Opt, I}, Acc) when is_integer(I) ->
                 [" -"++atom_to_list(Opt)++" "++integer_to_list(I) | Acc];
            (_, Acc) -> Acc
         end, [], Opts),
-    Exe   = proplists:get_value(portexe,     Options, default(portexe)) ++ lists:flatten([" -n"|Args]),
+    Exe0  = proplists:get_value(portexe,     Options, default(portexe)),
+    Args  = lists:flatten(Args0),
     Users = proplists:get_value(limit_users, Options, default(limit_users)),
+    User  = proplists:get_value(user,        Options),
     Debug = proplists:get_value(verbose,     Options, default(verbose)),
     Root  = proplists:get_value(root,        Options, default(root)),
     Env   = case proplists:get_value(env, Options) of
             undefined -> [];
             Other     -> [{env, Other}]
             end,
+    % When instructing to run as root, check that the port program has
+    % the SUID bit set or else use "sudo"
+    SUID  = case file:read_file_info(Exe0) of
+            {ok, Info} ->
+                (Info#file_info.mode band 8#1700) =:= 8#1700;
+            {error, Err} ->
+                throw("Cannot find file " ++ Exe0 ++ ": " ++ file:format_error(Err))
+            end,
+    IsRoot= os:getenv("USER") =:= "root",
+    {Exe,Msg} =
+            if (SUID orelse Root orelse IsRoot) andalso User =:= undefined ->
+                % Don't allow to run port program with SUID bit without effective user set!
+                throw("Port program " ++ Exe0 ++
+                      " with SUID bit set is not allowed to run without setting effective user!");
+            not Root, User =/= undefined ->
+                % Running as another effective user
+                U = if is_atom(User) -> atom_to_list(User); true -> User end,
+                {lists:append(["/usr/bin/sudo -u ", U, " ", Exe0, Args]), undefined};
+            Root, User =/= undefined, User =/= root, User =/= "root", User =/= 0 ->
+                % Running as root that will switch to another effective user with SUID support
+                {lists:append(["/usr/bin/sudo ", Exe0, " -suid", Args]), undefined};
+            true ->
+                {Exe0 ++ Args, undefined}
+            end,
     try
-        debug(Debug, "exec: port program: ~s\n env: ~p\n", [Exe, Env]),
-        PortOpts = Env ++ [binary, exit_status, {packet, 2}, nouse_stdio, hide],
+        debug(Debug, "exec: ~s~sport program: ~s\n~s",
+            [if SUID -> "[SUID] "; true -> "" end,
+             if (Root orelse IsRoot) andalso User =:= undefined -> "[ROOT] "; true -> "" end, Exe,
+             if Env =/= [] -> "  env: "++?FMT("~p", Env)++"\n"; true -> "" end]),
+        PortOpts = Env ++ [binary, exit_status, {packet, 2}, hide],
         Port = erlang:open_port({spawn, Exe}, PortOpts),
+        case Msg of
+        undefined -> ok;
+        _         -> error_logger:warning_msg(Msg, [])
+        end,
         Tab  = ets:new(exec_mon, [protected,named_table]),
         {ok, #state{port=Port, limit_users=Users, debug=Debug, registry=Tab, root=Root}}
     catch _:Reason ->
-        {stop, ?FMT("Error starting port '~s': ~200p", [Exe, Reason])}
+        {stop, ?FMT("Error starting port '~s': ~200p\n  ~s\n",
+            [Exe, Reason, erlang:get_stacktrace()])}
     end.
 
 %%----------------------------------------------------------------------

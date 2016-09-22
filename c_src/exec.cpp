@@ -213,7 +213,7 @@ int     stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify = t
 void    erase_child(MapChildrenT::iterator& it);
 
 int     process_command();
-void    initialize(int userid, bool use_alt_fds, bool run_as_root);
+void    initialize(int userid, bool use_alt_fds, bool enable_suid);
 int     finalize();
 int     set_nonblock_flag(pid_t pid, int fd, bool value);
 int     erl_exec_kill(pid_t pid, int signal);
@@ -549,7 +549,7 @@ void usage(char* progname) {
         "   %s [-n] [-root] [-alarm N] [-debug [Level]] [-user User]\n"
         "Options:\n"
         "   -n              - Use marshaling file descriptors 3&4 instead of default 0&1.\n"
-        "   -root           - Allow running child processes as root.\n"
+        "   -suid           - Allow running child processes as other effective UIDs (using capabilities).\n"
         "   -alarm N        - Allow up to <N> seconds to live after receiving SIGTERM/SIGINT (default %d)\n"
         "   -debug [Level]  - Turn on debug mode (default Level: 1)\n"
         "   -user User      - If started by root, run as User\n"
@@ -571,7 +571,7 @@ int main(int argc, char* argv[])
     struct sigaction sact, sterm;
     int userid = 0;
     bool use_alt_fds = false;
-    bool run_as_root = false;
+    bool enable_suid = false;
 
     sterm.sa_handler = gotsignal;
     sigemptyset(&sterm.sa_mask);
@@ -614,13 +614,13 @@ int main(int argc, char* argv[])
                     exit(3);
                 }
                 userid = pw->pw_uid;
-            } else if (strcmp(argv[res], "-root") == 0) {
-                run_as_root = true;
+            } else if (strcmp(argv[res], "-suid") == 0) {
+                enable_suid = true;
             }
         }
     }
 
-    initialize(userid, use_alt_fds, run_as_root);
+    initialize(userid, use_alt_fds, enable_suid);
 
     while (!terminated) {
 
@@ -713,8 +713,8 @@ int process_command()
     // for errno EWOULDBLOCK.
     if ((err = eis.read()) < 0) {
         if (debug)
-            fprintf(stderr, "Broken Erlang command pipe (%d): %s\r\n",
-                errno, strerror(errno));
+            fprintf(stderr, "Broken Erlang command pipe (%d): %s [line:%d]\r\n",
+                errno, strerror(errno), __LINE__);
         terminated = errno;
         return -1;
     }
@@ -874,12 +874,41 @@ int process_command()
     return 0;
 }
 
-void initialize(int userid, bool use_alt_fds, bool run_as_root)
+void initialize(int userid, bool use_alt_fds, bool enable_suid)
 {
+    if (getuid() == 0 && userid > 0) {
+        if (
+            #ifdef HAVE_SETRESUID
+            setresuid(-1, userid, geteuid()) // glibc, FreeBSD, OpenBSD, HP-UX
+            #elif HAVE_SETREUID
+            setreuid(-1, userid)             // MacOSX, NetBSD, AIX, IRIX, Solaris>=2.5, OSF/1, Cygwin
+            #else
+            #error setresuid(3) not supported!
+            #endif
+        < 0) {
+            perror("Failed to set effective userid");
+            exit(4);
+        }
+
+        if (debug)
+            fprintf(stderr, "Initializing: uid=0, euid=%d, userid=%d%s\r\n",
+                getuid(), userid, enable_suid?" enable-suid":"");
+
+    } else if (getuid() == 0 && userid == 0) {
+        fprintf(stderr, "Not allowed to run as root without setting effective user (-user option)!\r\n");
+        exit(4);
+    } else if (userid > 0 && getuid() != userid) {
+        fprintf(stderr, "Cannot switch effective user to euid=%d\r\n", userid);
+        exit(4);
+    } else if (debug) {
+        fprintf(stderr, "Initializing: uid=%d, userid=%d%s\r\n",
+            getuid(), userid, enable_suid?"enable-suid":"");
+    }
+
     // If we are root, switch to non-root user and set capabilities
     // to be able to adjust niceness and run commands as other users.
     // unless run_as_root is set
-    if (getuid() == 0 && !run_as_root) {
+    if (userid > 0 && enable_suid) {
         if (userid == 0) {
             fprintf(stderr, "When running as root, \"-user User\" or \"-root\" option must be provided!\r\n");
             exit(4);
@@ -891,19 +920,6 @@ void initialize(int userid, bool use_alt_fds, bool run_as_root)
             exit(5);
         }
         #endif
-
-        if (
-            #ifdef HAVE_SETRESUID
-            setresuid(-1, userid, geteuid()) // glibc, FreeBSD, OpenBSD, HP-UX
-            #elif HAVE_SETREUID
-            setreuid(-1, userid)             // MacOSX, NetBSD, AIX, IRIX, Solaris>=2.5, OSF/1, Cygwin
-            #else
-            #error setresuid(3) not supported!
-            #endif
-        < 0) {
-            perror("Failed to set userid");
-            exit(6);
-        }
 
         struct passwd* pw;
         if (debug && (pw = getpwuid(geteuid())) != NULL)
@@ -927,8 +943,9 @@ void initialize(int userid, bool use_alt_fds, bool run_as_root)
         }
         cap_free(cur);
 
-        if (debug && (cur = cap_get_proc()) != NULL) {
-            fprintf(stderr, "exec: current capabilities: %s\r\n",  cap_to_text(cur, NULL));
+        if (debug) {
+            cur = cap_get_proc();
+            fprintf(stderr, "exec: current capabilities: %s\r\n", cur ? cap_to_text(cur, NULL) : "none");
             cap_free(cur);
         }
         #else
