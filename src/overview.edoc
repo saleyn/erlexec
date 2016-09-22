@@ -142,8 +142,8 @@ $ erl
 2> exec:start(Opts).                                    % Start the port program as effective user "wheel"
                                                         % and allow it to execute commands as "alex" or "guest".
 {ok,<0.32.0>}
-3> exec:run("echo ok", [sync, {user, "alex"}, stdout]). % Command is executed under effective user "alex"
-{ok,[{stdout,[<<"ok\n">>]}]}
+3> exec:run("whoami", [sync, stdout, {user, "alex"}]).  % Command is executed under effective user "alex"
+{ok,[{stdout,[<<"alex\n">>]}]}
 
 $ ps haxo user,comm | grep exec-port
 wheel      exec-port
