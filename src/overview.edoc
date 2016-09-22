@@ -149,15 +149,6 @@ $ ps haxo user,comm | grep exec-port
 wheel      exec-port
 '''
 
-=== Running exec-port as another effective user ===
-```
-1> exec:start([{user, "wheel"]).                        % Start the port program as effective user "wheel".
-{ok,<0.32.0>}
-
-$ ps haxo user,comm | grep exec-port
-wheel      exec-port
-'''
-
 === Killing an OS process ===
 
 Note that killing a process can be accomplished by running kill(3) command
