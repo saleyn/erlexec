@@ -31,14 +31,13 @@ OS processes.
 
 == Build ==
 
-``make``
+`make`
 
 On Linux the `exec-port` process can be enabled to execute commands under
 different effective users. In order to accomplish that, you need to set
 Linux capabilities on `exec-port` using the following command:
 
-``sudo setcap cap_setuid,cap_kill,cap_sys_nice+eip \
-    _build/default/lib/erlexec/priv/*/exec-port``
+`sudo setcap cap_setuid,cap_kill,cap_sys_nice+eip _build/default/lib/erlexec/priv/*/exec-port`
 
 == Features ==
 
