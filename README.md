@@ -7,14 +7,30 @@ that gives light-weight Erlang processes fine-grain control over
 execution of OS processes.
 
 It makes possible for an Erlang process to start, stop an OS process,
-send POSIX signals, know process IDs of the started OS process, set up
-a monitor and/or link to it, run interactive commands with pseudo
+send POSIX signals, know process IDs of a started OS process, set up
+a monitor or link to it, run interactive commands with pseudo
 terminals. This application provides better control
 over OS processes than built-in `erlang:open_port/2` command with a
 `{spawn, Command}` option, and performs proper OS child process cleanup
 when the emulator exits. 
 
 See http://saleyn.github.com/erlexec for more information.
+
+## *** HELP WANTED! *** ##
+
+There is a portability issue with a call to `sigwaitinfo(2)` that is
+missing on `Mac OS X` (example is describeed in 
+[this](https://github.com/saleyn/erlexec/issues/73) issue.  I don't
+have a Mac, so cannot implement/test the solution. Essentially there
+are two ways to approach this:
+
+* Use `kqueue` and implement `EVFILT_SIGNAL` handling (see example in
+  [this](https://people.freebsd.org/~jlemon/papers/kqueue.pdf) paper).
+* Block all signals in the main thread and create another one that
+  will set a suitable signal mask, and relay events to the main
+  thread's `select(3)` loop through a pipe.
+
+Contact the author if interested to help.
 
 ## SUPPORTED OS's ##
 Linux, Solaris, MacOS X
