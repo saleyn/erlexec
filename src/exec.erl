@@ -182,9 +182,11 @@
 %%         a standard `erlang:montior/2' function call, but it's emulated
 %%         by ensuring that the monitoring process receives notification
 %%         in the form:
-%%          {'DOWN', OsPid::integer(), process, Pid::pid(), Reason}.
+%%          `{&apos;DOWN&apos;, OsPid::integer(), process, Pid::pid(), Reason}'.
 %%         If the `Reason' is `normal', then process exited with status `0',
-%%         otherwise there was an error.
+%%         otherwise there was an error. If the Reason is `{status, Status}'
+%%         the returned `Status' can be decoded with `status/1' to determine
+%%         the exit code of the process and if it was killed by signal.
 %%     </dd>
 %% <dt>sync</dt><dd>Block the caller until the OS command exits</dd>
 %% <dt>{executable, Executable::string()}</dt>
@@ -310,7 +312,7 @@ start(Options) when is_list(Options) ->
 %% @doc Run an external program. `OsPid' is the OS process identifier of
 %%      the new process. If `sync' is specified in `Options' the return
 %%      value is `{ok, Status}' where `Status' is OS process exit status.
-%%      The `Status` can be decoded with `status/1' to determine the
+%%      The `Status' can be decoded with `status/1' to determine the
 %%      process's exit code and if it was killed by signal.
 %% @end
 %%-------------------------------------------------------------------------
@@ -325,7 +327,7 @@ run(Exe, Options) when is_list(Exe), is_list(Options) ->
 %%      the calling process will be killed or if it's trapping exits,
 %%      it'll get {'EXIT', OsPid, Status} message.  If the calling process
 %%      dies the OsPid will be killed.
-%%      The `Status` can be decoded with `status/1' to determine the
+%%      The `Status' can be decoded with `status/1' to determine the
 %%      process's exit code and if it was killed by signal.
 %% @end
 %%-------------------------------------------------------------------------
