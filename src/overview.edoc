@@ -121,7 +121,7 @@ then the `exec-port' can be copied to some shared location, which will be specif
 at startup using `{portexe, "/path/to/exec-port"}'.
 
 ```
-$ cp priv/x86_64-unknown-linux-gnu/exec-port /tmp
+$ cp $(find . -name exec-port) /tmp
 $ chmod 755 /tmp/exec-port
 
 $ whoami
