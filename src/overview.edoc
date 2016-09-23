@@ -114,7 +114,9 @@ ok                                                      % Note that this could a
 
 === Running exec-port as another effective user ===
 
-The current user must have `sudo' rights in order to be able to use this feature
+In order to be able to use this feature the current user must either have `sudo'
+rights or the `exec-port' file must have the SUID bit set.
+
 ```
 $ whoami
 serge
@@ -129,9 +131,14 @@ wheel      exec-port
 
 === Allowing exec-port to run commands as other effective users ===
 
-The current user must have `sudo' rights or `exec-port' must have the SUID bit set
-in order to be able to use this feature, and the `exec-port' must have the
-capabilities set as described in the "Build" section above.
+In order to be able to use this feature the current user must either have `sudo'
+rights or the `exec-port' file must have the SUID bit set, and the `exec-port' file
+must have the capabilities set as described in the "Build" section above.
+
+The port program will initially be started as `root', and then it will set the
+`cap_setuid,cap_kill,cap_sys_nice' capabilities and switch the effective user to
+`{user, User}'.  After that it'll allow to run child programs under effective
+users listed in the `{limit_users, Users}' option.
 
 ```
 $ whoami
