@@ -115,14 +115,20 @@ ok                                                      % Note that this could a
 === Running exec-port as another effective user ===
 
 In order to be able to use this feature the current user must either have `sudo'
-rights or the `exec-port' file must have the SUID bit set.
+rights or the `exec-port' file must have the SUID bit set. If the effective user
+doesn't have rights to access the `exec-port' program in the real user's directory,
+then the `exec-port' can be copied to some shared location, which will be specified
+at startup using `{portexe, "/path/to/exec-port"}'.
 
 ```
+$ cp priv/x86_64-unknown-linux-gnu/exec-port /tmp
+$ chmod 755 /tmp/exec-port
+
 $ whoami
 serge
 
 $ erl
-1> exec:start([{user, "wheel"}]).                       % Start the port program as effective user "wheel".
+1> exec:start([{user, "wheel"}, {portexe, "/tmp/exec-port"}]).  % Start the port program as effective user "wheel".
 {ok,<0.32.0>}
 
 $ ps haxo user,comm | grep exec-port
