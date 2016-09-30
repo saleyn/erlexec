@@ -542,7 +542,11 @@ default() ->
 default(portexe) -> 
     % Get architecture (e.g. i386-linux)
     Dir = filename:dirname(filename:dirname(code:which(?MODULE))),
-    filename:join([Dir, "priv", erlang:system_info(system_architecture), "exec-port"]);
+    Tail = filename:join([erlang:system_info(system_architecture), "exec-port"]),
+    case os:find_executable(filename:join([Dir, "priv", Tail])) of
+        false -> os:find_executable(filename:join([code:priv_dir(erlexec), Tail]));
+        Exe -> Exe
+    end;
 default(Option) ->
     proplists:get_value(Option, default()).
 
