@@ -540,13 +540,18 @@ default() ->
 
 %% @private
 default(portexe) -> 
-    % Get architecture (e.g. i386-linux)
-    Dir = filename:dirname(filename:dirname(code:which(?MODULE))),
-    Tail = filename:join([erlang:system_info(system_architecture), "exec-port"]),
-    case os:find_executable(filename:join([Dir, "priv", Tail])) of
-        false -> os:find_executable(filename:join([code:priv_dir(erlexec), Tail]));
-        Exe -> Exe
-    end;
+    % Retrieve the Priv directory
+    Priv = code:priv_dir(erlexec),
+    % Find all ports using wildcard for resiliency
+    Bin = case filelib:wildcard("*/exec-port", Priv) of
+        [Port] -> Port;
+        _      ->
+            Arch = erlang:system_info(system_architecture),
+            Tail = filelibename:join([Arch, "exec-port"]),
+            os:find_executable(filename:join([Priv, Tail]))
+    end,
+    % Join the priv/port path
+    filename:join([Priv, Bin]);
 default(Option) ->
     proplists:get_value(Option, default()).
 
