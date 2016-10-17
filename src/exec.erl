@@ -528,7 +528,7 @@ signal(Num) when is_integer(Num) -> Num.
 %% @doc Provide default value of a given option.
 %% @end
 %%-------------------------------------------------------------------------
-default() -> 
+default() ->
     [{debug, 0},        % Debug mode of the port program. 
      {verbose, false},  % Verbose print of events on the Erlang side.
      {root, false},     % Allow running processes as root.
@@ -539,9 +539,9 @@ default() ->
      {portexe, default(portexe)}].
 
 %% @private
-default(portexe) -> 
+default(portexe) ->
     % Retrieve the Priv directory
-    Priv = code:priv_dir(erlexec),
+    Priv = code:priv_dir(exec),
     % Find all ports using wildcard for resiliency
     Bin = case filelib:wildcard("*/exec-port", Priv) of
         [Port] -> Port;
@@ -572,7 +572,7 @@ init([Options]) ->
     Opts0 = proplists:expand([{debug,   [{debug, 1}]},
                               {root,    [{root, true}]},
                               {verbose, [{verbose, true}]}], Options),
-    Opts1 = [T || T = {O,_} <- Opts0, 
+    Opts1 = [T || T = {O,_} <- Opts0,
                 lists:member(O, [debug, verbose, root, args, alarm, user])],
     Opts  = proplists:normalize(Opts1, [{aliases, [{args, ''}]}]),
     Args0 = lists:foldl(
