@@ -541,7 +541,7 @@ default() ->
 %% @private
 default(portexe) ->
     % Retrieve the Priv directory
-    Priv = code:priv_dir(erlexec),
+    Priv = code:priv_dir(exec),
     % Find all ports using wildcard for resiliency
     Bin = case filelib:wildcard("*/exec-port", Priv) of
         [Port] -> Port;
