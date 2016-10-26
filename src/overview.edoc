@@ -99,6 +99,10 @@ Linux, Solaris, and MacOS X.
 
 See description of types in {@link exec:exec_options()}.
 
+The `exec-port' program requires the `SHELL' variable to be set. If you are
+running Erlang inside a docker container, you might need to ensure that `SHELL'
+is properly set prior to starting the emulator.
+
 == Examples ==
 
 === Starting/stopping an OS process ===

@@ -903,6 +903,9 @@ void initialize(int userid, bool use_alt_fds, bool enable_suid)
     } else if (debug) {
         fprintf(stderr, "Initializing: uid=%d, userid=%d%s\r\n",
             getuid(), userid, enable_suid?"enable-suid":"");
+    } else if (!getenv("SHELL") || strcmp(getenv("SHELL"), "") == 0) {
+        fprintf(stderr, "SHELL environment variable not set!\r\n");
+        exit(4);
     }
 
     // If we are root, switch to non-root user and set capabilities
