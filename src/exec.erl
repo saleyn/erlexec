@@ -288,6 +288,8 @@
 
 %%-------------------------------------------------------------------------
 %% @doc Supervised start an external program manager.
+%%      Note that the port program requires `SHELL' environment variable to
+%%      be set.
 %% @end
 %%-------------------------------------------------------------------------
 -spec start_link(exec_options()) -> {ok, pid()} | {error, any()}.
@@ -298,6 +300,8 @@ start_link(Options) when is_list(Options) ->
 %%-------------------------------------------------------------------------
 %% @equiv start_link/1
 %% @doc Start of an external program manager without supervision.
+%%      Note that the port program requires `SHELL' environment variable to
+%%      be set.
 %% @end
 %%-------------------------------------------------------------------------
 -spec start() -> {ok, pid()} | {error, any()}.
