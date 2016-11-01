@@ -789,7 +789,9 @@ do_run(Cmd, Options) ->
     {ok, Pid, OsPid, _Sync = true} ->
         wait_for_ospid_exit(OsPid, Pid, [], []);
     {ok, Pid, OsPid, _} ->
-        {ok, Pid, OsPid}
+        {ok, Pid, OsPid};
+    {error, not_found} ->
+        {error, not_found}
     end.
 
 wait_for_ospid_exit(OsPid, Pid, OutAcc, ErrAcc) ->
