@@ -266,6 +266,7 @@ namespace ei {
 
         struct timeval&       timeval()       { return m_tv; }
         const struct timeval& timeval() const { return m_tv; }
+        const struct timespec timespec()const { struct timespec ts={m_tv.tv_sec, m_tv.tv_usec*1000}; return ts; }
         int32_t sec()      const   { return m_tv.tv_sec;  }
         int32_t usec()     const   { return m_tv.tv_usec; }
         int64_t microsec() const   { return (int64_t)m_tv.tv_sec*1000000ull + (int64_t)m_tv.tv_usec; }
@@ -427,9 +428,9 @@ namespace ei {
                 ~Temp() {
                     if (m_last) {
                         // This is the end of the tuple being streamed to this class. Update tuple size.
-                        if (m_size > 255)
-                            throw "Use of operator<< only allowed for tuples with less than 256 items!";
-                        else if (m_size > 1) {
+                        // Note that the use of operator<< only allowed for tuples with less than 256 items!
+                        assert(m_size < 256);
+                        if (m_size > 1) {
                             char* sz = &m_tuple.m_parent.m_wbuf + m_idx;
                             *sz = m_size;
                         }
