@@ -229,7 +229,7 @@ int main(int argc, char* argv[])
                 maxfd, timeout.tv_sec, timeout.tv_nsec/1000);
 
         int ec;
-        int cnt = pselectx(maxfd+1, &readfds, &writefds, nullptr, &timeout, &oldset, ec);
+        int cnt = pselectx(maxfd+1, &readfds, &writefds, NULL, &timeout, &oldset, ec);
         int interrupted = (cnt < 0 && ec == EINTR);
         // Note that the process will not be interrupted while outside of pselectx()
 
@@ -598,7 +598,7 @@ int finalize(fd_set& readfds, sigset_t& orig_set)
 
             int ec;
             int maxfd = std::max<int>(eis.read_handle(), sigchld_pipe[0]);
-            int cnt   = pselectx(maxfd+1, nullptr, nullptr, nullptr, &ts, &orig_set, ec);
+            int cnt   = pselectx(maxfd+1, NULL, NULL, NULL, &ts, &orig_set, ec);
 
             if (cnt < 0 && ec != EINTR) {
                 fprintf(stderr, "Error in finalizing pselect(2): %s\r\n", strerror(ec));

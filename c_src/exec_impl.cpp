@@ -528,6 +528,11 @@ pid_t start_child(CmdOptions& op, std::string& error)
     } else if (pid == 0) {
         // I am the child
 
+        // Clear the child process signal mask
+        sigset_t sig;
+        sigemptyset(&sig);
+        sigprocmask(SIG_SETMASK, &sig, NULL);
+
         // Setup stdin/stdout/stderr redirect
         for (int fd=STDIN_FILENO; fd <= STDERR_FILENO; fd++) {
             int (&sfd)[2] = stream_fd[fd];
