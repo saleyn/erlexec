@@ -17,8 +17,9 @@ endif
 all:
 	@$(REBAR) compile
 
-clean path:
-	@$(REBAR) $@
+clean:
+	@$(REBAR) clean
+	rm -f compile_commands.json
 
 docs: doc ebin clean-docs
 	@$(REBAR) edoc skip_deps=true
