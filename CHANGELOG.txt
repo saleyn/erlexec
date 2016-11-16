@@ -1,1 +1,2 @@
+2016-11-16: Fix timing bugs that caused occasionally missing SIGCHLD on busy systems.
 2015-12-10: Renamed exec.app to erlexec.app to match project name
