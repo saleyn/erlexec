@@ -3,6 +3,9 @@ otp_release:
   - 18.0
   - 19.1
 compiler: g++
+os:
+  - linux
+  - osx
 
 #  addons:
 #    apt:
