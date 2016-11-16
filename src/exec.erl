@@ -1088,7 +1088,7 @@ temp_file() ->
 
 exec_test_() ->
     {setup,
-        fun()    -> {ok, Pid} = exec:start([{debug, 1}]), Pid end,
+        fun()    -> {ok, Pid} = exec:start([{debug, 0}]), Pid end,
         fun(Pid) -> exit(Pid, kill) end,
         [
             ?tt(test_monitor()),
@@ -1106,6 +1106,9 @@ exec_test_() ->
             ?tt(test_pty())
         ]
     }.
+
+exec_run_many_test() ->
+    ?assertMatch({ok,[{io_ops,1000}]}, test_exec:run()).
 
 test_monitor() ->
     {ok, P, _} = exec:run("echo ok", [{stdout, null}, monitor]),
