@@ -85,7 +85,7 @@ pid_t           ei::self_pid;
 //-------------------------------------------------------------------------
 // Local Functions
 //-------------------------------------------------------------------------
-int     process_command();
+bool    process_command();
 void    initialize(int userid, bool use_alt_fds, bool enable_suid);
 int     finalize(fd_set& read_fds, sigset_t& orig_set);
 
@@ -201,30 +201,25 @@ int main(int argc, char* argv[])
         FD_SET (eis.read_handle(), &readfds); // Erlang communication pipe
         FD_SET (sigchld_pipe[0],   &readfds); // pipe for delivering SIGCHLD signals
 
-        int maxfd = std::max<int>(eis.read_handle(), sigchld_pipe[0]);
-
+        int     maxfd  = std::max<int>(eis.read_handle(), sigchld_pipe[0]);
+        double  wakeup = SLEEP_TIMEOUT_SEC;
         TimeVal now(TimeVal::NOW);
-
-        while (!terminated && !exited_children.empty()) {
-            if (check_children(now, terminated) < 0)
-                break;
-        }
-
-        double wakeup = SLEEP_TIMEOUT_SEC;
 
         // Set up all stdout/stderr input streams that we need to monitor and redirect to Erlang
         for(MapChildrenT::iterator it=children.begin(), end=children.end(); it != end; ++it)
             for (int i=STDIN_FILENO; i <= STDERR_FILENO; i++) {
                 it->second.include_stream_fd(i, maxfd, &readfds, &writefds);
                 if (!it->second.deadline.zero())
-                    wakeup = std::max(0.0, std::min(wakeup, it->second.deadline.diff(now)));
+                    wakeup = std::max(0.1, std::min(wakeup, it->second.deadline.diff(now)));
             }
 
         check_pending(); // Check for pending signals arrived while we were in the signal handler
 
         if (terminated || wakeup < 0) break;
 
-        struct timespec timeout = {int(wakeup), 1000000000L * long(wakeup - (int)wakeup)};
+        int secs  = int(wakeup);
+        int nsecs = long((wakeup - secs) * 1000000000.0 + 0.5);
+        struct timespec timeout = {secs, nsecs};
 
         if (debug > 2)
             fprintf(stderr, "Selecting maxfd=%d (sleep={%lds,%ldus})\r\n",
@@ -236,7 +231,8 @@ int main(int argc, char* argv[])
         // Note that the process will not be interrupted while outside of pselectx()
 
         if (debug > 2)
-            fprintf(stderr, "Select got %d events (maxfd=%d)\r\n", cnt, maxfd);
+            fprintf(stderr, "Select got %d events (maxfd=%d)%s\r\n",
+                    cnt, maxfd, interrupted ?  " (interrupted)" : "");
 
         if (interrupted || cnt == 0) {
             now.now();
@@ -257,9 +253,14 @@ int main(int argc, char* argv[])
         } else if ( FD_ISSET (sigchld_pipe[0], &readfds) ) {
             if (!process_sigchld())
                 break;
+            now.now();
+            if (check_children(now, terminated) < 0) {
+                terminated = 13;
+                break;
+            }
         } else if ( FD_ISSET (eis.read_handle(), &readfds) ) {
             // Read from input stream a command sent by Erlang
-            if (process_command() < 0)
+            if (!process_command())
                 break;
         } else {
             // Check if any stdout/stderr streams have data
@@ -267,12 +268,13 @@ int main(int argc, char* argv[])
                 for (int i=STDIN_FILENO; i <= STDERR_FILENO; i++)
                     it->second.process_stream_data(i, &readfds, &writefds);
         }
+
     }
 
     return finalize(readfds, oldset);
 }
 
-int process_command()
+bool process_command()
 {
     int  err, arity;
     long transId;
@@ -285,7 +287,7 @@ int process_command()
             fprintf(stderr, "Broken Erlang command pipe (%d): %s [line:%d]\r\n",
                 errno, strerror(errno), __LINE__);
         terminated = errno;
-        return -1;
+        return false;
     }
 
     /* Our marshalling spec is that we are expecting a tuple
@@ -295,7 +297,7 @@ int process_command()
         (arity = eis.decodeTupleSize()) < 1)
     {
         terminated = 12;
-        return -1;
+        return false;
     }
 
     enum CmdTypeT        {  MANAGE,  RUN,  STOP,  KILL,  LIST,  SHUTDOWN,  STDIN,  DEBUG  } cmd;
@@ -305,15 +307,15 @@ int process_command()
     if ((int)(cmd = (CmdTypeT) eis.decodeAtomIndex(cmds, command)) < 0) {
         if (send_error_str(transId, false, "Unknown command: %s", command.c_str()) < 0) {
             terminated = 13;
-            return -1;
+            return false;
         }
-        return 0;
+        return true;
     }
 
     switch (cmd) {
         case SHUTDOWN: {
             terminated = 0;
-            return -1;
+            return false;
         }
         case MANAGE: {
             // {manage, Cmd::string(), Options::list()}
@@ -324,7 +326,7 @@ int process_command()
 
             if (arity != 3 || (eis.decodeInt(pid)) < 0 || po.ei_decode(eis) < 0 || pid <= 0) {
                 send_error_str(transId, true, "badarg");
-                return 0;
+                return true;
             }
             realpid = pid;
 
@@ -332,7 +334,7 @@ int process_command()
 
             if (ret < 0) {
                 send_error_str(transId, true, "not_found");
-                return 0;
+                return true;
             }
 
             CmdInfo ci(true, po.kill_cmd(), realpid, po.success_exit_code(), po.kill_group());
@@ -452,7 +454,7 @@ int process_command()
             break;
         }
     }
-    return 0;
+    return true;
 }
 
 void initialize(int userid, bool use_alt_fds, bool enable_suid)

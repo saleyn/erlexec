@@ -208,40 +208,6 @@ int read_sigchld(pid_t& child)
 }
 
 //------------------------------------------------------------------------------
-void check_child(pid_t pid)
-{
-    int status = 0;
-    pid_t ret;
-
-    if (pid == self_pid)    // Safety check. Never kill itself
-        return;
-
-    if (exited_children.find(pid) != exited_children.end())
-        return;
-
-    while ((ret = waitpid(pid, &status, WNOHANG)) < 0 && errno == EINTR);
-
-    if (debug)
-        fprintf(stderr,
-            "* Process %d (ret=%d, status=%d, exited_count=%ld%s%s)\r\n",
-            pid, ret, status, exited_children.size(),
-            ret > 0 && WIFEXITED(status) ? " [exited]":"",
-            ret > 0 && WIFSIGNALED(status) ? " [signaled]":"");
-
-    if (ret < 0 && errno == ECHILD) {
-        if (erl_exec_kill(pid, 0) == 0) // process likely forked and is alive
-            status = 0;
-        if (status != 0)
-            exited_children.insert(std::make_pair(pid <= 0 ? ret : pid, status));
-    } else if (pid <= 0 && ret > 0) {
-        exited_children.insert(std::make_pair(ret, status == 0 ? 1 : status));
-    } else if (ret == pid || WIFEXITED(status) || WIFSIGNALED(status)) {
-        if (ret > 0)
-            exited_children.insert(std::make_pair(pid, status));
-    }
-}
-
-//------------------------------------------------------------------------------
 // Process queued SIGCHLD events
 //------------------------------------------------------------------------------
 bool process_sigchld()
@@ -250,7 +216,7 @@ bool process_sigchld()
     pid_t child;
     int   n;
     while ((n = read_sigchld(child)) > 0)
-        check_child(child);
+        check_child_exit(child);
     return n > 0 || errno == EAGAIN;
 }
 
@@ -372,7 +338,7 @@ void process_pid_output(CmdInfo& ci, int maxsize)
     }
 
     if (dead)
-        check_child(ci.cmd_pid);
+        check_child_exit(ci.cmd_pid);
 }
 
 //------------------------------------------------------------------------------
@@ -878,37 +844,8 @@ int check_children(const TimeVal& now, bool& isTerminated, bool notify)
         fprintf(stderr, "Checking %ld running children (exited count=%ld)\r\n",
             children.size(), exited_children.size());
 
-    for (MapChildrenT::iterator it=children.begin(), end=children.end(); it != end; ++it) {
-        int   status = ECHILD;
-        pid_t pid = it->first;
-        int n = erl_exec_kill(pid, 0);
-
-        if (n == 0) { // process is alive
-            /* If a deadline has been set, and we're over it, wack it. */
-            if (!it->second.deadline.zero() && it->second.deadline.diff(now) <= 0) {
-                stop_child(it->second, 0, now, false);
-                it->second.deadline.clear();
-            }
-
-            while ((n = waitpid(pid, &status, WNOHANG)) < 0 && errno == EINTR);
-
-            if (n > 0) {
-                if (WIFEXITED(status) || WIFSIGNALED(status)) {
-                    add_exited_child(pid <= 0 ? n : pid, status);
-                } else if (WIFSTOPPED(status)) {
-                    if (debug)
-                        fprintf(stderr, "Pid %d %swas stopped by delivery of a signal %d\r\n",
-                            pid, it->second.managed ? "(managed) " : "", WSTOPSIG(status));
-                } else if (WIFCONTINUED(status)) {
-                    if (debug)
-                        fprintf(stderr, "Pid %d %swas resumed by delivery of SIGCONT\r\n",
-                            pid, it->second.managed ? "(managed) " : "");
-                }
-            }
-        } else if (n < 0 && errno == ESRCH) {
-            add_exited_child(pid, -1);
-        }
-    }
+    for (auto it=children.begin(), end=children.end(); !isTerminated && it != end; ++it)
+        check_child(now, it->first, it->second);
 
     if (debug > 2)
         fprintf(stderr, "Checking %ld exited children (notify=%d)\r\n",
@@ -916,7 +853,7 @@ int check_children(const TimeVal& now, bool& isTerminated, bool notify)
 
     // For each process info in the <exited_children> queue deliver it to the Erlang VM
     // and remove it from the managed <children> map.
-    for (ExitedChildrenT::iterator it=exited_children.begin(); !isTerminated && it!=exited_children.end();)
+    for (auto it=exited_children.begin(); !isTerminated && it!=exited_children.end();)
     {
         MapChildrenT::iterator i = children.find(it->first);
         MapKillPidT::iterator j;
@@ -948,6 +885,76 @@ int check_children(const TimeVal& now, bool& isTerminated, bool notify)
     }
 
     return 0;
+}
+
+//------------------------------------------------------------------------------
+void check_child(const TimeVal& now, pid_t pid, CmdInfo& cmd)
+{
+    if (pid == self_pid)    // Safety check. Never kill itself
+        return;
+
+    int n = erl_exec_kill(pid, 0);
+
+    if (n == 0) { // process is alive
+        /* If a deadline has been set, and we're over it, wack it. */
+        if (!cmd.deadline.zero() && cmd.deadline.diff(now) <= 0) {
+            stop_child(cmd, 0, now, false);
+            cmd.deadline.clear();
+        }
+
+        int status = ECHILD;
+        while ((n  = waitpid(pid, &status, WNOHANG)) < 0 && errno == EINTR);
+
+        if (n > 0) {
+            if (WIFEXITED(status) || WIFSIGNALED(status)) {
+                add_exited_child(pid <= 0 ? n : pid, status);
+            } else if (WIFSTOPPED(status)) {
+                if (debug)
+                    fprintf(stderr, "Pid %d %swas stopped by delivery of a signal %d\r\n",
+                        pid, cmd.managed ? "(managed) " : "", WSTOPSIG(status));
+            } else if (WIFCONTINUED(status)) {
+                if (debug)
+                    fprintf(stderr, "Pid %d %swas resumed by delivery of SIGCONT\r\n",
+                        pid, cmd.managed ? "(managed) " : "");
+            }
+        }
+    } else if (n < 0 && errno == ESRCH) {
+        add_exited_child(pid, -1);
+    }
+}
+
+//------------------------------------------------------------------------------
+void check_child_exit(pid_t pid)
+{
+    int status = 0;
+    pid_t ret;
+
+    if (pid == self_pid)    // Safety check. Never kill itself
+        return;
+
+    if (exited_children.find(pid) != exited_children.end())
+        return;
+
+    while ((ret = waitpid(pid, &status, WNOHANG)) < 0 && errno == EINTR);
+
+    if (debug)
+        fprintf(stderr,
+            "* Process %d (ret=%d, status=%d, exited_count=%ld%s%s)\r\n",
+            pid, ret, status, exited_children.size(),
+            ret > 0 && WIFEXITED(status) ? " [exited]":"",
+            ret > 0 && WIFSIGNALED(status) ? " [signaled]":"");
+
+    if (ret < 0 && errno == ECHILD) {
+        if (erl_exec_kill(pid, 0) == 0) // process likely forked and is alive
+            status = 0;
+        if (status != 0)
+            exited_children.insert(std::make_pair(pid <= 0 ? ret : pid, status));
+    } else if (pid <= 0 && ret > 0) {
+        exited_children.insert(std::make_pair(ret, status == 0 ? 1 : status));
+    } else if (ret == pid || WIFEXITED(status) || WIFSIGNALED(status)) {
+        if (ret > 0)
+            exited_children.insert(std::make_pair(pid, status));
+    }
 }
 
 //------------------------------------------------------------------------------

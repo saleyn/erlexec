@@ -1218,14 +1218,12 @@ test_env() ->
         exec:run("echo $XXX", [stdout, {env, [{"XXX", "X"}]}, sync])).
 
 test_kill_timeout() ->
-    {ok, OldDebug} = exec:debug(2),
-    {ok, P1, I1} = exec:run("sleep 30", [{kill_timeout, 1}, monitor]),
-    exec:stop(I1),
-    ?receiveMatch({'DOWN', I1, process, P1, normal}, 5000),
-    {ok, P2, I2} = exec:run("trap 'Got signal' SIGTERM; for i in {1..30}; do sleep 1; done", [stdout, {kill_timeout, 1}, monitor]),
+    %{ok, _OldDebug} = exec:debug(3),
+    {ok, P2, I2} = exec:run("trap 'echo Got signal' SIGTERM; sleep 15", [{kill_timeout, 1}, stdout, monitor]),
+    timer:sleep(200),
     exec:stop(I2),
     timer:sleep(50),
-    exec:debug(OldDebug),
+    %exec:debug(_OldDebug),
     ?receiveMatch({'DOWN', I2, process, P2, normal}, 5000).
 
 test_setpgid() ->

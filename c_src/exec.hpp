@@ -158,7 +158,7 @@ std::string fd_type(int tp);
 const char* stream_name(int i);
 
 int     read_sigchld(pid_t& child);
-void    check_child(pid_t pid);
+void    check_child_exit(pid_t pid);
 void    check_pending();
 int     set_nice(pid_t pid,int nice, std::string& error);
 bool    process_sigchld();
@@ -174,6 +174,8 @@ int     send_ospid_output(int pid, const char* type, const char* data, int len);
 pid_t   start_child(CmdOptions& op, std::string& err);
 int     kill_child(pid_t pid, int sig, int transId, bool notify=true);
 int     check_children(const TimeVal& now, bool& isTerminated, bool notify = true);
+void    check_child(const TimeVal& now, pid_t pid, CmdInfo& cmd);
+void    check_child_exit(pid_t pid);
 void    close_stdin(CmdInfo& ci);
 void    stop_child(pid_t pid, int transId, const TimeVal& now);
 int     stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify = true);
@@ -186,10 +188,9 @@ int     open_file(const char* file, bool append, const char* stream,
 int     open_pipe(int fds[2], const char* stream, ei::StringBuffer<128>& err);
 
 inline void add_exited_child(pid_t pid, exit_status_t status) {
-    std::pair<pid_t, exit_status_t> value = std::make_pair(pid, status);
     // Note the following function doesn't insert anything if the element
     // with given key was already present in the map
-    exited_children.insert(value);
+    exited_children.insert(std::make_pair(pid, status));
 }
 
 // Write details of terminated child to pipe
