@@ -46,23 +46,25 @@ sudo setcap cap_setuid,cap_kill,cap_sys_nice+eip _build/default/lib/erlexec/priv
 == Features ==
 
 <ol>
-<li>Starting, stopping OS commands and getting their OS process IDs.</li>
-<li>Setting OS command working directory, environment, effective user,
-    process priority.</li>
-<li>Providing custom termination command for killing a process or relying
+<li>Start/stopping OS commands and getting their OS process IDs.</li>
+<li>Set OS command's working directory, environment, process group,
+    effective user, process priority.</li>
+<li>Provide custom termination command for killing a process or relying
     on default SIGTERM/SIGKILL behavior.  Specifying custom timeout
     for SIGKILL after the termination command or SIGTERM was executed.</li>
-<li>Terminating all processing beloging to a process group</li>
-<li>Ability to link Erlang processes to OS processes (via intermediate
+<li>Terminate all processing beloging to a process group</li>
+<li>Link Erlang processes to OS processes (via intermediate
     Erlang Pids that are linked to an associated OS process).</li>
-<li>Ability to monitor the termination of OS processes.</li>
-<li>Ability to execute OS processes synchronously and asynchronously.</li>
-<li>Proper cleanup of OS processes at port program termination time.</li>
-<li>Communicating with an OS process via its STDIN.</li> 
-<li>Redirecting STDOUT and STDERR of an OS process to a file, erlang process,
-  or a custom function. When redirected to a file, the file can be
-  open in append/truncate mode, and given creation access mask.</li>
-<li>Running interactive processes with psudo-terminal pty support.</li>
+<li>Monitor the termination of OS processes.</li>
+<li>Execute OS processes synchronously and asynchronously.</li>
+<li>Perform proper cleanup of OS processes at port program termination time.</li>
+<li>Communicate with an OS process via its STDIN.</li> 
+<li>Redirect STDOUT and STDERR of an OS process to a file, erlang process,
+    or a custom function. When redirected to a file, the file can be
+    open in append/truncate mode, and given creation access mask.</li>
+<li>Run interactive processes with psudo-terminal pty support.</li>
+<li>Execute OS processes under different user credentials (using Linux
+    capabilities).</li>
 </ol>
 
 == Supported Platforms ==
