@@ -1,11 +1,21 @@
 language: erlang
 otp_release:
   - 18.0
-compiler: gcc
-  addons:
-    apt:
-      sources:
-        - ubuntu-toolchain-r-test
-      packages:
-        - g++-4.9
-  env: COMPILER=g++-4.9
+  - 19.1
+compiler: g++
+
+#  addons:
+#    apt:
+#      sources:
+#        - ubuntu-toolchain-r-test
+#      packages:
+#        - g++-4.9
+#  env: COMPILER=g++-4.9
+
+before_install:
+- sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+- sudo apt-get update -qq
+
+install:
+- sudo apt-get install -qq g++-4.9
+- export CXX="g++-4.9"
