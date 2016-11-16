@@ -983,17 +983,29 @@ int send_error_str(int transId, bool asAtom, const char* fmt, ...)
 }
 
 //------------------------------------------------------------------------------
-int send_ok(int transId, pid_t pid)
+int send_pid(int transId, pid_t pid)
 {
     eis.reset();
     eis.encodeTupleSize(2);
     eis.encode(transId);
-    if (pid < 0)
+    eis.encodeTupleSize(2);
+    eis.encode(atom_t("pid"));
+    eis.encode(pid);
+    return eis.write();
+}
+
+//------------------------------------------------------------------------------
+int send_ok(int transId, long value)
+{
+    eis.reset();
+    eis.encodeTupleSize(2);
+    eis.encode(transId);
+    if (value < 0)
         eis.encode(atom_t("ok"));
     else {
         eis.encodeTupleSize(2);
         eis.encode(atom_t("ok"));
-        eis.encode(pid);
+        eis.encode(value);
     }
     return eis.write();
 }
