@@ -54,7 +54,8 @@ int pselectx(int nfds, fd_set* _rfds, fd_set* wfds, fd_set* efds,
 
     struct timeval ts;
     if (_timeout) {
-       ts = struct timeval{_timeout->tv_sec, _timeout->tv_nsec/1000};
+       ts.tv_sec  = _timeout->tv_sec;
+       ts.tv_usec = _timeout->tv_nsec/1000;
        timeout = &ts;
     }
 

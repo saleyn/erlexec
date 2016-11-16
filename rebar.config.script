@@ -34,17 +34,19 @@ X64 = case Mach of
     _              -> ""
     end,
 
+CxxFlags = "$CXXFLAGS -DHAVE_SETRESUID -DHAVE_PTRACE -std=c++1y",
+
 % Replace configuration options read from rebar.config with those dynamically set below
 lists:keymerge(1,
     lists:keysort(1, [
-        {port_env,  [{"solaris", "CXXFLAGS", "$CXXFLAGS -DHAVE_SETREUID -DHAVE_PTRACE" ++ X64},
+        {port_env,  [{"solaris", "CXXFLAGS", CxxFlags        ++ X64},
                      {"solaris", "LDFLAGS",  "$LDFLAGS -lrt" ++ X64},
 
-                     {"darwin",  "CXXFLAGS", "$CXXFLAGS -DHAVE_SETREUID -DHAVE_PTRACE" ++ X64},
-                     {"darwin",  "LDFLAGS", "$LDFLAGS" ++ X64},
+                     {"darwin",  "CXXFLAGS", CxxFlags   ++ X64},
+                     {"darwin",  "LDFLAGS",  "$LDFLAGS" ++ X64},
 
-                     {"linux", "CXXFLAGS", "$CXXFLAGS -DHAVE_SETRESUID -DHAVE_PTRACE" ++ LinCXX},
-                     {"linux", "LDFLAGS", "$LDFLAGS" ++ LinLD},
+                     {"linux",   "CXXFLAGS", CxxFlags   ++ LinCXX},
+                     {"linux",   "LDFLAGS",  "$LDFLAGS" ++ LinLD},
 
                      {"CC",  CXX},
                      {"CXX", CXX},
