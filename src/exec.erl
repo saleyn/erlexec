@@ -1222,7 +1222,7 @@ test_kill_timeout() ->
     {ok, P, I} = exec:run("trap '' SIGTERM; sleep 30", [{kill_timeout, 1}, monitor]),
     exec:stop(I),
     timer:sleep(50),
-    exec:debug(0),
+    exec:debug(OldDebug),
     ?receiveMatch({'DOWN', _, process, P, normal}, 5000).
 
 test_setpgid() ->
