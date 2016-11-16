@@ -46,18 +46,22 @@ int pselectx(int nfds, fd_set* _rfds, fd_set* wfds, fd_set* efds,
              const struct timespec* _timeout, const sigset_t* _mask, int& _error) {
 #if __OpenBSD__ || __APPLE__ || (__NetBSD__ && __NetBSD_Version__ < 600000000)
     fd_set rfds;
-    struct timeval *timeout;
+    struct timeval* timeout = NULL;
     sigset_t omask, mask, pending;
     int kq = -1, error;
     struct kevent event[NSIG];
     unsigned nevent = 0;
 
+    struct timeval ts;
+    if (_timeout) {
+       ts = struct timeval{_timeout->tv_sec, _timeout->tv_nsec/1000};
+       timeout = &ts;
+    }
+
     if (_rfds)
         FD_COPY(_rfds, &rfds);
     else
         FD_ZERO(&rfds);
-
-    timeout = _timeout ? &(struct timeval){ _timeout->tv_sec, _timeout->tv_nsec/1000} : NULL;
 
     if (_mask)
         mask = *_mask;
@@ -66,7 +70,7 @@ int pselectx(int nfds, fd_set* _rfds, fd_set* wfds, fd_set* efds,
 
     sigpending(&pending);
 
-    for (int i = 1; i < NSIG && nevent < countof(event); i++) {
+    for (int i = 1; i < NSIG && nevent < sizeof(event)/sizeof(event[0]); i++) {
         struct sigaction sa;
 
         if (i == SIGKILL || i == SIGSTOP)
@@ -114,7 +118,7 @@ int pselectx(int nfds, fd_set* _rfds, fd_set* wfds, fd_set* efds,
     if ((error = sigmask_ex(SIG_SETMASK, &mask, &omask)))
         goto error;
 
-    if (-1 == (nfds = select(MAX(nfds, kq + 1), &rfds, wfds, efds, timeout)))
+    if (-1 == (nfds = select(std::max(nfds, kq + 1), &rfds, wfds, efds, timeout)))
         _error = errno;
 
     sigmask_ex(SIG_SETMASK, &omask, NULL);
@@ -131,7 +135,7 @@ int pselectx(int nfds, fd_set* _rfds, fd_set* wfds, fd_set* efds,
             FD_COPY(&rfds, _rfds);
     }
 
-    closefd(kq);
+    close(kq);
 
     return nfds;
 
