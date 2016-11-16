@@ -17,8 +17,11 @@ endif
 all:
 	@$(REBAR) compile
 
-clean path:
+clean:
 	@$(REBAR) $@
+
+path:
+	@echo $(shell $(REBAR) $@)
 
 docs: doc ebin clean-docs
 	@$(REBAR) edoc skip_deps=true

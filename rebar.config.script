@@ -24,33 +24,31 @@ Vsn  = string:strip(os:cmd("git describe --always --tags --abbrev=0 | sed 's/^v/
     case file:read_file_info(Sysroot ++ "/usr/include/sys/capability.h") of
     {ok, _} ->
         %io:put_chars("INFO:  Detected support of linux capabilities.\n"),
-        {" -DHAVE_CAP", " -lcap"};
+        {"-DHAVE_CAP", " -lcap"};
     _ ->
         {"", ""}
     end,
 
 X64 = case Mach of
-    "x86_64" ++ _E -> " -m64";
+    "x86_64" ++ _E -> "-m64";
     _              -> ""
     end,
-
-CxxFlags = "$CXXFLAGS -DHAVE_SETRESUID -DHAVE_PTRACE -std=c++1y",
 
 % Replace configuration options read from rebar.config with those dynamically set below
 lists:keymerge(1,
     lists:keysort(1, [
-        {port_env,  [{"solaris", "CXXFLAGS", CxxFlags        ++ X64},
+        {port_env,  [{"solaris", "CXXFLAGS", "$CXXFLAGS "    ++ X64},
                      {"solaris", "LDFLAGS",  "$LDFLAGS -lrt" ++ X64},
 
-                     {"darwin",  "CXXFLAGS", CxxFlags   ++ X64},
-                     {"darwin",  "LDFLAGS",  "$LDFLAGS" ++ X64},
+                     {"darwin",  "CXXFLAGS", "$CXXFLAGS "    ++ X64},
+                     {"darwin",  "LDFLAGS",  "$LDFLAGS"      ++ X64},
 
-                     {"linux",   "CXXFLAGS", CxxFlags   ++ LinCXX},
-                     {"linux",   "LDFLAGS",  "$LDFLAGS" ++ LinLD},
+                     {"linux",   "CXXFLAGS", "$CXXFLAGS " ++ LinCXX},
+                     {"linux",   "LDFLAGS",  "$LDFLAGS"   ++  LinLD},
 
                      {"CC",  CXX},
                      {"CXX", CXX},
-                     {"CXXFLAGS", "$CXXFLAGS -O0"}
+                     {"CXXFLAGS", "$CXXFLAGS -DHAVE_SETRESUID -DHAVE_PTRACE -std=c++1y -g -O2"}
                     ]},
 
         {port_specs,[{filename:join(["priv", Mach, "exec-port"]), ["c_src/*.cpp"]}]},
