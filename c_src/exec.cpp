@@ -22,6 +22,7 @@
     Instruction = {manage, OsPid::integer(), Options} |
                   {run,   Cmd::string(), Options}   |
                   {list}                            |
+                  {debug,Level::integer()}          |
                   {stop, OsPid::integer()}          |
                   {kill, OsPid::integer(), Signal::integer()} |
                   {stdin, OsPid::integer(), Data::binary()}
@@ -43,8 +44,9 @@
     Device  = close | null | stderr | stdout | File::string() | {append, File::string()}
 
     Reply = ok                      |       // For kill/stop commands
-            {ok, OsPid}             |       // For run command
+            {pid, OsPid}            |       // For run command
             {ok, [OsPid]}           |       // For list command
+            {ok, Int}               |       // For debug command
             {error, Reason}         |
             {exit_status, OsPid, Status}    // OsPid terminated with Status
 
@@ -296,8 +298,8 @@ int process_command()
         return -1;
     }
 
-    enum CmdTypeT        {  MANAGE,  RUN,  STOP,  KILL,  LIST,  SHUTDOWN,  STDIN  } cmd;
-    const char* cmds[] = { "manage","run","stop","kill","list","shutdown","stdin" };
+    enum CmdTypeT        {  MANAGE,  RUN,  STOP,  KILL,  LIST,  SHUTDOWN,  STDIN,  DEBUG  } cmd;
+    const char* cmds[] = { "manage","run","stop","kill","list","shutdown","stdin","debug" };
 
     /* Determine the command */
     if ((int)(cmd = (CmdTypeT) eis.decodeAtomIndex(cmds, command)) < 0) {
@@ -341,7 +343,7 @@ int process_command()
             std::string error;
             set_nice(realpid,po.nice(),error);
 
-            send_ok(transId, pid);
+            send_pid(transId, pid);
             break;
         }
         case RUN: {
@@ -367,7 +369,7 @@ int process_command()
                            po.kill_timeout(),
                            po.kill_group());
                 children[pid] = ci;
-                send_ok(transId, pid);
+                send_pid(transId, pid);
             }
             break;
         }
@@ -435,6 +437,18 @@ int process_command()
 
             it->second.stdin_queue.push_front(data);
             process_pid_input(it->second);
+            break;
+        }
+        case DEBUG: {
+            // {debug, Level::integer()}
+            long level;
+            if (arity != 2 || eis.decodeInt(level) < 0 || level < 0 || level > 10) {
+                send_error_str(transId, true, "badarg");
+                break;
+            }
+            int old = debug;
+            debug   = level;
+            send_ok(transId, old);
             break;
         }
     }

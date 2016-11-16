@@ -2,14 +2,31 @@
 
 Execute and control OS processes from Erlang/OTP.
 
-This project implements a C++ port program and Erlang application
+This project implements an Erlang application with a C++ port program
 that gives light-weight Erlang processes fine-grain control over
 execution of OS processes.
 
-It makes possible for an Erlang process to start, stop an OS process,
-send POSIX signals, know process IDs of a started OS process, set up
-a monitor or link to it, run interactive commands with pseudo
-terminals. This application provides better control
+The following features are supported:
+
+* Start/stop OS commands and getting their OS process IDs.
+* Setting OS command's working directory, environment, process group, effective user, process priority.
+* Provide custom termination command for killing a process or relying on
+  default SIGTERM/SIGKILL behavior. Specifying custom timeout for SIGKILL
+  after the termination command or SIGTERM was executed.
+* Terminate all processing beloging to a process group
+* Link Erlang processes to OS processes (via intermediate Erlang Pids that are linked
+  to an associated OS process).
+* Monitor termination of OS processes.
+* Execute OS processes synchronously and asynchronously.
+* Perform proper cleanup of OS processes at port program termination time.
+* Communicate with an OS process via its STDIN.
+* Redirect STDOUT and STDERR of an OS process to a file, erlang process, or a custom function.
+  When redirected to a file, the file can be open in append/truncate mode, and given creation
+  access mask.
+* Run interactive processes with psudo-terminal pty support.
+* Execute OS processes under different user credentials (using Linux capabilities).
+
+This application provides significantly better control
 over OS processes than built-in `erlang:open_port/2` command with a
 `{spawn, Command}` option, and performs proper OS child process cleanup
 when the emulator exits. 

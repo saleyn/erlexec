@@ -43,7 +43,7 @@
 -export([
     start/0, start/1, start_link/1, run/2, run_link/2, manage/2, send/2,
     which_children/0, kill/2,       setpgid/2, stop/1, stop_and_wait/2,
-    ospid/1, pid/1,   status/1,     signal/1
+    ospid/1, pid/1,   status/1,     signal/1,  debug/1
 ]).
 
 %% Internal exports
@@ -467,6 +467,14 @@ send(OsPid, Data)
     gen_server:call(?MODULE, {port, {send, OsPid, Data}}).
 
 %%-------------------------------------------------------------------------
+%% @doc Set debug level of the port process.
+%% @end
+%%-------------------------------------------------------------------------
+-spec debug(Level::integer()) -> OldLevel::integer() | {error, timeout}.
+debug(Level) when is_integer(Level), Level >= 0, Level =< 10 ->
+    gen_server:call(?MODULE, {port, {debug, Level}}).
+
+%%-------------------------------------------------------------------------
 %% @doc Decode the program's exit_status.  If the program exited by signal
 %%      the function returns `{signal, Signal, Core}' where the `Signal'
 %%      is the signal number or atom, and `Core' indicates if the core file
@@ -814,12 +822,13 @@ sync_res([], L)  -> [{stderr, lists:reverse(L)}];
 sync_res(LO, LE) -> [{stdout, lists:reverse(LO)} | sync_res([], LE)].
 
 %% Add a link for Pid to OsPid if requested.
-maybe_add_monitor({ok, OsPid}, Pid, MonType, Sync, PidOpts, Debug) when is_integer(OsPid) ->
+maybe_add_monitor({pid, OsPid}, Pid, MonType, Sync, PidOpts, Debug) when is_integer(OsPid) ->
     % This is a reply to a run/run_link command. The port program indicates
     % of creating a new OsPid process.
     % Spawn a light-weight process responsible for monitoring this OsPid
     Self = self(),
     LWP  = spawn_link(fun() -> ospid_init(Pid, OsPid, MonType, Sync, Self, PidOpts, Debug) end),
+    debug(Debug, "~w added monitor ~p for OsPid ~w", [?MODULE, LWP, OsPid]),
     ets:insert(exec_mon, [{OsPid, LWP}, {LWP, OsPid}]),
     {ok, LWP, OsPid, Sync};
 maybe_add_monitor(Reply, _Pid, _MonType, _Sync, _PidOpts, _Debug) ->
@@ -977,7 +986,9 @@ is_port_command({kill, Pid, Sig}, _Pid, _State) when is_pid(Pid),is_integer(Sig)
     case ets:lookup(exec_mon, Pid) of
     [{Pid, OsPid}]  -> {ok, {kill, OsPid, Sig}, undefined, undefined, []};
     []              -> throw({error, no_process})
-    end.
+    end;
+is_port_command({debug, Level}=T, _Pid, _State) when is_integer(Level),Level >= 0,Level =< 10 -> 
+    {ok, T, undefined, undefined, []}.
 
 check_cmd_options([monitor|T], Pid, State, PortOpts, OtherOpts) ->
     check_cmd_options(T, Pid, State, PortOpts, OtherOpts);
@@ -1207,11 +1218,11 @@ test_env() ->
         exec:run("echo $XXX", [stdout, {env, [{"XXX", "X"}]}, sync])).
 
 test_kill_timeout() ->
-    Clear = fun F() -> receive _ -> F() after 0 -> ok end end,
-    Clear(),
+    {ok, OldDebug} = exec:debug(2),
     {ok, P, I} = exec:run("trap '' SIGTERM; sleep 30", [{kill_timeout, 1}, monitor]),
-    timer:sleep(250),
     exec:stop(I),
+    timer:sleep(50),
+    exec:debug(0),
     ?receiveMatch({'DOWN', _, process, P, normal}, 5000).
 
 test_setpgid() ->
