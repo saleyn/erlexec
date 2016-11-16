@@ -9,6 +9,8 @@ execution of OS processes.
 The following features are supported:
 
 * Start/stop OS commands and getting their OS process IDs.
+* Manage/monitor externally started OS processes.
+* Execute OS processes synchronously and asynchronously.
 * Setting OS command's working directory, environment, process group, effective user, process priority.
 * Provide custom termination command for killing a process or relying on
   default SIGTERM/SIGKILL behavior. Specifying custom timeout for SIGKILL
@@ -17,8 +19,8 @@ The following features are supported:
 * Link Erlang processes to OS processes (via intermediate Erlang Pids that are linked
   to an associated OS process).
 * Monitor termination of OS processes.
-* Execute OS processes synchronously and asynchronously.
 * Perform proper cleanup of OS processes at port program termination time.
+* Kill processes belonging to an OS process group at process exit.
 * Communicate with an OS process via its STDIN.
 * Redirect STDOUT and STDERR of an OS process to a file, erlang process, or a custom function.
   When redirected to a file, the file can be open in append/truncate mode, and given creation
