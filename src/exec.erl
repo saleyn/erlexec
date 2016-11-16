@@ -1207,7 +1207,10 @@ test_env() ->
         exec:run("echo $XXX", [stdout, {env, [{"XXX", "X"}]}, sync])).
 
 test_kill_timeout() ->
+    Clear = fun F() -> receive _ -> F() after 0 -> ok end end,
+    Clear(),
     {ok, P, I} = exec:run("trap '' SIGTERM; sleep 30", [{kill_timeout, 1}, monitor]),
+    timer:sleep(250),
     exec:stop(I),
     ?receiveMatch({'DOWN', _, process, P, normal}, 5000).
 
