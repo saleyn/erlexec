@@ -87,7 +87,7 @@ pid_t           ei::self_pid;
 //-------------------------------------------------------------------------
 bool    process_command();
 void    initialize(int userid, bool use_alt_fds, bool enable_suid);
-int     finalize(fd_set& read_fds, sigset_t& orig_set);
+int     finalize(fd_set& read_fds);
 
 //-------------------------------------------------------------------------
 // Local Functions
@@ -128,7 +128,6 @@ int main(int argc, char* argv[])
     // Setup termination signal handlers
     sterm.sa_handler = gotsignal;
     sigemptyset(&sterm.sa_mask);
-    sigaddset(&sterm.sa_mask, SIGCHLD);
     sterm.sa_flags = 0;
     sigaction(SIGINT,  &sterm, NULL);
     sigaction(SIGTERM, &sterm, NULL);
@@ -183,14 +182,14 @@ int main(int argc, char* argv[])
     sigaction(SIGCHLD, &sact, NULL);
 
     // Block handled signals - pselect() will take care of unblocking
-    sigset_t sigset, oldset;
-    sigemptyset(&sigset);
-    sigaddset(&sigset, SIGINT);
-    sigaddset(&sigset, SIGTERM);
-    sigaddset(&sigset, SIGHUP);
-    sigaddset(&sigset, SIGPIPE);
-    sigaddset(&sigset, SIGCHLD);
-    sigprocmask(SIG_BLOCK, &sigset, &oldset);
+    //sigset_t sigset, oldset;
+    //sigemptyset(&sigset);
+    //sigaddset(&sigset, SIGINT);
+    //sigaddset(&sigset, SIGTERM);
+    //sigaddset(&sigset, SIGHUP);
+    //sigaddset(&sigset, SIGPIPE);
+    //sigaddset(&sigset, SIGCHLD);
+    //sigprocmask(SIG_BLOCK, &sigset, &oldset);
 
     // Main processing loop
     while (!terminated) {
@@ -213,21 +212,19 @@ int main(int argc, char* argv[])
                     wakeup = std::max(0.1, std::min(wakeup, it->second.deadline.diff(now)));
             }
 
-        check_pending(); // Check for pending signals arrived while we were in the signal handler
+        //check_pending(); // Check for pending signals arrived while we were in the signal handler
 
         if (terminated || wakeup < 0) break;
 
         int secs  = int(wakeup);
-        int nsecs = long((wakeup - secs) * 1000000000.0 + 0.5);
-        struct timespec timeout = {secs, nsecs};
+        ei::TimeVal timeout(secs, long((wakeup - secs)*1000000.0 + 0.5));
 
         if (debug > 2)
-            fprintf(stderr, "Selecting maxfd=%d (sleep={%lds,%ldus})\r\n",
-                maxfd, timeout.tv_sec, timeout.tv_nsec/1000);
+            fprintf(stderr, "Selecting maxfd=%d (sleep={%ds,%dus})\r\n",
+                    maxfd, timeout.sec(), timeout.usec());
 
-        int ec;
-        int cnt = pselectx(maxfd+1, &readfds, &writefds, NULL, &timeout, &oldset, ec);
-        int interrupted = (cnt < 0 && ec == EINTR);
+        int cnt = select(maxfd+1, &readfds, &writefds, NULL, &timeout);
+        int interrupted = (cnt < 0 && errno == EINTR);
         // Note that the process will not be interrupted while outside of pselectx()
 
         if (debug > 2)
@@ -236,7 +233,7 @@ int main(int argc, char* argv[])
 
         if (interrupted || cnt == 0) {
             now.now();
-            if (check_children(now, terminated) < 0) {
+            if (check_children(now, terminated, pipe_valid) < 0) {
                 terminated = 11;
                 break;
             }
@@ -254,7 +251,7 @@ int main(int argc, char* argv[])
             if (!process_sigchld())
                 break;
             now.now();
-            if (check_children(now, terminated) < 0) {
+            if (check_children(now, terminated, pipe_valid) < 0) {
                 terminated = 13;
                 break;
             }
@@ -271,7 +268,7 @@ int main(int argc, char* argv[])
 
     }
 
-    return finalize(readfds, oldset);
+    return finalize(readfds);
 }
 
 bool process_command()
@@ -571,7 +568,7 @@ void initialize(int userid, bool use_alt_fds, bool enable_suid)
     }
 }
 
-int finalize(fd_set& readfds, sigset_t& orig_set)
+int finalize(fd_set& readfds)
 {
     if (debug) fprintf(stderr, "Setting alarm to %d seconds\r\n", alarm_max_time);
     alarm(alarm_max_time);  // Die in <alarm_max_time> seconds if not done
@@ -607,16 +604,17 @@ int finalize(fd_set& readfds, sigset_t& orig_set)
             if (deadline < timeout)
                 break;
 
-            struct timespec ts = (deadline - timeout).timespec();
+            auto ts = (deadline - timeout).timeval();
 
             FD_ZERO(&readfds);
             FD_SET (sigchld_pipe[0], &readfds); // pipe for delivering SIGCHLD signals
 
             int ec;
             int maxfd = std::max<int>(eis.read_handle(), sigchld_pipe[0]);
-            int cnt   = pselectx(maxfd+1, NULL, NULL, NULL, &ts, &orig_set, ec);
+            int cnt;
+            while ((cnt = select(maxfd+1, &readfds, NULL, NULL, &ts)) < 0 && errno == EINTR);
 
-            if (cnt < 0 && ec != EINTR) {
+            if (cnt < 0) {
                 fprintf(stderr, "Error in finalizing pselect(2): %s\r\n", strerror(ec));
                 break;
             } else if (cnt > 0 && FD_ISSET(sigchld_pipe[0], &readfds) ) {
