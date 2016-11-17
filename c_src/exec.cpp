@@ -127,8 +127,8 @@ int main(int argc, char* argv[])
 
     // Setup termination signal handlers
     sterm.sa_handler = gotsignal;
+    sterm.sa_flags   = 0;
     sigemptyset(&sterm.sa_mask);
-    sterm.sa_flags = 0;
     sigaction(SIGINT,  &sterm, NULL);
     sigaction(SIGTERM, &sterm, NULL);
     sigaction(SIGHUP,  &sterm, NULL);
@@ -175,21 +175,11 @@ int main(int argc, char* argv[])
     set_nonblock_flag(self_pid, sigchld_pipe[0], true);
     set_nonblock_flag(self_pid, sigchld_pipe[1], true);
 
-    sact.sa_handler = NULL;
+    sact.sa_handler   = NULL;
     sact.sa_sigaction = gotsigchild;
+    sact.sa_flags     = SA_SIGINFO | SA_RESTART | SA_NOCLDSTOP;
     sigemptyset(&sact.sa_mask);
-    sact.sa_flags = SA_SIGINFO | SA_RESTART | SA_NOCLDSTOP;
     sigaction(SIGCHLD, &sact, NULL);
-
-    // Block handled signals - pselect() will take care of unblocking
-    //sigset_t sigset, oldset;
-    //sigemptyset(&sigset);
-    //sigaddset(&sigset, SIGINT);
-    //sigaddset(&sigset, SIGTERM);
-    //sigaddset(&sigset, SIGHUP);
-    //sigaddset(&sigset, SIGPIPE);
-    //sigaddset(&sigset, SIGCHLD);
-    //sigprocmask(SIG_BLOCK, &sigset, &oldset);
 
     // Main processing loop
     while (!terminated) {
@@ -212,12 +202,10 @@ int main(int argc, char* argv[])
                     wakeup = std::max(0.1, std::min(wakeup, it->second.deadline.diff(now)));
             }
 
-        //check_pending(); // Check for pending signals arrived while we were in the signal handler
-
         if (terminated || wakeup < 0) break;
 
-        int secs  = int(wakeup);
-        ei::TimeVal timeout(secs, long((wakeup - secs)*1000000.0 + 0.5));
+        int secs = int(wakeup);
+        ei::TimeVal timeout(secs, int((wakeup - secs)*1000000.0 + 0.5));
 
         if (debug > 2)
             fprintf(stderr, "Selecting maxfd=%d (sleep={%ds,%dus})\r\n",
