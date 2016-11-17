@@ -1239,7 +1239,7 @@ test_setpgid() ->
 test_pty() ->
     ?assertMatch({error,[{exit_status,256},{stdout,[<<"not a tty\n">>]}]},
         exec:run("tty", [stdin, stdout, sync])),
-    ?assertMatch({ok,[{stdout,[<<"/dev/pts/", _/binary>>]}]},
+    ?assertMatch({ok,[{stdout,[<<"/dev/", _/binary>>]}]},
         exec:run("tty", [stdin, stdout, pty, sync])),
     {ok, P, I} = exec:run("/bin/bash --norc -i", [stdin, stdout, pty, monitor]),
     exec:send(I, <<"echo ok\n">>),
