@@ -1120,7 +1120,7 @@ exec_test_() ->
     }.
 
 exec_run_many_test() ->
-    ?assertMatch({ok,[{io_ops,1000}]}, test_exec:run()).
+    ?assertMatch({ok,[{io_ops,300},{success,300}]}, test_exec:run(300)).
 
 test_monitor() ->
     {ok, P, _} = exec:run("echo ok", [{stdout, null}, monitor]),

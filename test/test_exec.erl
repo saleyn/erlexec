@@ -18,12 +18,13 @@
 -define(SCRIPT, "/tmp/test_script.sh").
 
 -record(state, {
-    owner :: pid(),
-    delay :: integer(),
-    count :: integer(),
-    active:: integer(),
-    ios   :: integer(),
-    pids  :: sets:set()
+    owner       :: pid(),
+    delay       :: integer(),
+    count       :: integer(),
+    active  = 0 :: integer(),
+    success = 0 :: integer(),
+    ios     = 0 :: integer(),
+    pids        :: sets:set()
 }).
 
 
@@ -43,8 +44,8 @@ run(Count, Timeout, DelayMS) when is_integer(Count), is_integer(Timeout), is_int
     ok = application:ensure_started(erlexec),
     {ok, Pid} = gen_server:start_link({local,?SERVER}, ?MODULE, [self(),Count,DelayMS], []),
     receive
-        {completed, Pid, IOs} ->
-            {ok, [{io_ops, IOs}]}
+        {completed, Pid, IOs, Success} ->
+            {ok, [{io_ops, IOs}, {success, Success}]}
     after Timeout ->
         timeout
     end.
@@ -75,13 +76,12 @@ init([Owner, Count, DelayMS]) ->
     Delay = integer_to_binary(DelayMS),
     ok = file:write_file(?SCRIPT,
         <<"#!/bin/bash\n"
-          "sleep  .0$[ ( $RANDOM % ", Delay/binary, " ) + 1 ]s\n"
-          "echo 'This is a test script'\n"
-          "sleep  .0$[ ( $RANDOM % ", Delay/binary, " ) + 1 ]s\n"
-          "echo Exit status 12\n"
+          "echo 'This is a test script $$'\n"
+          "sleep $[ ( $RANDOM % ", Delay/binary, " ) + 1 ]s\n"
           "exit 12\n">>),
+    file:change_mode(?SCRIPT, 8#755),
     self() ! start_child,
-    {ok, #state{owner=Owner, delay=DelayMS, active=0, count=Count, ios=0, pids = sets:new()}}.
+    {ok, #state{owner=Owner, delay=DelayMS, count=Count, pids = sets:new()}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -127,27 +127,29 @@ handle_info(start_child, #state{count=Count, active=Active, pids = Pids} = State
     {ok, _Pid, OsPid} = exec:run(?SCRIPT, [stdout, stderr, monitor]),
     State = State0#state{count=Count-1, active=Active+1, pids = sets:add_element(OsPid, Pids)},
     State#state.count > 0 andalso
-        erlang:send_after(State#state.delay, self(), start_child),
+        erlang:send_after(10, self(), start_child),
     {noreply, State};
 
 handle_info({Channel, _OsPid, _Data}, State) when Channel == stdout;
                                                   Channel == stderr ->
     {noreply, State#state{ios = State#state.ios + 1}};
 
-handle_info({'DOWN', OsPid, process, _Pid, _ExitStatus}, #state{pids = Pids} = State) ->
+handle_info({'DOWN', OsPid, process, _Pid, {exit_status, ExitStatus}}, #state{pids = Pids, success=N} = State) ->
     case sets:is_element(OsPid, Pids) of
         true ->
             Active   = State#state.active - 1,
+            Success  = case exec:status(ExitStatus) of {status, 12} -> N+1; _ -> N end,
             NewPids  = sets:del_element(OsPid, Pids),
-            NewState = State#state{pids=NewPids, active=Active},
+            NewState = State#state{pids=NewPids, active=Active, success=Success},
             case {Active, State#state.count} of
                 {0, 0} ->
-                    State#state.owner ! {completed, self(), State#state.ios},
+                    State#state.owner ! {completed, self(), State#state.ios, Success},
                     {stop, normal, NewState};
                 _ ->
                     {noreply, NewState}
             end;
         false ->
+            io:format("DOWN from unmanaged pid ~w: ~p\n", [OsPid, ExitStatus]),
             {noreply, State}
     end;
 
