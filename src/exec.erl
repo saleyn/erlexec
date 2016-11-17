@@ -1140,11 +1140,16 @@ test_stdin() ->
     ?receiveMatch({'DOWN', _, process, P, normal}, 5000).
 
 test_stdin_eof() ->
-    {ok, P, I} = exec:run("tac", [stdin, stdout, monitor]),
-    [ok = exec:send(I, Data)
-     || Data <- [<<"foo\n">>, <<"bar\n">>, <<"baz\n">>, eof]],
-    ?receiveMatch({stdout,I,<<"baz\nbar\nfoo\n">>}, 3000),
-    ?receiveMatch({'DOWN', _, process, P, normal}, 5000).
+    case os:find_executable("tac") of
+    false ->
+        ok;
+    _ ->
+        {ok, P, I} = exec:run("tac", [stdin, stdout, monitor]),
+        [ok = exec:send(I, Data)
+         || Data <- [<<"foo\n">>, <<"bar\n">>, <<"baz\n">>, eof]],
+        ?receiveMatch({stdout,I,<<"baz\nbar\nfoo\n">>}, 3000),
+        ?receiveMatch({'DOWN', _, process, P, normal}, 5000)
+    end.
 
 test_std(Stream) ->
     Suffix = case Stream of
@@ -1239,7 +1244,7 @@ test_setpgid() ->
 test_pty() ->
     ?assertMatch({error,[{exit_status,256},{stdout,[<<"not a tty\n">>]}]},
         exec:run("tty", [stdin, stdout, sync])),
-    ?assertMatch({ok,[{stdout,[<<"/dev/pts/", _/binary>>]}]},
+    ?assertMatch({ok,[{stdout,[<<"/dev/", _/binary>>]}]},
         exec:run("tty", [stdin, stdout, pty, sync])),
     {ok, P, I} = exec:run("/bin/bash --norc -i", [stdin, stdout, pty, monitor]),
     exec:send(I, <<"echo ok\n">>),
