@@ -471,7 +471,7 @@ send(OsPid, Data)
 %% @doc Set debug level of the port process.
 %% @end
 %%-------------------------------------------------------------------------
--spec debug(Level::integer()) -> OldLevel::integer() | {error, timeout}.
+-spec debug(Level::integer()) -> {ok, OldLevel::integer()} | {error, timeout}.
 debug(Level) when is_integer(Level), Level >= 0, Level =< 10 ->
     gen_server:call(?MODULE, {port, {debug, Level}}).
 

@@ -8,3 +8,5 @@ ebin
 .rebar/*
 .eunit
 _build
+*.crashdump
+compile_commands.json

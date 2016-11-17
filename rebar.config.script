@@ -1,10 +1,14 @@
 %% For cross building using erlang:system_info() does not work as rebar runs
 %% using the build hosts Erlang runtime.
 %% If CXX envrionment variable is defined we are most likely running in a cross environment.
-{CXX,Target,Sysroot} = case os:getenv("CXX") of
-    false -> {"g++",erlang:system_info(system_architecture),""};
-    Compiler -> {Compiler,string:strip(os:cmd(Compiler ++ " -dumpmachine"), right, $\n),string:strip(os:cmd(Compiler ++ " -print-sysroot"), right, $\n)}
-end,
+{CXX,Target,Sysroot} =
+    case os:getenv("CXX") of
+    false    ->
+        {"g++",erlang:system_info(system_architecture),""};
+    Compiler ->
+        {Compiler,string:strip(os:cmd(Compiler ++ " -dumpmachine"),   right, $\n),
+                  string:strip(os:cmd(Compiler ++ " -print-sysroot"), right, $\n)}
+    end,
 
 %% Commonly on Linux, compilers report the target triplet as <arch>-<vendor>-linux,
 %% however, Erlang runtime reports and expects it as <arch>-<vendor>-linux-gnu.
@@ -12,26 +16,30 @@ end,
 Mach = case string:str(Target,"linux") of
     0 -> Target;
     _ -> case string:words(Target,$-) of
-        4 -> Target;
-        _ -> Target ++ "-gnu"
-        end
+         4 -> Target;
+         _ -> Target ++ "-gnu"
+         end
     end,
 
-Vsn  = string:strip(os:cmd("git describe --always --tags --abbrev=0 | sed 's/^v//'"), right, $\n),
+Vsn = string:strip(os:cmd("git describe --always --tags --abbrev=0 | sed 's/^v//'"), right, $\n),
 
 %% Check for Linux capability API (Install package: libcap-devel).
 {LinCXX, LinLD} =
     case file:read_file_info(Sysroot ++ "/usr/include/sys/capability.h") of
-    {ok, _} ->
-        %io:put_chars("INFO:  Detected support of linux capabilities.\n"),
-        {" -DHAVE_CAP", " -lcap"};
-    _ ->
-        {"", ""}
+    {ok, _} -> {" -DHAVE_CAP", " -lcap"};
+    _       -> {"", ""}
     end,
 
-X64 = case Mach of
+X64=case Mach of
     "x86_64" ++ _E -> " -m64";
     _              -> ""
+    end,
+
+OptimLevel =
+    case os:getenv("OPTIMIZE") of
+    false  -> "0";
+    "true" -> "2";
+    Level  -> list_to_integer(Level), Level
     end,
 
 % Replace configuration options read from rebar.config with those dynamically set below
@@ -48,7 +56,7 @@ lists:keymerge(1,
 
                      {"CC",  CXX},
                      {"CXX", CXX},
-                     {"CXXFLAGS", "$CXXFLAGS -O0 -DHAVE_PTRACE -std=c++11"}
+                     {"CXXFLAGS", "$CXXFLAGS -DHAVE_PTRACE -std=c++11 -O" ++ OptimLevel}
                     ]},
 
         {port_specs,[{filename:join(["priv", Mach, "exec-port"]), ["c_src/*.cpp"]}]},

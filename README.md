@@ -59,6 +59,9 @@ OS-specific libcap-dev installation instructions:
 ```
 $ git clone git@github.com:saleyn/erlexec.git
 $ make
+
+# NOTE: for enabling optimized build of exec-port, do the following instead:
+$ OPTIMIZE=true make
 ```
 
 ## LICENSE ##
