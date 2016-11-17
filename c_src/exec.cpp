@@ -177,7 +177,7 @@ int main(int argc, char* argv[])
 
     sact.sa_handler   = NULL;
     sact.sa_sigaction = gotsigchild;
-    sact.sa_flags     = SA_SIGINFO | SA_RESTART | SA_NOCLDSTOP;
+    sact.sa_flags     = SA_SIGINFO | SA_RESTART | SA_NOCLDSTOP; // NOTE: use SA_RESTART (see sigaction(2))
     sigemptyset(&sact.sa_mask);
     sigaction(SIGCHLD, &sact, NULL);
 

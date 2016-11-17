@@ -33,7 +33,7 @@ test:
 	@$(REBAR) eunit
 
 publish:
-	$(REBAR) hex publish
+	$(REBAR) hex cut
 
 clean-docs:
 	rm -f doc/*.{css,html,png} doc/edoc-info
