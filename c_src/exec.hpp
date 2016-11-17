@@ -62,16 +62,6 @@ extern char **environ; // process environment
 
 namespace ei {
 
-/*
- * pselectx
- *
- * kqueue-backed pselect for OpenBSD and Apple. Though Apple provides
- * pselect in libc, it's a broken wrapper around select which doesn't solve
- * the race condition.
- */
-int pselectx(int nfds, fd_set* _rfds, fd_set* wfds, fd_set* efds,
-             const struct timespec* _timeout, const sigset_t* _mask, int& _error);
-
 //-------------------------------------------------------------------------
 // Enums and constants
 //-------------------------------------------------------------------------
@@ -159,7 +149,6 @@ const char* stream_name(int i);
 
 int     read_sigchld(pid_t& child);
 void    check_child_exit(pid_t pid);
-void    check_pending();
 int     set_nice(pid_t pid,int nice, std::string& error);
 bool    process_sigchld();
 bool    process_pid_input(CmdInfo& ci);
