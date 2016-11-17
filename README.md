@@ -15,11 +15,10 @@ The following features are supported:
 * Provide custom termination command for killing a process or relying on
   default SIGTERM/SIGKILL behavior. Specifying custom timeout for SIGKILL
   after the termination command or SIGTERM was executed.
-* Terminate all processing beloging to a process group
+* Terminate all processes beloging to a process group
 * Link Erlang processes to OS processes (via intermediate Erlang Pids that are linked
   to an associated OS process).
 * Monitor termination of OS processes.
-* Perform proper cleanup of OS processes at port program termination time.
 * Kill processes belonging to an OS process group at process exit.
 * Communicate with an OS process via its STDIN.
 * Redirect STDOUT and STDERR of an OS process to a file, erlang process, or a custom function.
@@ -27,6 +26,7 @@ The following features are supported:
   access mask.
 * Run interactive processes with psudo-terminal pty support.
 * Execute OS processes under different user credentials (using Linux capabilities).
+* Perform proper cleanup of OS child processes at port program termination time.
 
 This application provides significantly better control
 over OS processes than built-in `erlang:open_port/2` command with a

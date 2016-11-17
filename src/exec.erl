@@ -560,7 +560,7 @@ default(portexe) ->
         [Port] -> Port;
         _      ->
             Arch = erlang:system_info(system_architecture),
-            Tail = filelib:join([Arch, "exec-port"]),
+            Tail = filename:join([Arch, "exec-port"]),
             os:find_executable(filename:join([Priv, Tail]))
     end,
     % Join the priv/port path
