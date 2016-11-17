@@ -48,7 +48,7 @@ lists:keymerge(1,
 
                      {"CC",  CXX},
                      {"CXX", CXX},
-                     {"CXXFLAGS", "$CXXFLAGS -O0 -DHAVE_PTRACE"}
+                     {"CXXFLAGS", "$CXXFLAGS -O0 -DHAVE_PTRACE -std=c++11"}
                     ]},
 
         {port_specs,[{filename:join(["priv", Mach, "exec-port"]), ["c_src/*.cpp"]}]},
