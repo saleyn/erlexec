@@ -235,15 +235,17 @@ void check_pending()
         if (debug > 1)
             fprintf(stderr, "Detected pending signals\r\n");
 
-        while ((sig = sigtimedwait(&set, &info, &timeout)) > 0 || errno == EINTR)
+        while (true) {
+            while ((sig = sigtimedwait(&set, &info, &timeout)) < 0 && errno == EINTR);
             switch (sig) {
                 case SIGCHLD:   gotsigchild(sig, &info, NULL); break;
                 case SIGPIPE:   pipe_valid = false; /* intentionally follow through */
                 case SIGTERM:
                 case SIGINT:
                 case SIGHUP:    gotsignal(sig); break;
-                default:        break;
+                default:        return;
             }
+        }
     }
 }
 
