@@ -1,6 +1,6 @@
-[![Build Status](https://travis-ci.org/saleyn/erlexec.svg?branch=master)](https://travis-ci.org/saleyn/erlexec)
-
 # erlexec #
+
+[![Build Status](https://travis-ci.org/saleyn/erlexec.svg?branch=master)](https://travis-ci.org/saleyn/erlexec)
 
 Execute and control OS processes from Erlang/OTP.
 
