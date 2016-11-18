@@ -10,7 +10,7 @@ execution of OS processes.
 
 The following features are supported:
 
-* Start/stop OS commands and getting their OS process IDs.
+* Start/stop OS commands and get their OS process IDs.
 * Manage/monitor externally started OS processes.
 * Execute OS processes synchronously and asynchronously.
 * Setting OS command's working directory, environment, process group, effective user, process priority.
