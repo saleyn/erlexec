@@ -10,7 +10,7 @@ execution of OS processes.
 
 The following features are supported:
 
-* Start/stop OS commands and get their OS process IDs, and termination reasons
+* Start/stop OS commands and get their OS process IDs, and termination reason
   (exit code, signal number, core dump status).
 * Manage/monitor externally started OS processes.
 * Execute OS processes synchronously and asynchronously.
