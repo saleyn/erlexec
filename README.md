@@ -10,17 +10,19 @@ execution of OS processes.
 
 The following features are supported:
 
-* Start/stop OS commands and get their OS process IDs.
+* Start/stop OS commands and get their OS process IDs, and termination reasons
+  (exit code, signal number, core dump status).
 * Manage/monitor externally started OS processes.
 * Execute OS processes synchronously and asynchronously.
-* Setting OS command's working directory, environment, process group, effective user, process priority.
+* Set OS command's working directory, environment, process group, effective user, process priority.
 * Provide custom termination command for killing a process or relying on
-  default SIGTERM/SIGKILL behavior. Specifying custom timeout for SIGKILL
-  after the termination command or SIGTERM was executed.
-* Terminate all processes beloging to a process group
-* Link Erlang processes to OS processes (via intermediate Erlang Pids that are linked
+  default SIGTERM/SIGKILL behavior.
+* Specify custom timeout for SIGKILL after the termination command or SIGTERM
+  was executed and the running OS child process is still alive.
+* Link an Erlang processes to OS processes (via intermediate Erlang Pids that are linked
   to an associated OS process).
 * Monitor termination of OS processes.
+* Terminate all processes beloging to an OS process group.
 * Kill processes belonging to an OS process group at process exit.
 * Communicate with an OS process via its STDIN.
 * Redirect STDOUT and STDERR of an OS process to a file, erlang process, or a custom function.
