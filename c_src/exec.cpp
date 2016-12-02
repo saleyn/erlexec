@@ -597,13 +597,12 @@ int finalize(fd_set& readfds)
             FD_ZERO(&readfds);
             FD_SET (sigchld_pipe[0], &readfds); // pipe for delivering SIGCHLD signals
 
-            int ec;
             int maxfd = std::max<int>(eis.read_handle(), sigchld_pipe[0]);
             int cnt;
             while ((cnt = select(maxfd+1, &readfds, NULL, NULL, &ts)) < 0 && errno == EINTR);
 
             if (cnt < 0) {
-                fprintf(stderr, "Error in finalizing pselect(2): %s\r\n", strerror(ec));
+                fprintf(stderr, "Error in finalizing pselect(2): %s\r\n", strerror(errno));
                 break;
             } else if (cnt > 0 && FD_ISSET(sigchld_pipe[0], &readfds) ) {
                 if (!process_sigchld())
@@ -617,4 +616,3 @@ int finalize(fd_set& readfds)
 
     return old_terminated;
 }
-
