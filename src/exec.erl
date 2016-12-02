@@ -548,23 +548,26 @@ default() ->
      {args, ""},        % Extra arguments that can be passed to port program
      {alarm, 12},
      {user, ""},        % Run port program as this user
-     {limit_users, []}, % Restricted list of users allowed to run commands
-     {portexe, default(portexe)}].
-
+     {limit_users, []}]. % Restricted list of users allowed to run commands
 %% @private
 default(portexe) -> 
     % Retrieve the Priv directory
-    Priv = code:priv_dir(erlexec),
-    % Find all ports using wildcard for resiliency
-    Bin = case filelib:wildcard("*/exec-port", Priv) of
-        [Port] -> Port;
-        _      ->
-            Arch = erlang:system_info(system_architecture),
-            Tail = filename:join([Arch, "exec-port"]),
-            os:find_executable(filename:join([Priv, Tail]))
-    end,
-    % Join the priv/port path
-    filename:join([Priv, Bin]);
+    case code:priv_dir(erlexec) of
+    {error, _} ->
+        error_logger:warning_msg("Priv directory not available", []),
+        "";
+    Priv ->
+        % Find all ports using wildcard for resiliency
+        Bin = case filelib:wildcard("*/exec-port", Priv) of
+            [Port] -> Port;
+            _      ->
+                Arch = erlang:system_info(system_architecture),
+                Tail = filename:join([Arch, "exec-port"]),
+                os:find_executable(filename:join([Priv, Tail]))
+        end,
+        % Join the priv/port path
+        filename:join([Priv, Bin])
+    end;
 default(Option) ->
     proplists:get_value(Option, default()).
 
