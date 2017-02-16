@@ -162,8 +162,8 @@ void process_pid_output(CmdInfo& ci, int maxsize)
 }
 
 //------------------------------------------------------------------------------
-int getpty(int& fdmp, int& fdsp, ei::StringBuffer<128>& err) {
-    int fdm, fds;
+int getpty(int& fdmp, ei::StringBuffer<128>& err) {
+    int fdm;
     int rc;
 
     fdm = posix_openpt(O_RDWR);
@@ -186,20 +186,10 @@ int getpty(int& fdmp, int& fdsp, ei::StringBuffer<128>& err) {
         return -1;
     }
 
-    fds = open(ptsname(fdm), O_RDWR);
-
-    if (fds < 0) {
-        close(fdm);
-        err.write("error %d on open pty slave: %s\n", errno, strerror(errno));
-        return -1;
-    }
-
     fdmp = fdm;
-    fdsp = fds;
 
     if (debug)
-        fprintf(stderr, "  Opened PTY pair (master=%d, slave=%d)\r\n",
-                fdm, fds);
+        fprintf(stderr, "  Opened PTY master=%d\r\n", fdm);
 
     return 0;
 }
@@ -219,10 +209,10 @@ pid_t start_child(CmdOptions& op, std::string& error)
     ei::StringBuffer<128> err;
 
     // Optionally setup pseudoterminal
-    int fdm, fds;
+    int fdm;
 
     if (op.pty()) {
-        if (getpty(fdm, fds, err) < 0) {
+        if (getpty(fdm, err) < 0) {
             error = err.c_str();
             return -1;
         }
@@ -252,10 +242,10 @@ pid_t start_child(CmdOptions& op, std::string& error)
             case REDIRECT_ERL:
                 if (op.pty()) {
                     if (i == STDIN_FILENO) {
-                        sfd[RD] = fds;
+                        sfd[RD] = -1; // fix these up later in the child process when I open my slave pty
                         sfd[WR] = fdm;
                     } else {
-                        sfd[WR] = fds;
+                        sfd[WR] = -1;
                         sfd[RD] = fdm;
                     }
                     if (debug)
@@ -318,6 +308,38 @@ pid_t start_child(CmdOptions& op, std::string& error)
         return pid;
     } else if (pid == 0) {
         // I am the child
+	int r;
+	
+	if (op.pty()) {
+	    int fds;
+	    char pts_name[256];
+	    
+	    // have to open the pty slave in the child, otherwise TIOCSCTTY will fail later
+	    r = ptsname_r(fdm, pts_name, sizeof(pts_name));
+	    if( r < 0 ) {
+		fprintf(stderr, "ptsname_r(%d) failed: %s\n", fdm, strerror(errno));
+		exit(1);
+	    }
+	    fds = open(pts_name, O_RDWR);
+	    if (fds < 0) {
+		fprintf(stderr, "open slave pty %s failed: %s\n", pts_name, strerror(errno));
+		exit(1);
+	    }
+	    for (int i=STDIN_FILENO; i <= STDERR_FILENO; i++) {
+		int* sfd = stream_fd[i];
+		int  cfd = op.stream_fd(i);
+		if( cfd == REDIRECT_ERL ) {
+		    if (i == STDIN_FILENO) {
+			sfd[RD] = fds;
+		    } else {
+			sfd[WR] = fds;
+		    }
+                    if (debug)
+                        fprintf(stderr, "  Redirecting [%s -> pipe:{r=%d,w=%d}] (PTY)\r\n",
+				stream_name(i), sfd[0], sfd[1]);
+		}
+	    }
+	}
 
         // Clear the child process signal mask
         sigset_t sig;
