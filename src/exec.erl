@@ -42,7 +42,7 @@
 
 %% External exports
 -export([
-    start/0, start/1, start_link/1, run/2, run_link/2, manage/2, send/2,
+    start/0, start/1, start_link/1, run/2, run_link/2, manage/2, send/2, winsz/3,
     which_children/0, kill/2,       setpgid/2, stop/1, stop_and_wait/2,
     ospid/1, pid/1,   status/1,     signal/1,  debug/1
 ]).
@@ -466,6 +466,20 @@ send(OsPid, Data)
   when (is_integer(OsPid) orelse is_pid(OsPid)),
        (is_binary(Data)   orelse Data =:= eof) ->
     gen_server:call(?MODULE, {port, {send, OsPid, Data}}).
+
+%%-------------------------------------------------------------------------
+%% @doc Set the pty terminal `Rows' and `Cols' of the OS process identified by `OsPid'.
+%%
+%% The process must have been created with the `pty' option.
+%%
+%% @end
+%%-------------------------------------------------------------------------
+-spec winsz(OsPid :: ospid() | pid(), integer(), integer()) -> ok.
+winsz(OsPid, Rows, Cols)
+  when (is_integer(OsPid) orelse is_pid(OsPid)),
+       is_integer(Rows),
+       is_integer(Cols) ->
+    gen_server:call(?MODULE, {port, {winsz, OsPid, Rows, Cols}}).
 
 %%-------------------------------------------------------------------------
 %% @doc Set debug level of the port process.
@@ -986,6 +1000,15 @@ is_port_command({send, Pid, Data}, _Pid, _State)
 is_port_command({send, OsPid, Data}, _Pid, _State)
   when is_integer(OsPid), is_binary(Data) orelse Data =:= eof ->
     {ok, {stdin, OsPid, Data}};
+is_port_command({winsz, Pid, Rows, Cols}, _Pid, _State)
+  when is_pid(Pid), is_integer(Rows), is_integer(Cols) ->
+    case ets:lookup(exec_mon, Pid) of
+    [{Pid, OsPid}]  -> {ok, {winsz, OsPid, Rows, Cols}};
+    []              -> throw({error, no_process})
+    end;
+is_port_command({winsz, OsPid, Rows, Cols}, _Pid, _State)
+  when is_integer(OsPid), is_integer(Rows), is_integer(Cols) ->
+    {ok, {winsz, OsPid, Rows, Cols}};
 is_port_command({kill, OsPid, Sig}=T, _Pid, _State) when is_integer(OsPid),is_integer(Sig) -> 
     {ok, T, undefined, undefined, []};
 is_port_command({setpgid, OsPid, Gid}=T, _Pid, _State) when is_integer(OsPid),is_integer(Gid) -> 
@@ -1112,6 +1135,7 @@ exec_test_() ->
         [
             ?tt(test_monitor()),
             ?tt(test_sync()),
+            ?tt(test_winsz()),
             ?tt(test_stdin()),
             ?tt(test_stdin_eof()),
             ?tt(test_std(stdout)),
@@ -1139,6 +1163,14 @@ test_sync() ->
     ?assertMatch({ok,[{stdout,[<<"\n">>]}]},
          exec:run(["/bin/echo", ""], [sync, stdout])).
 
+
+test_winsz() ->
+    {ok, P, I} = exec:run(["/bin/bash", "-i", "-c", "echo started; read x; echo LINES=$(tput lines) COLUMNS=$(tput cols)"], [stdin, stdout, stderr, monitor, pty]),
+    ?receiveMatch({stdout, I, <<"started\r\n">>}, 3000),
+    ok = exec:winsz(I, 99, 88),
+    ok = exec:send(I, <<"\n">>),
+    ?receiveMatch({stdout, I, <<"LINES=99 COLUMNS=88\r\n">>}, 3000),
+    ?receiveMatch({'DOWN', _, process, P, normal}, 5000).
 
 test_stdin() ->
     {ok, P, I} = exec:run("read x; echo \"Got: $x\"", [stdin, stdout, monitor]),
