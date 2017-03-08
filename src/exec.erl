@@ -880,6 +880,10 @@ ospid_loop({Pid, OsPid, Parent, StdOut, StdErr, IsMon, Debug} = State) ->
         0 -> notify_and_exit(IsMon, Pid, OsPid, normal);
         _ -> notify_and_exit(IsMon, Pid, OsPid, {exit_status, Status})
         end;
+    {'EXIT', Pid, Reason} when Reason =:= normal; Reason =:= shutdown ->
+        % orderly exit
+        debug(Debug, "~w ~w got ~w exit from linked ~w\n", [self(), OsPid, Reason, Pid]),
+        exit(Reason);
     {'EXIT', Pid, Reason} ->
         % Pid died
         debug(Debug, "~w ~w got exit from linked ~w: ~p\n", [self(), OsPid, Pid, Reason]),
