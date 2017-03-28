@@ -5,6 +5,25 @@
 namespace ei {
 
 //------------------------------------------------------------------------------
+// DARWIN doesn't have ptsname_r()
+//------------------------------------------------------------------------------
+#if defined(__MACH__) || defined(__APPLE__)
+int ptsname_r(int fd, char* buf, size_t buflen) {
+  char *name = ptsname(fd);
+  if (name == NULL) {
+    errno = EINVAL;
+    return -1;
+  }
+  if (strlen(name) + 1 > buflen) {
+    errno = ERANGE;
+    return -1;
+  }
+  strncpy(buf, name, buflen);
+  return 0;
+}
+#endif
+
+//------------------------------------------------------------------------------
 std::string fd_type(int tp) {
     switch (tp) {
         case REDIRECT_STDOUT:   return "stdout";
