@@ -261,7 +261,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
             case REDIRECT_ERL:
                 if (op.pty()) {
                     if (i == STDIN_FILENO) {
-                        sfd[RD] = -1; // fix these up later in the child process when I open my slave pty
+                        sfd[RD] = -1; // assign later in the child process when pty gets open
                         sfd[WR] = fdm;
                     } else {
                         sfd[WR] = -1;
@@ -327,38 +327,37 @@ pid_t start_child(CmdOptions& op, std::string& error)
         return pid;
     } else if (pid == 0) {
         // I am the child
-	int r;
-	
-	if (op.pty()) {
-	    int fds;
-	    char pts_name[256];
-	    
-	    // have to open the pty slave in the child, otherwise TIOCSCTTY will fail later
-	    r = ptsname_r(fdm, pts_name, sizeof(pts_name));
-	    if( r < 0 ) {
-		fprintf(stderr, "ptsname_r(%d) failed: %s\n", fdm, strerror(errno));
-		exit(1);
-	    }
-	    fds = open(pts_name, O_RDWR);
-	    if (fds < 0) {
-		fprintf(stderr, "open slave pty %s failed: %s\n", pts_name, strerror(errno));
-		exit(1);
-	    }
-	    for (int i=STDIN_FILENO; i <= STDERR_FILENO; i++) {
-		int* sfd = stream_fd[i];
-		int  cfd = op.stream_fd(i);
-		if( cfd == REDIRECT_ERL ) {
-		    if (i == STDIN_FILENO) {
-			sfd[RD] = fds;
-		    } else {
-			sfd[WR] = fds;
-		    }
+        int r;
+        
+        if (op.pty()) {
+            int fds;
+            char pts_name[256];
+            
+            // have to open the pty slave in the child, otherwise TIOCSCTTY will fail later
+            r = ptsname_r(fdm, pts_name, sizeof(pts_name));
+            if( r < 0 ) {
+                fprintf(stderr, "ptsname_r(%d) failed: %s\n", fdm, strerror(errno));
+                exit(1);
+            }
+            fds = open(pts_name, O_RDWR);
+            if (fds < 0) {
+                fprintf(stderr, "open slave pty %s failed: %s\n", pts_name, strerror(errno));
+                exit(1);
+            }
+            for (int i=STDIN_FILENO; i <= STDERR_FILENO; i++) {
+                int* sfd = stream_fd[i];
+                int  cfd = op.stream_fd(i);
+                if (cfd == REDIRECT_ERL) {
+                    if (i == STDIN_FILENO)
+                        sfd[RD] = fds;
+                    else
+                        sfd[WR] = fds;
                     if (debug)
                         fprintf(stderr, "  Redirecting [%s -> pipe:{r=%d,w=%d}] (PTY)\r\n",
-				stream_name(i), sfd[0], sfd[1]);
-		}
-	    }
-	}
+                                stream_name(i), sfd[0], sfd[1]);
+                }
+            }
+        }
 
         // Clear the child process signal mask
         sigset_t sig;
