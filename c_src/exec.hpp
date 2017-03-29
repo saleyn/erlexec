@@ -151,6 +151,7 @@ int     read_sigchld(pid_t& child);
 void    check_child_exit(pid_t pid);
 int     set_nice(pid_t pid,int nice, std::string& error);
 bool    process_sigchld();
+bool    set_pid_winsz(CmdInfo& ci, int rows, int cols);
 bool    process_pid_input(CmdInfo& ci);
 void    process_pid_output(CmdInfo& ci, int maxsize = 4096);
 int     send_ok(int transId, long value = -1);

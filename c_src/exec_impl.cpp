@@ -102,6 +102,21 @@ int set_nice(pid_t pid,int nice, std::string& error)
 }
 
 //------------------------------------------------------------------------------
+bool set_pid_winsz(CmdInfo& ci, int rows, int cols)
+{
+    int& fd = ci.stream_fd[STDIN_FILENO];
+    int r;
+    struct winsize ws;
+    ws.ws_row = rows;
+    ws.ws_col = cols;
+    r = ioctl(fd, TIOCSWINSZ, &ws);
+    if (debug)
+        fprintf(stderr, "TIOCSWINSZ rows=%d cols=%d ret=%d\n", rows, cols, r);
+    
+    return true;
+}
+
+//------------------------------------------------------------------------------
 bool process_pid_input(CmdInfo& ci)
 {
     int& fd = ci.stream_fd[STDIN_FILENO];
