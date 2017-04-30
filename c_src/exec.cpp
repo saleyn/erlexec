@@ -612,7 +612,7 @@ int finalize(fd_set& readfds)
             if (deadline < timeout)
                 break;
 
-            auto ts = (deadline - timeout).timeval();
+            timeval ts = (deadline - timeout).timeval();
 
             FD_ZERO(&readfds);
             FD_SET (sigchld_pipe[0], &readfds); // pipe for delivering SIGCHLD signals
