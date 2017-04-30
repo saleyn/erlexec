@@ -719,7 +719,7 @@ int check_children(const TimeVal& now, bool& isTerminated, bool notify)
         fprintf(stderr, "Checking %ld running children (exited count=%ld)\r\n",
             children.size(), exited_children.size());
 
-    for (auto it=children.begin(), end=children.end(); !isTerminated && it != end; ++it)
+    for (MapChildrenT::iterator it=children.begin(), end=children.end(); !isTerminated && it != end; ++it)
         check_child(now, it->first, it->second);
 
     if (debug > 2)
@@ -728,7 +728,7 @@ int check_children(const TimeVal& now, bool& isTerminated, bool notify)
 
     // For each process info in the <exited_children> queue deliver it to the Erlang VM
     // and remove it from the managed <children> map.
-    for (auto it=exited_children.begin(); !isTerminated && it!=exited_children.end();)
+    for (ExitedChildrenT::iterator it=exited_children.begin(); !isTerminated && it!=exited_children.end();)
     {
         MapChildrenT::iterator i = children.find(it->first);
         MapKillPidT::iterator j;
