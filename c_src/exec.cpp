@@ -285,8 +285,8 @@ bool process_command()
         return false;
     }
 
-    enum CmdTypeT        {  MANAGE,  RUN,  STOP,  KILL,  LIST,  SHUTDOWN,  STDIN,  DEBUG  } cmd;
-    const char* cmds[] = { "manage","run","stop","kill","list","shutdown","stdin","debug" };
+    enum CmdTypeT        {  MANAGE,  RUN,  STOP,  KILL,  LIST,  SHUTDOWN,  STDIN,  DEBUG, WINSZ  } cmd;
+    const char* cmds[] = { "manage","run","stop","kill","list","shutdown","stdin","debug", "winsz" };
 
     /* Determine the command */
     if ((int)(cmd = (CmdTypeT) eis.decodeAtomIndex(cmds, command)) < 0) {
@@ -395,6 +395,26 @@ bool process_command()
             send_pid_list(transId, children);
             break;
         }
+        case WINSZ: {
+            // {winsz, OsPid::integer(), rows::integer(), cols::integer()}
+            long pid, rows, cols;
+            if (arity != 4
+                || eis.decodeInt(pid) < 0
+                || eis.decodeInt(rows) < 0
+                || eis.decodeInt(cols) < 0) {
+                send_error_str(transId, true, "badarg");
+                break;
+            }
+            MapChildrenT::iterator it = children.find(pid);
+            if (it == children.end()) {
+                if (debug)
+                    fprintf(stderr, "pid %ld doesn't exist\r\n", pid);
+                break;
+            }
+            set_pid_winsz(it->second, rows, cols);
+            break;
+        }
+            
         case STDIN: {
             // {stdin, OsPid::integer(), Data::binary()}
             long pid;
@@ -592,7 +612,7 @@ int finalize(fd_set& readfds)
             if (deadline < timeout)
                 break;
 
-            auto ts = (deadline - timeout).timeval();
+            timeval ts = (deadline - timeout).timeval();
 
             FD_ZERO(&readfds);
             FD_SET (sigchld_pipe[0], &readfds); // pipe for delivering SIGCHLD signals
