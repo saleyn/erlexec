@@ -7,7 +7,7 @@ namespace ei {
 //------------------------------------------------------------------------------
 // DARWIN doesn't have ptsname_r()
 //------------------------------------------------------------------------------
-#if defined(__MACH__) || defined(__APPLE__)
+#if defined(__MACH__) || defined(__APPLE__) || defined(__FreeBSD__)
 int ptsname_r(int fd, char* buf, size_t buflen) {
   char *name = ptsname(fd);
   if (name == NULL) {
@@ -99,6 +99,21 @@ int set_nice(pid_t pid,int nice, std::string& error)
         return -1;
     }
     return 0;
+}
+
+//------------------------------------------------------------------------------
+bool set_pid_winsz(CmdInfo& ci, int rows, int cols)
+{
+    int& fd = ci.stream_fd[STDIN_FILENO];
+    int r;
+    struct winsize ws;
+    ws.ws_row = rows;
+    ws.ws_col = cols;
+    r = ioctl(fd, TIOCSWINSZ, &ws);
+    if (debug)
+        fprintf(stderr, "TIOCSWINSZ rows=%d cols=%d ret=%d\n", rows, cols, r);
+    
+    return true;
 }
 
 //------------------------------------------------------------------------------
@@ -704,7 +719,7 @@ int check_children(const TimeVal& now, bool& isTerminated, bool notify)
         fprintf(stderr, "Checking %ld running children (exited count=%ld)\r\n",
             children.size(), exited_children.size());
 
-    for (auto it=children.begin(), end=children.end(); !isTerminated && it != end; ++it)
+    for (MapChildrenT::iterator it=children.begin(), end=children.end(); !isTerminated && it != end; ++it)
         check_child(now, it->first, it->second);
 
     if (debug > 2)
@@ -713,7 +728,7 @@ int check_children(const TimeVal& now, bool& isTerminated, bool notify)
 
     // For each process info in the <exited_children> queue deliver it to the Erlang VM
     // and remove it from the managed <children> map.
-    for (auto it=exited_children.begin(); !isTerminated && it!=exited_children.end();)
+    for (ExitedChildrenT::iterator it=exited_children.begin(); !isTerminated && it!=exited_children.end();)
     {
         MapChildrenT::iterator i = children.find(it->first);
         MapKillPidT::iterator j;

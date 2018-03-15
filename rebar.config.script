@@ -51,12 +51,15 @@ lists:keymerge(1,
                      {"darwin",  "CXXFLAGS", "$CXXFLAGS -DHAVE_SETREUID" ++ X64},
                      {"darwin",  "LDFLAGS",  "$LDFLAGS" ++ X64},
 
+                     {"freebsd",   "CXXFLAGS", "$CXXFLAGS -DHAVE_SETRESUID" ++ X64},
+                     {"freebsd",   "LDFLAGS",  "$LDFLAGS" ++ X64},
+
                      {"linux",   "CXXFLAGS", "$CXXFLAGS -DHAVE_SETRESUID" ++ LinCXX},
                      {"linux",   "LDFLAGS",  "$LDFLAGS" ++ LinLD},
 
                      {"CC",  CXX},
                      {"CXX", CXX},
-                     {"CXXFLAGS", "$CXXFLAGS -DHAVE_PTRACE -std=c++11 -O" ++ OptimLevel}
+                     {"CXXFLAGS", "$CXXFLAGS -DHAVE_PTRACE -std=c++98 -O" ++ OptimLevel}
                     ]},
 
         {port_specs,[{filename:join(["priv", Mach, "exec-port"]), ["c_src/*.cpp"]}]},
