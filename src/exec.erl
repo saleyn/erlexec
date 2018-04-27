@@ -1165,7 +1165,9 @@ test_sync() ->
 
 
 test_winsz() ->
-    {ok, P, I} = exec:run(["/bin/bash", "-i", "-c", "echo started; read x; echo LINES=$(tput lines) COLUMNS=$(tput cols)"], [stdin, stdout, stderr, monitor, pty]),
+    {ok, P, I} = exec:run(
+        ["/bin/bash", "-i", "-c", "echo started; read x; echo LINES=$(tput lines) COLUMNS=$(tput cols)"],
+        [stdin, stdout, stderr, monitor, pty]),
     ?receiveMatch({stdout, I, <<"started\r\n">>}, 3000),
     ok = exec:winsz(I, 99, 88),
     ok = exec:send(I, <<"\n">>),
