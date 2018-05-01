@@ -75,7 +75,7 @@
 -type exec_option()  ::
       debug
     | {debug, integer()}
-    | {root, boolean()}
+    | root | {root, boolean()}
     | verbose
     | {args, [string(), ...]}
     | {alarm, non_neg_integer()}
@@ -90,7 +90,7 @@
 %% <dt>debug</dt><dd>Same as {debug, 1}</dd>
 %% <dt>{debug, Level}</dt><dd>Enable port-programs debug trace at `Level'.</dd>
 %% <dt>verbose</dt><dd>Enable verbose prints of the Erlang process.</dd>
-%% <dt>{root, Boolean}</dt><dd>Allow running child processes as root.</dd>
+%% <dt>root | {root, Boolean}</dt><dd>Allow running child processes as root.</dd>
 %% <dt>{args, Args}</dt><dd>Append `Args' to the port command.</dd>
 %% <dt>{alarm, Secs}</dt>
 %%     <dd>Give `Secs' deadline for the port program to clean up
