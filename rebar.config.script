@@ -42,9 +42,16 @@ OptimLevel =
     Level  -> list_to_integer(Level), Level
     end,
 
-% Replace configuration options read from rebar.config with those dynamically set below
-lists:keymerge(1,
-    lists:keysort(1, [
+% Merge configuration options read from rebar.config with those dynamically set below
+maps:to_list(lists:foldl(
+    fun({K, V}, M) ->
+        case maps:find(K, M) of
+        {ok, V0} -> M#{K => V0 ++ V};
+        error    -> M#{K => V}
+        end
+    end,
+    maps:from_list(CONFIG),
+    [
         {port_env,  [{"solaris", "CXXFLAGS", "$CXXFLAGS -DHAVE_SETREUID" ++ X64},
                      {"solaris", "LDFLAGS",  "$LDFLAGS -lrt" ++ X64},
 
@@ -69,5 +76,5 @@ lists:keymerge(1,
                      {def,          {vsn, Vsn}},
                      {stylesheet_file, "src/edoc.css"},
                      {app_default,  "http://www.erlang.org/doc/man"}]}
-    ]),
-    lists:keysort(1, CONFIG)).
+    ]
+)).

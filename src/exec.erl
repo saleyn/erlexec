@@ -664,9 +664,10 @@ init([Options]) ->
         end,
         Tab  = ets:new(exec_mon, [protected,named_table]),
         {ok, #state{port=Port, limit_users=Users, debug=Debug, registry=Tab, root=Root}}
-    catch _:Reason ->
-        {stop, ?FMT("Error starting port '~s': ~200p\n  ~s\n",
-            [Exe, Reason, erlang:get_stacktrace()])}
+    catch
+        _:Reason:StackTrace ->
+            {stop, ?FMT("Error starting port '~s': ~200p\n  ~s\n",
+                [Exe, Reason, StackTrace])}
     end.
 
 %%----------------------------------------------------------------------
