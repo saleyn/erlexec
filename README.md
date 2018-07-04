@@ -46,7 +46,7 @@ Linux, Solaris, FreeBSD, MacOS X
 See http://saleyn.github.io/erlexec
 
 ## BUILDING ##
-NOTE: OTP releases 20.0 and below should use tag `1.8` or the `otp20` branch. The reason
+**NOTE:** OTP releases 20.0 and below should use tag `1.8` or the `otp20` branch. The reason
 is that the newer releases use incompatible syntax for getting stack trace that will
 cause compilation warning when obtained through `erlang:get_stacktrace()` function call.
 
