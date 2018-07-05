@@ -297,7 +297,10 @@ pid_t start_child(CmdOptions& op, std::string& error)
                             stream_name(i));
                 break;
             case REDIRECT_FILE: {
-                sfd[crw] = open_file(op.stream_file(i), op.stream_append(i),
+                FileOpenFlag flag = i == STDIN_FILENO   ? FileOpenFlag::READ   :
+                                    op.stream_append(i) ? FileOpenFlag::APPEND :
+                                    FileOpenFlag::TRUNCATE;
+                sfd[crw] = open_file(op.stream_file(i), flag,
                                      stream_name(i), err, op.stream_mode(i));
                 if (sfd[crw] < 0) {
                     error = err.c_str();
@@ -919,18 +922,19 @@ int send_ospid_output(int pid, const char* type, const char* data, int len)
 }
 
 //------------------------------------------------------------------------------
-int open_file(const char* file, bool append, const char* stream,
+int open_file(const char* file, FileOpenFlag flag, const char* stream,
               ei::StringBuffer<128>& err, int mode)
 {
-    int flags = O_RDWR | O_CREAT | (append ? O_APPEND : O_TRUNC);
+    int flags = O_RDWR | (flag == FileOpenFlag::READ ? 0 : O_CREAT) | int(flag);
     int fd    = open(file, flags, mode);
     if (fd < 0) {
         err.write("Failed to redirect %s to file: %s", stream, strerror(errno));
         return -1;
     }
     if (debug)
-        fprintf(stderr, "  Redirecting [%s -> {file:%s, fd:%d}]\r\n",
-            stream, file, fd);
+        fprintf(stderr, "  Redirecting [%s -> {file:%s, fd:%d}%s]\r\n",
+                stream, file, fd, flag == FileOpenFlag::TRUNCATE ? " (truncate)" :
+                                  flag == FileOpenFlag::APPEND   ? " (append)"   : "");
 
     return fd;
 }

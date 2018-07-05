@@ -52,16 +52,16 @@ maps:to_list(lists:foldl(
     end,
     maps:from_list(CONFIG),
     [
-        {port_env,  [{"solaris", "CXXFLAGS", "$CXXFLAGS -DHAVE_SETREUID" ++ X64},
+        {port_env,  [{"solaris", "CXXFLAGS", "$CXXFLAGS -std=c++11 -DHAVE_SETREUID" ++ X64},
                      {"solaris", "LDFLAGS",  "$LDFLAGS -lrt" ++ X64},
 
-                     {"darwin",  "CXXFLAGS", "$CXXFLAGS -DHAVE_SETREUID" ++ X64},
+                     {"darwin",  "CXXFLAGS", "$CXXFLAGS -std=c++11 -DHAVE_SETREUID" ++ X64},
                      {"darwin",  "LDFLAGS",  "$LDFLAGS" ++ X64},
 
-                     {"freebsd",   "CXXFLAGS", "$CXXFLAGS -DHAVE_SETRESUID" ++ X64},
+                     {"freebsd",   "CXXFLAGS", "$CXXFLAGS -std=c++11 -DHAVE_SETRESUID" ++ X64},
                      {"freebsd",   "LDFLAGS",  "$LDFLAGS" ++ X64},
 
-                     {"linux",   "CXXFLAGS", "$CXXFLAGS -DHAVE_SETRESUID" ++ LinCXX},
+                     {"linux",   "CXXFLAGS", "$CXXFLAGS -std=c++11 -DHAVE_SETRESUID" ++ LinCXX},
                      {"linux",   "LDFLAGS",  "$LDFLAGS" ++ LinLD},
 
                      {"CC",  CXX},
