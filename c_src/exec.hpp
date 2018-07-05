@@ -96,6 +96,12 @@ enum RedirectType {
     REDIRECT_NULL   = -7    // Redirect input/output to /dev/null
 };
 
+enum class FileOpenFlag {
+    READ     = 0,
+    APPEND   = O_APPEND,
+    TRUNCATE = O_TRUNC
+};
+
 //-------------------------------------------------------------------------
 // Forward declarations
 //-------------------------------------------------------------------------
@@ -173,7 +179,7 @@ void    erase_child(MapChildrenT::iterator& it);
 
 int     set_nonblock_flag(pid_t pid, int fd, bool value);
 int     erl_exec_kill(pid_t pid, int signal);
-int     open_file(const char* file, bool append, const char* stream,
+int     open_file(const char* file, FileOpenFlag flag, const char* stream,
                   ei::StringBuffer<128>& err, int mode = DEF_MODE);
 int     open_pipe(int fds[2], const char* stream, ei::StringBuffer<128>& err);
 

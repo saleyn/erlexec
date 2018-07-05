@@ -1144,6 +1144,7 @@ exec_test_() ->
             ?tt(test_cmd()),
             ?tt(test_executable()),
             ?tt(test_redirect()),
+            ?tt(test_redirect_stdin()),
             ?tt(test_env()),
             ?tt(test_kill_timeout()),
             ?tt(test_setpgid()),
@@ -1260,6 +1261,13 @@ test_redirect() ->
     ?assertMatch({ok,[{stdout,[<<"TEST2\n">>]}]},
         exec:run("echo TEST2 1>&2", [stdout, {stderr, stdout}, sync])),
     ok.
+
+test_redirect_stdin() ->
+    ?assertMatch("ttt\n",
+        os:cmd("echo ttt > /tmp/output.txt; cat /tmp/output.txt")),
+    ?assertMatch({ok,[{stdout,[<<"ttt\n">>]}]},
+        exec:run("cat", [{stdin, "/tmp/output.txt"}, sync, stdout])),
+    file:delete("/tmp/output.txt").
 
 test_env() ->
     ?assertMatch({ok, [{stdout, [<<"X\n">>]}]},
