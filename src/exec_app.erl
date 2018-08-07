@@ -56,7 +56,7 @@ stop(_S) ->
 
 %% @private
 init([]) ->
-    Options = 
+    Options =
         lists:foldl(
             fun(I, Acc) -> add_option(I, Acc) end,
             [], [I || {I, _} <- exec:default()]),
@@ -70,7 +70,7 @@ init([]) ->
             [exec]                          % Modules  = [Module] | dynamic
         }]
     }}.
- 
+
 add_option(Option, Acc) ->
     case application:get_env(erlexec, Option) of
     {ok, Value} -> [{Option, Value} | Acc];
