@@ -159,7 +159,7 @@
 -type cmd_option()  ::
       monitor
     | sync
-    | link    
+    | link
     | {executable, string()}
     | {cd, WorkDir::string()}
     | {env, [string() | {Name :: string(), Value :: string()}, ...]}
@@ -555,8 +555,8 @@ signal(Num) when is_integer(Num) -> Num.
 %% @doc Provide default value of a given option.
 %% @end
 %%-------------------------------------------------------------------------
-default() -> 
-    [{debug, 0},        % Debug mode of the port program. 
+default() ->
+    [{debug, 0},        % Debug mode of the port program.
      {verbose, false},  % Verbose print of events on the Erlang side.
      {root, false},     % Allow running processes as root.
      {args, ""},        % Extra arguments that can be passed to port program
@@ -564,7 +564,7 @@ default() ->
      {user, ""},        % Run port program as this user
      {limit_users, []}]. % Restricted list of users allowed to run commands
 %% @private
-default(portexe) -> 
+default(portexe) ->
     % Retrieve the Priv directory
     case code:priv_dir(erlexec) of
     {error, _} ->
@@ -602,7 +602,7 @@ init([Options]) ->
     Opts0 = proplists:expand([{debug,   [{debug, 1}]},
                               {root,    [{root, true}]},
                               {verbose, [{verbose, true}]}], Options),
-    Opts1 = [T || T = {O,_} <- Opts0, 
+    Opts1 = [T || T = {O,_} <- Opts0,
                 lists:member(O, [debug, verbose, root, args, alarm, user])],
     Opts  = proplists:normalize(Opts1, [{aliases, [{args, ''}]}]),
     Args0 = lists:foldl(
@@ -869,7 +869,7 @@ ospid_init(Pid, OsPid, LinkType, Sync, Parent, PidOpts, Debug) ->
     process_flag(trap_exit, true),
     StdOut = proplists:get_value(stdout, PidOpts),
     StdErr = proplists:get_value(stderr, PidOpts),
-    % The caller pid that requested to run the OsPid command & link to it. 
+    % The caller pid that requested to run the OsPid command & link to it.
     LinkType =:= link andalso link(Pid),
     % We need to emulate a monitor by sending the 'DOWN' message to the
     % caller's Pid if it requested to monitor or it's a syncronous call:
@@ -944,13 +944,13 @@ send_to_ospid_owner(OsPid, Msg) ->
 
 debug(false, _, _) ->
     ok;
-debug(true, Fmt, Args) ->        
+debug(true, Fmt, Args) ->
     io:format(Fmt, Args).
 
 %%----------------------------------------------------------------------
-%% @spec (Pid::pid(), Action, State::#state{}) -> 
+%% @spec (Pid::pid(), Action, State::#state{}) ->
 %%          {ok, LastTok::integer(), LeftLinks::integer()}
-%% @doc Pid died or requested to unlink - remove linked Pid records and 
+%% @doc Pid died or requested to unlink - remove linked Pid records and
 %% optionally kill all OsPids linked to the Pid.
 %% @end
 %%----------------------------------------------------------------------
@@ -962,10 +962,10 @@ do_unlink_ospid(Pid, _Reason, State) ->
         ets:delete(exec_mon, OsPid),
         erlang:port_command(State#state.port, term_to_binary({0, {stop, OsPid}}));
     _ ->
-        ok 
+        ok
     end.
 
-get_transaction(Q, I) -> 
+get_transaction(Q, I) ->
     get_transaction(Q, I, Q).
 get_transaction(Q, I, OldQ) ->
     case queue:out(Q) of
@@ -976,13 +976,13 @@ get_transaction(Q, I, OldQ) ->
     {_, Q2} ->
         get_transaction(Q2, I, OldQ)
     end.
-    
+
 is_port_command({{run, Cmd, Options}, Link, Sync}, Pid, State) ->
     {PortOpts, Other} = check_cmd_options(Options, Pid, State, [], []),
     {ok, {run, Cmd, PortOpts}, Link, Sync, Other};
-is_port_command({list} = T, _Pid, _State) -> 
+is_port_command({list} = T, _Pid, _State) ->
     {ok, T, undefined, undefined, []};
-is_port_command({stop, OsPid}=T, _Pid, _State) when is_integer(OsPid) -> 
+is_port_command({stop, OsPid}=T, _Pid, _State) when is_integer(OsPid) ->
     {ok, T, undefined, undefined, []};
 is_port_command({stop, Pid}, _Pid, _State) when is_pid(Pid) ->
     case ets:lookup(exec_mon, Pid) of
@@ -1010,16 +1010,16 @@ is_port_command({winsz, Pid, Rows, Cols}, _Pid, _State)
 is_port_command({winsz, OsPid, Rows, Cols}, _Pid, _State)
   when is_integer(OsPid), is_integer(Rows), is_integer(Cols) ->
     {ok, {winsz, OsPid, Rows, Cols}};
-is_port_command({kill, OsPid, Sig}=T, _Pid, _State) when is_integer(OsPid),is_integer(Sig) -> 
+is_port_command({kill, OsPid, Sig}=T, _Pid, _State) when is_integer(OsPid),is_integer(Sig) ->
     {ok, T, undefined, undefined, []};
-is_port_command({setpgid, OsPid, Gid}=T, _Pid, _State) when is_integer(OsPid),is_integer(Gid) -> 
+is_port_command({setpgid, OsPid, Gid}=T, _Pid, _State) when is_integer(OsPid),is_integer(Gid) ->
     {ok, T, undefined, undefined, []};
-is_port_command({kill, Pid, Sig}, _Pid, _State) when is_pid(Pid),is_integer(Sig) -> 
+is_port_command({kill, Pid, Sig}, _Pid, _State) when is_pid(Pid),is_integer(Sig) ->
     case ets:lookup(exec_mon, Pid) of
     [{Pid, OsPid}]  -> {ok, {kill, OsPid, Sig}, undefined, undefined, []};
     []              -> throw({error, no_process})
     end;
-is_port_command({debug, Level}=T, _Pid, _State) when is_integer(Level),Level >= 0,Level =< 10 -> 
+is_port_command({debug, Level}=T, _Pid, _State) when is_integer(Level),Level >= 0,Level =< 10 ->
     {ok, T, undefined, undefined, []}.
 
 check_cmd_options([monitor|T], Pid, State, PortOpts, OtherOpts) ->
@@ -1081,7 +1081,7 @@ check_cmd_options([{Std, I}=H|T], Pid, State, PortOpts, OtherOpts)
             {arity, 3} =:= erlang:fun_info(I, arity)
                 orelse throw({error, ?FMT("Invalid ~w option ~p: expected Fun/3", [Std, I])}),
             check_cmd_options(T, Pid, State, [Std | PortOpts], [H|OtherOpts]);
-        true -> 
+        true ->
             throw({error, ?FMT("Invalid ~w option ~p", [Std, I])})
     end;
 check_cmd_options([{group, I}=H|T], Pid, State, PortOpts, OtherOpts) when is_integer(I), I >= 0; is_list(I) ->
@@ -1095,7 +1095,7 @@ check_cmd_options([Other|_], _Pid, _State, _PortOpts, _OtherOpts) ->
     throw({error, {invalid_option, Other}});
 check_cmd_options([], _Pid, _State, PortOpts, OtherOpts) ->
     {PortOpts, OtherOpts}.
-    
+
 next_trans(I) when I =< 134217727 ->
     I+1;
 next_trans(_) ->
@@ -1202,7 +1202,7 @@ test_std(Stream) ->
     {ok, _, I} = exec:run("for i in 1 2; do echo TEST$i; sleep 0.05; done" ++ Suffix, [Stream]),
     ?receiveMatch({Stream,I,<<"TEST1\n">>}, 5000),
     ?receiveMatch({Stream,I,<<"TEST2\n">>}, 5000),
-    
+
     Filename = temp_file(),
     try
         ?assertMatch({ok, []}, exec:run("echo Test"++Suffix, [{Stream, Filename}, sync])),
@@ -1244,7 +1244,7 @@ test_executable() ->
     ?assertMatch(
         {ok, [{stdout,[<<"ok\n">>]}]},
         exec:run("echo ok", [sync, {executable, "/bin/sh"}, stdout, stderr])),
-    
+
     % Cmd given as list
     ?assertMatch(
         {ok, [{stdout,[<<"ok\n">>]}]},
