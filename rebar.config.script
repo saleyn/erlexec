@@ -66,7 +66,7 @@ maps:to_list(lists:foldl(
 
                      {"CC",  CXX},
                      {"CXX", CXX},
-                     {"CXXFLAGS", "$CXXFLAGS -DHAVE_PTRACE -std=c++98 -O" ++ OptimLevel}
+                     {"CXXFLAGS", "$CXXFLAGS -DHAVE_PTRACE -O" ++ OptimLevel}
                     ]},
 
         {port_specs,[{filename:join(["priv", Mach, "exec-port"]), ["c_src/*.cpp"]}]},
