@@ -46,10 +46,6 @@ Linux, Solaris, FreeBSD, MacOS X
 See http://saleyn.github.io/erlexec
 
 ## BUILDING ##
-**NOTE:** OTP releases 20.0 and below should use tag `1.8` or the `otp20` branch. The reason
-is that the newer releases use incompatible syntax for getting stack trace that will
-cause compilation warning when obtained through `erlang:get_stacktrace()` function call.
-
 Make sure you have rebar (http://github.com/basho/rebar or
 http://github.com/basho/rebar3) installed locally and the rebar script
 is in the path.
