@@ -442,6 +442,12 @@ bool process_command()
                 break;
             }
 
+            if (!data.size()) {
+                if (debug)
+                    fprintf(stderr, "Warning: ignoring empty input on stdin of pid %ld.\r\n", pid);
+                break;
+            }
+
             it->second.stdin_queue.push_front(data);
             process_pid_input(it->second);
             break;
