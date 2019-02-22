@@ -83,6 +83,7 @@
     | {limit_users, [string(), ...]}
     | {portexe, string()}
     | {env, [{string(), string()}, ...]}.
+-export_type([exec_option/0, exec_options/0]).
 %% Options passed to the exec process at startup. They can be specified in the
 %% `sys.config' file for the `erlexec' application to customize application
 %% startup.
@@ -119,6 +120,7 @@
 %% </dl>.
 
 -type cmd() :: string() | [string()].
+-export_type([cmd/0]).
 %% Command to be executed. If specified as a string, the specified command
 %% will be executed through the shell. The current shell is obtained
 %% from environtment variable `SHELL'. This can be useful if you
@@ -176,6 +178,7 @@
     | {stderr, stdout | output_dev_opt()}
     | {stdout | stderr, string(), [output_file_opt()]}
     | pty.
+-export_type([cmd_option/0, cmd_options/0]).
 %% Command options:
 %% <dl>
 %% <dt>monitor</dt>
@@ -261,6 +264,7 @@
 
 -type output_dev_opt() :: null | close | print | string() | pid()
     | fun((stdout | stderr, integer(), binary()) -> none()).
+-export_type([output_dev_opt/0]).
 %% Output device option:
 %% <dl>
 %% <dt>null</dt><dd>Suppress output.</dd>
@@ -275,6 +279,7 @@
 %% </dl>
 
 -type output_file_opt() :: append | {mode, Mode::integer()}.
+-export_type([output_file_opt/0]).
 %% Defines file opening attributes:
 %% <dl>
 %% <dt>append</dt><dd>Open the file in `append' mode</dd>
@@ -286,6 +291,7 @@
 %% Representation of OS process ID.
 -type osgid() :: integer().
 %% Representation of OS group ID.
+-export_type([ospid/0, osgid/0]).
 
 %%-------------------------------------------------------------------------
 %% @doc Supervised start an external program manager.
