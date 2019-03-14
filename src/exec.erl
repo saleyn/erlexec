@@ -623,7 +623,10 @@ init([Options]) ->
                 [" -"++atom_to_list(Opt)++" "++integer_to_list(I) | Acc];
            (_, Acc) -> Acc
         end, [], Opts),
-    Exe0  = proplists:get_value(portexe,     Options, default(portexe)),
+    Exe0  = case proplists:get_value(portexe, Options, noportexe) of
+            noportexe -> default(portexe);
+            UserExe   -> UserExe
+            end,
     Args  = lists:flatten(Args0),
     Users = proplists:get_value(limit_users, Options, default(limit_users)),
     User  = proplists:get_value(user,        Options),
