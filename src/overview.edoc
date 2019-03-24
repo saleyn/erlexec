@@ -157,7 +157,7 @@ $ whoami
 serge
 
 $ erl
-1> Opts = [root, {user, "wheel"}, {limit_users, "alex","guest"}}],
+1> Opts = [root, {user, "wheel"}, {limit_users, ["alex","guest"]}}],
 2> exec:start(Opts).                                    % Start the port program as effective user "wheel"
                                                         % and allow it to execute commands as "alex" or "guest".
 {ok,<0.32.0>}
