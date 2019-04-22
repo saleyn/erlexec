@@ -52,17 +52,17 @@ sudo setcap cap_setuid,cap_kill,cap_sys_nice+eip _build/default/lib/erlexec/priv
 <li>Provide custom termination command for killing a process or relying
     on default SIGTERM/SIGKILL behavior.  Specifying custom timeout
     for SIGKILL after the termination command or SIGTERM was executed.</li>
-<li>Terminate all processing beloging to a process group</li>
+<li>Terminate all processing belonging to a process group</li>
 <li>Link Erlang processes to OS processes (via intermediate
     Erlang Pids that are linked to an associated OS process).</li>
 <li>Monitor the termination of OS processes.</li>
 <li>Execute OS processes synchronously and asynchronously.</li>
 <li>Perform proper cleanup of OS processes at port program termination time.</li>
 <li>Communicate with an OS process via its STDIN.</li> 
-<li>Redirect STDOUT and STDERR of an OS process to a file, erlang process,
+<li>Redirect STDOUT and STDERR of an OS process to a file, Erlang process,
     or a custom function. When redirected to a file, the file can be
     open in append/truncate mode, and given creation access mask.</li>
-<li>Run interactive processes with psudo-terminal pty support.</li>
+<li>Run interactive processes with pseudo-terminal pty support.</li>
 <li>Execute OS processes under different user credentials (using Linux
     capabilities).</li>
 </ol>
@@ -102,7 +102,7 @@ Linux, Solaris, and MacOS X.
 See description of types in {@link exec:exec_options()}.
 
 The `exec-port' program requires the `SHELL' variable to be set. If you are
-running Erlang inside a docker container, you might need to ensure that `SHELL'
+running Erlang inside a Docker container, you might need to ensure that `SHELL'
 is properly set prior to starting the emulator.
 
 == Examples ==
@@ -120,7 +120,7 @@ ok                                                      % Note that this could a
 
 === Running exec-port as another effective user ===
 
-In order to be able to use this feature the current user must either have `sudo'
+In order to be able to use this feature, the current user must either have `sudo'
 rights or the `exec-port' file must have the SUID bit set. If the effective user
 doesn't have rights to access the `exec-port' program in the real user's directory,
 then the `exec-port' can be copied to some shared location, which will be specified
@@ -143,8 +143,8 @@ wheel      exec-port
 
 === Allowing exec-port to run commands as other effective users ===
 
-In order to be able to use this feature the current user must either have `sudo'
-rights or the `exec-port' file must have the SUID bit set, and the `exec-port' file
+In order to be able to use this feature, the current user must either have `sudo'
+rights or the `exec-port' file must have the SUID bit set and the `exec-port' file
 must have the capabilities set as described in the "Build" section above.
 
 The port program will initially be started as `root', and then it will set the
@@ -220,7 +220,7 @@ Got stdout from 29652: <<"Iter1\n">>
 Got stdout from 29652: <<"Iter2\n">>
 Got stdout from 29652: <<"Iter3\n">>
 
-% Note that stdout/stderr options are equivanet to {stdout, self()}, {stderr, self()} 
+% Note that stdout/stderr options are equivalent to {stdout, self()}, {stderr, self()} 
 11> exec:run("echo Hello World!; echo ERR!! 1>&2", [stdout, stderr]).
 {ok,<0.244.0>,18382}
 12> flush().
