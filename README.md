@@ -17,18 +17,18 @@ The following features are supported:
 * Set OS command's working directory, environment, process group, effective user, process priority.
 * Provide custom termination command for killing a process or relying on
   default SIGTERM/SIGKILL behavior.
-* Specify custom timeout for SIGKILL after the termination command or SIGTERM
+* Specify a custom timeout for SIGKILL after the termination command or SIGTERM
   was executed and the running OS child process is still alive.
-* Link an Erlang processes to OS processes (via intermediate Erlang Pids that are linked
+* Link Erlang processes to OS processes (via intermediate Erlang Pids that are linked
   to an associated OS process).
 * Monitor termination of OS processes.
-* Terminate all processes beloging to an OS process group.
+* Terminate all processes belonging to an OS process group.
 * Kill processes belonging to an OS process group at process exit.
 * Communicate with an OS process via its STDIN.
-* Redirect STDOUT and STDERR of an OS process to a file, erlang process, or a custom function.
+* Redirect STDOUT and STDERR of an OS process to a file, Erlang process, or a custom function.
   When redirected to a file, the file can be open in append/truncate mode, and given creation
   access mask.
-* Run interactive processes with psudo-terminal pty support.
+* Run interactive processes with pseudo-terminal pty support.
 * Execute OS processes under different user credentials (using Linux capabilities).
 * Perform proper cleanup of OS child processes at port program termination time.
 
@@ -47,7 +47,7 @@ See http://saleyn.github.io/erlexec
 
 ## BUILDING ##
 Make sure you have rebar (http://github.com/basho/rebar or
-http://github.com/basho/rebar3) installed locally and the rebar script
+http://github.com/basho/rebar3) installed locally, and the rebar script
 is in the path.
 
 If you are deploying the application on Linux and would like to
@@ -64,10 +64,10 @@ OS-specific libcap-dev installation instructions:
 $ git clone git@github.com:saleyn/erlexec.git
 $ make
 
-# NOTE: for enabling optimized build of exec-port, do the following instead:
+# NOTE: for enabling an optimized build of exec-port, do the following instead:
 $ OPTIMIZE=true make
 ```
 
 ## LICENSE ##
-The program is distributed under BSD license.
+The program is distributed under the BSD license.
 Copyright (c) 2003 Serge Aleynikov <saleyn at gmail dot com>
