@@ -47,7 +47,7 @@ github-docs:
 	rm -f rebar.lock
 	git checkout master -- src include
 	git checkout master -- Makefile
-	touch rebar.config
+	echo '{edoc_opts, [{overview, "src/overview.edoc"}]}.' > rebar.config
 	make docs
 	mv doc/*.* .
 	make clean
