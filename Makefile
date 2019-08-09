@@ -47,6 +47,7 @@ github-docs:
 	rm -f rebar.lock
 	git checkout master -- src include
 	git checkout master -- Makefile rebar.*
+	sed -i 's/^{plugins.*//' rebar.config
 	make docs
 	mv doc/*.* .
 	make clean
