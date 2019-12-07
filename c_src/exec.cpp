@@ -77,7 +77,8 @@ int   ei::sigchld_pipe[2] = { -1, -1 }; // Pipe for delivering sig child details
 // Types & variables
 //-------------------------------------------------------------------------
 
-MapChildrenT    ei::children;       // Map containing all managed processes started by this port program.
+MapChildrenT    ei::children;       // Map containing all managed processes
+                                    // started by this port program.
 MapKillPidT     ei::transient_pids; // Map of pids of custom kill commands.
 ExitedChildrenT ei::exited_children;// Set of processed SIGCHLD events
 pid_t           ei::self_pid;
@@ -86,7 +87,8 @@ pid_t           ei::self_pid;
 // Local Functions
 //-------------------------------------------------------------------------
 bool    process_command();
-void    initialize(int userid, bool use_alt_fds, bool enable_suid);
+void    initialize(int userid, bool use_alt_fds, bool enable_suid,
+                   bool requested_root);
 int     finalize(fd_set& read_fds);
 
 //-------------------------------------------------------------------------
@@ -119,9 +121,10 @@ int main(int argc, char* argv[])
 {
     fd_set readfds, writefds;
     struct sigaction sact, sterm;
-    int userid = 0;
-    bool use_alt_fds = false;
-    bool enable_suid = false;
+    int    userid         = 0;
+    bool   use_alt_fds    = false;
+    bool   enable_suid    = false;
+    bool   requested_root = false;
 
     self_pid = getpid();
 
@@ -153,6 +156,7 @@ int main(int argc, char* argv[])
                 use_alt_fds = true;
             } else if (strcmp(argv[res], "-user") == 0 && res+1 < argc && argv[res+1][0] != '-') {
                 char* run_as_user = argv[++res];
+                requested_root    = strcmp(run_as_user, "root") == 0;
                 struct passwd *pw = NULL;
                 if ((pw = getpwnam(run_as_user)) == NULL) {
                     fprintf(stderr, "User %s not found!\r\n", run_as_user);
@@ -165,7 +169,7 @@ int main(int argc, char* argv[])
         }
     }
 
-    initialize(userid, use_alt_fds, enable_suid);
+    initialize(userid, use_alt_fds, enable_suid, requested_root);
 
     // Set up a pipe to deliver SIGCHLD details to pselect() and setup SIGCHLD handler
     if (pipe(sigchld_pipe) < 0) {
@@ -468,7 +472,7 @@ bool process_command()
     return true;
 }
 
-void initialize(int userid, bool use_alt_fds, bool enable_suid)
+void initialize(int userid, bool use_alt_fds, bool enable_suid, bool requested_root)
 {
     if (getuid() == 0 && userid > 0) {
         if (
@@ -488,29 +492,29 @@ void initialize(int userid, bool use_alt_fds, bool enable_suid)
             fprintf(stderr, "Initializing: uid=0, euid=%d, userid=%d%s\r\n",
                 getuid(), userid, enable_suid?" enable-suid":"");
 
-    } else if (getuid() == 0 && userid == 0) {
+    } else if (getuid() == 0 && userid == 0 && !requested_root) {
         fprintf(stderr, "Not allowed to run as root without setting effective user (-user option)!\r\n");
+        exit(4);
+    } else if (getuid() > 0 && userid == 0 && requested_root) {
+        fprintf(stderr, "Requested to run as root (-user root), but effective user is not root!\r\n");
         exit(4);
     } else if (userid > 0 && int(getuid()) != userid) {
         fprintf(stderr, "Cannot switch effective user to euid=%d\r\n", userid);
         exit(4);
-    } else if (debug) {
-        fprintf(stderr, "Initializing: uid=%d, userid=%d%s\r\n",
-            getuid(), userid, enable_suid?"enable-suid":"");
     } else if (!getenv("SHELL") || strcmp(getenv("SHELL"), "") == 0) {
         fprintf(stderr, "SHELL environment variable not set!\r\n");
         exit(4);
     }
 
+    if (debug)
+        fprintf(stderr, "Initializing: uid=%d, userid=%d%s%s\r\n",
+            getuid(), userid, enable_suid ? " enable-suid":"",
+            requested_root ? " requested-root":"");
+
     // If we are root, switch to non-root user and set capabilities
     // to be able to adjust niceness and run commands as other users.
     // unless run_as_root is set
     if (userid > 0 && enable_suid) {
-        if (userid == 0) {
-            fprintf(stderr, "When running as root, \"-user User\" or \"-root\" option must be provided!\r\n");
-            exit(4);
-        }
-
         #ifdef HAVE_CAP
         if (prctl(PR_SET_KEEPCAPS, 1) < 0) {
             perror("Failed to call prctl to keep capabilities");
@@ -524,7 +528,7 @@ void initialize(int userid, bool use_alt_fds, bool enable_suid)
 
         if (geteuid() == 0) {
             fprintf(stderr, "exec: failed to set effective userid to a non-root user %s (uid=%d)\r\n",
-                pw ? pw->pw_name : "", geteuid());
+                    pw ? pw->pw_name : "", geteuid());
             exit(7);
         }
 
