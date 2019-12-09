@@ -155,6 +155,7 @@ const char* stream_name(int i);
 
 int     read_sigchld(pid_t& child);
 void    check_child_exit(pid_t pid);
+int     set_euid(int userid);
 int     set_nice(pid_t pid,int nice, std::string& error);
 bool    process_sigchld();
 bool    set_pid_winsz(CmdInfo& ci, int rows, int cols);
@@ -257,12 +258,12 @@ private:
     }
 
 public:
-    CmdOptions()
+    CmdOptions(int def_user=INT_MAX)
         : m_tmp(0, 256), m_shell(true), m_pty(false)
         , m_kill_timeout(KILL_TIMEOUT_SEC)
         , m_kill_group(false)
         , m_cenv(NULL), m_nice(INT_MAX)
-        , m_group(INT_MAX), m_user(INT_MAX)
+        , m_group(INT_MAX), m_user(def_user)
         , m_success_exit_code(0)
     {
         init_streams();

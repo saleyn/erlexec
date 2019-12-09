@@ -312,10 +312,10 @@ pid_t start_child(CmdOptions& op, std::string& error)
     }
 
     if (debug) {
-        fprintf(stderr, "Starting child: '%s'\r\n"
+        fprintf(stderr, "Starting child: '%s' (euid=%d)\r\n"
                         "  child  = (stdin=%s, stdout=%s, stderr=%s)\r\n"
                         "  parent = (stdin=%s, stdout=%s, stderr=%s)\r\n",
-            op.cmd().front().c_str(),
+            op.cmd().front().c_str(), op.user(),
             fd_type(stream_fd[STDIN_FILENO ][RD]).c_str(),
             fd_type(stream_fd[STDOUT_FILENO][WR]).c_str(),
             fd_type(stream_fd[STDERR_FILENO][WR]).c_str(),
