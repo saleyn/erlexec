@@ -121,10 +121,16 @@ ok                                                      % Note that this could a
 === Running exec-port as another effective user ===
 
 In order to be able to use this feature the current user must either have `sudo'
-rights or the `exec-port' file must have the SUID bit set. If the effective user
-doesn't have rights to access the `exec-port' program in the real user's directory,
-then the `exec-port' can be copied to some shared location, which will be specified
-at startup using `{portexe, "/path/to/exec-port"}'.
+rights or the `exec-port' file must be owned by `root` and have the SUID bit set
+(use: `chown root:root exec-port; chmod 4555 exec-port`):
+```
+$ ll priv/x86_64-unknown-linux-gnu/exec-port
+-rwsr-xr-x 1 root root 777336 Dec  8 10:02 ./priv/x86_64-unknown-linux-gnu/exec-port
+'''
+If the effective user doesn't have rights to access the `exec-port'
+program in the real user's directory, then the `exec-port' can be copied to some
+shared location, which will be specified at startup using
+`{portexe, "/path/to/exec-port"}'.
 
 ```
 $ cp $(find . -name exec-port) /tmp

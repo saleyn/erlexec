@@ -14,11 +14,14 @@
 %%%      `exec.cpp' file.  On platforms/environments which permit
 %%%      setting the suid bit on the `exec-port' executable, it can
 %%%      run external tasks by impersonating a different user. When
-%%%      suid bit is on, the application requires `exec:start_link/2'
+%%%      suid bit is on and the port program is owned by root
+%%%      (`chown root:root exec-port; chmod 4755 exec-port'),
+%%%      the application requires `exec:start_link/2'
 %%%      to be given the `{user, User}' option so that `exec-port'
-%%%      will not run as root.  Before changing the effective `User',
-%%%      it sets the kernel capabilities so that it's able to start
-%%%      processes as other users and adjust process priorities.
+%%%      will not run as root but will switch to the given effective user.
+%%%      Before changing the effective `User', it sets the kernel
+%%%      capabilities so that it's able to start processes as other
+%%%      users and adjust process priorities.
 %%%
 %%%      At exit the port program makes its best effort to perform
 %%%      clean shutdown of all child OS processes.
@@ -640,21 +643,27 @@ init([Options]) ->
     % the SUID bit set or else use "sudo"
     SUID  = case file:read_file_info(Exe0) of
             {ok, Info} ->
-                (Info#file_info.mode band 8#1700) =:= 8#1700;
+                (Info#file_info.mode band 8#4500) =:= 8#4500 andalso
+                (Info#file_info.uid == 0);
             {error, Err} ->
                 throw("Cannot find file " ++ Exe0 ++ ": " ++ file:format_error(Err))
             end,
-    IsRoot= os:getenv("USER") =:= "root",
+    EffUsr= os:getenv("USER"),
+    IsRoot= EffUsr =:= "root",
     {Exe,Msg} =
-            if (SUID orelse Root orelse IsRoot) andalso User =:= undefined ->
-                % Don't allow to run port program with SUID bit without effective user set!
-                throw("Port program " ++ Exe0 ++
-                      " with SUID bit set is not allowed to run without setting effective user!");
+            if SUID andalso Root; IsRoot ->
+                if User==undefined orelse User=="" ->
+                    % Don't allow to run port program with SUID bit without effective user set!
+                    throw("Port program " ++ Exe0 ++
+                          " is not allowed to run without specifying effective user ({user, User})!");
+                true ->
+                    {Exe0++Args, undefined}
+                end;
             not Root, User =/= undefined ->
                 % Running as another effective user
                 U = if is_atom(User) -> atom_to_list(User); true -> User end,
                 {lists:append(["/usr/bin/sudo -u ", U, " ", Exe0, Args]), undefined};
-            Root, User =/= undefined, User =/= root, User =/= "root", User =/= 0 ->
+            SUID, EffUsr/="root", EffUsr/=User, User/=undefined, User/=root, User/="root" ->
                 % Running as root that will switch to another effective user with SUID support
                 {lists:append(["/usr/bin/sudo ", Exe0, " -suid", Args]), undefined};
             true ->

@@ -125,6 +125,7 @@ int main(int argc, char* argv[])
     bool   use_alt_fds    = false;
     bool   enable_suid    = false;
     bool   requested_root = false;
+    bool   is_suid_set    = false;
 
     self_pid = getpid();
 
@@ -156,20 +157,30 @@ int main(int argc, char* argv[])
                 use_alt_fds = true;
             } else if (strcmp(argv[res], "-user") == 0 && res+1 < argc && argv[res+1][0] != '-') {
                 char* run_as_user = argv[++res];
-                requested_root    = strcmp(run_as_user, "root") == 0;
+                struct stat    st;
                 struct passwd *pw = NULL;
+                requested_root    = strcmp(run_as_user, "root") == 0;
                 if ((pw = getpwnam(run_as_user)) == NULL) {
                     fprintf(stderr, "User %s not found!\r\n", run_as_user);
                     exit(3);
                 }
                 userid = pw->pw_uid;
+                if (stat(argv[0], &st) < 0) {
+                    fprintf(stderr, "Cannot stat the %s file: %s\r\n", argv[0],
+                                    strerror(errno));
+                    exit(3);
+                }
+                is_suid_set = st.st_mode & S_ISUID && st.st_uid == 0;
+                if (debug > 2)
+                    fprintf(stderr, "SUID bit %sset on %s owned by uid=%d\r\n",
+                                    argv[0], (st.st_mode & S_ISUID) ? "" : " NOT", st.st_uid);
             } else if (strcmp(argv[res], "-suid") == 0) {
                 enable_suid = true;
             }
         }
     }
 
-    initialize(userid, use_alt_fds, enable_suid, requested_root);
+    initialize(userid, use_alt_fds, enable_suid || is_suid_set, requested_root);
 
     // Set up a pipe to deliver SIGCHLD details to pselect() and setup SIGCHLD handler
     if (pipe(sigchld_pipe) < 0) {
@@ -474,7 +485,7 @@ bool process_command()
 
 void initialize(int userid, bool use_alt_fds, bool enable_suid, bool requested_root)
 {
-    if (getuid() == 0 && userid > 0) {
+    if ((getuid() == 0 && userid > 0) || (getuid() != 0 && enable_suid)) {
         if (
             #ifdef HAVE_SETRESUID
             setresuid(-1, userid, geteuid()) // glibc, FreeBSD, OpenBSD, HP-UX
