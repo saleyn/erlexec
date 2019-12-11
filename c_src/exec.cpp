@@ -487,7 +487,7 @@ int ei::set_euid(int userid)
     #ifdef HAVE_SETRESUID
     int res = setresuid(-1, userid, geteuid()); // glibc, FreeBSD, OpenBSD, HP-UX
     #elif HAVE_SETREUID
-    int res = setreuid(-1,  userid)             // MacOSX, NetBSD, AIX, IRIX, Solaris>=2.5, OSF/1, Cygwin
+    int res = setreuid(-1,  userid);            // MacOSX, NetBSD, AIX, IRIX, Solaris>=2.5, OSF/1, Cygwin
     #else
     #error setresuid(3) not supported!
     #endif
