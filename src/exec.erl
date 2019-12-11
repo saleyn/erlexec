@@ -590,6 +590,7 @@ default() ->
      {root, false},     % Allow running processes as root.
      {args, ""},        % Extra arguments that can be passed to port program
      {alarm, 12},
+     {portexe, noportexe},
      {user, ""},        % Run port program as this user
      {limit_users, []}]. % Restricted list of users allowed to run commands
 %% @private
