@@ -123,6 +123,7 @@ ok                                                      % Note that this could a
 In order to be able to use this feature the current user must either have `sudo'
 rights or the `exec-port' file must be owned by `root` and have the SUID bit set
 (use: `chown root:root exec-port; chmod 4555 exec-port`):
+
 ```
 $ ll priv/x86_64-unknown-linux-gnu/exec-port
 -rwsr-xr-x 1 root root 777336 Dec  8 10:02 ./priv/x86_64-unknown-linux-gnu/exec-port
@@ -177,7 +178,7 @@ wheel      exec-port
 === Running the port program as root ===
 
 While running the port program as root is highly discouraged, since it opens a security
-flaw that gives users an ability to damage the system, for those who might need such an
+hole that gives users an ability to damage the system, for those who might need such an
 option, here is how to get it done (PROCEED AT YOUR OWN RISK!!!).
 
 Note: in this case `exec' would use `sudo exec-port' to run it as `root' or the `exec-port'
