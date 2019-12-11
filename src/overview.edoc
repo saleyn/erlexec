@@ -128,6 +128,7 @@ rights or the `exec-port' file must be owned by `root` and have the SUID bit set
 $ ll priv/x86_64-unknown-linux-gnu/exec-port
 -rwsr-xr-x 1 root root 777336 Dec  8 10:02 ./priv/x86_64-unknown-linux-gnu/exec-port
 '''
+
 If the effective user doesn't have rights to access the `exec-port'
 program in the real user's directory, then the `exec-port' can be copied to some
 shared location, which will be specified at startup using
@@ -340,7 +341,7 @@ ok
 
 === Communicating with an OS process via STDIN and sending end-of-file ===
 ```
-2> Watcher = spawn(fun F() -> receive Msg -> io:format("Got: ~p\n", [Msg]), F() end end).
+2> Watcher = spawn(fun F() -> receive Msg -> io:format("Got: ~p\n", [Msg]), F() after 60000 -> ok end end).
 <0.112.0>
 3> f(Pid), f(OsPid), {ok, Pid, OsPid} = exec:run("tac", [stdin, {stdout, Watcher}, {stderr, Watcher}]).
 {ok,<0.114.0>,26143}
