@@ -102,7 +102,7 @@ void usage(char* progname) {
         "   %s [-n] [-root] [-alarm N] [-debug [Level]] [-user User]\n"
         "Options:\n"
         "   -n              - Use marshaling file descriptors 3&4 instead of default 0&1.\n"
-        "   -suid           - Allow running child processes as other effective UIDs (using capabilities).\n"
+        "   --whoami        - Output the name of effective user and exit\n"
         "   -alarm N        - Allow up to <N> seconds to live after receiving SIGTERM/SIGINT (default %d)\n"
         "   -debug [Level]  - Turn on debug mode (default Level: 1)\n"
         "   -user User      - If started by root, run as User\n"
@@ -155,6 +155,10 @@ int main(int argc, char* argv[])
                     usage(argv[0]);
             } else if (strcmp(argv[res], "-n") == 0) {
                 use_alt_fds = true;
+            } else if (strcmp(argv[res], "--whoami") == 0) {
+                struct passwd* pws = getpwuid(geteuid());
+                fprintf(stderr, "%s\n", pws->pw_name);
+                exit(0);
             } else if (strcmp(argv[res], "-user") == 0 && res+1 < argc && argv[res+1][0] != '-') {
                 char* run_as_user = argv[++res];
                 struct stat    st;
