@@ -38,6 +38,7 @@ publish:
 clean-docs:
 	rm -f doc/*.{css,html,png} doc/edoc-info
 
+github-docs: VSN=$(shell git describe --always --tags --abbrev=1 | sed 's/^v//')
 github-docs:
 	@if git branch | grep -q gh-pages ; then \
 		git checkout gh-pages; \
@@ -47,7 +48,7 @@ github-docs:
 	rm -f rebar.lock
 	git checkout master -- src include
 	git checkout master -- Makefile
-	echo '{edoc_opts, [{overview, "src/overview.edoc"}]}.' > rebar.config
+	echo '{edoc_opts, [{overview, "src/overview.edoc"}, {def, {vsn, "$(VSN)"}}]}.' > rebar.config
 	make docs
 	mv doc/*.* .
 	make clean
