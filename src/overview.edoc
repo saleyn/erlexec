@@ -154,9 +154,9 @@ rights or the `exec-port' file must have the SUID bit set, and the `exec-port' f
 must have the capabilities set as described in the "Build" section above.
 
 The port program will initially be started as `root', and then it will set the
-`cap_setuid,cap_kill,cap_sys_nice' capabilities and switch the effective user to
-`{user, User}'.  After that it'll allow to run child programs under effective
-users listed in the `{limit_users, Users}' option.
+switch the effective user to `{user, User}' and set process capabilities to
+`cap_setuid,cap_kill,cap_sys_nice'.  After that it'll allow to run child programs
+under effective users listed in the `{limit_users, Users}' option.
 
 ```
 $ whoami
@@ -178,10 +178,21 @@ wheel      exec-port
 
 While running the port program as root is highly discouraged, since it opens a security
 flaw that gives users an ability to damage the system, for those who might need such an
-option, here is how to get it done (PROCEED AT YOUR OWN RISK!!!):
+option, here is how to get it done (PROCEED AT YOUR OWN RISK!!!).
+
+Note: in this case `exec' would use `sudo exec-port' to run it as `root' or the `exec-port'
+must have the SUID bit set (4555) and be owned by `root'.  The other (DANGEROUS and
+firmly DISCOURAGED!!!) alternative is to run `erl' as `root':
 
 ```
-$ sudo erl
+$ whoami
+serge
+
+# Make sure the exec-port can run as root:
+$ sudo _build/default/lib/erlexec/priv/*/exec-port --whoami
+root
+
+$ erl
 1> exec:start([root, {user, "root"}, {limit_users, ["root"]}]).
 2> exec:run("whoami", [sync, stdout]).
 {ok, [{stdout, [<<"root\n">>]}]}

@@ -15,14 +15,14 @@
 %%%      impersonating as a different effective user.  This impersonation
 %%%      can be accomplished in one of the following two ways (assuming
 %%%      that the emulator is not running as `root':
-%%%
-%%%      * Having the user account running the erlang emulator added to
-%%%        the `/etc/sudoers' file, so that it can execute `exec-port'
-%%%        task as `root'. (Preferred option)
-%%%      * Setting `root' ownership on `exec-port', and setting the
-%%%        SUID bit: `chown root:root exec-port; chmod 4755 exec-port'.
-%%%        (This option is discouraged as it's less secure).
-%%%
+%%%      <ul>
+%%%      <li>Having the user account running the erlang emulator added to
+%%%          the `/etc/sudoers' file, so that it can execute `exec-port'
+%%%          task as `root'. (Preferred option)</li>
+%%%      <li>Setting `root' ownership on `exec-port', and setting the
+%%%          SUID bit: `chown root:root exec-port; chmod 4755 exec-port'.
+%%%          (This option is discouraged as it's less secure).</li>
+%%%      </ul>
 %%%      In either of these two cases, `exec:start_link/2' must be started
 %%%      with options `[root, {user, User}, {limit_users, Users}]',
 %%%      so that `exec-port' process will not actually run as
@@ -30,6 +30,13 @@
 %%%      capabilities so that it's able to start processes as other
 %%%      effective users given in the `Users' list and adjust process
 %%%      priorities.
+%%%
+%%%      Though, in the initial design, `exec' prohibited such use, upon
+%%%      user requests a feature was added (in order to support `docker'
+%%%      deployment and CI testing) to be able to execute `exec-port' as
+%%%      `root' without switching the effective user to anying other than
+%%%      `root'. To accomplish this use the following options to start
+%%%      `exec': `[root, {user, "root"}, {limit_users, ["root"]}]'.
 %%%
 %%%      At exit the port program makes its best effort to perform
 %%%      clean shutdown of all child OS processes.
