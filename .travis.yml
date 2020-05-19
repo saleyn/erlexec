@@ -5,7 +5,7 @@ otp_release:
 compiler: g++
 os:
   - linux
-  - osx
+  #- osx       # MacOS builds are not available on Travis
 
 #  addons:
 #    apt:
