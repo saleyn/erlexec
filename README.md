@@ -53,7 +53,8 @@ is in the path.
 If you are deploying the application on Linux and would like to
 take advantage of exec-port running tasks using effective user IDs
 different from the real user ID that started exec-port, then
-make sure that libcap-dev[el] library is installed.
+either make sure that libcap-dev[el] library is installed or make
+sure that the user running the port program has `sudo` rights.
 
 OS-specific libcap-dev installation instructions:
 
