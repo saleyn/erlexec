@@ -570,10 +570,6 @@ void initialize(int userid, bool use_alt_fds, bool is_root, bool requested_root)
             fprintf(stderr, "exec: capability feature is not implemented for this plaform!\r\n");
         #endif
 
-        if (!getenv("SHELL") || strncmp(getenv("SHELL"), "", 1) == 0) {
-            fprintf(stderr, "exec: SHELL variable is not set!\r\n");
-            exit(10);
-        }
     }
 
     #if !defined(NO_SYSCONF)
