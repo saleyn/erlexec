@@ -7,7 +7,7 @@ namespace ei {
 //------------------------------------------------------------------------------
 // DARWIN doesn't have ptsname_r()
 //------------------------------------------------------------------------------
-#if defined(__MACH__) || defined(__APPLE__) || defined(__FreeBSD__) || defined(__DragonFly__)
+#if defined(__MACH__) || defined(__APPLE__) || defined(__FreeBSD__) || defined(__DragonFly__) || defined(__OpenBSD__)
 int ptsname_r(int fd, char* buf, size_t buflen) {
   char *name = ptsname(fd);
   if (name == NULL) {
