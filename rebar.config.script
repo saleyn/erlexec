@@ -61,6 +61,9 @@ maps:to_list(lists:foldl(
                      {"freebsd",   "CXXFLAGS", "$CXXFLAGS -std=c++11 -DHAVE_SETRESUID" ++ X64},
                      {"freebsd",   "LDFLAGS",  "$LDFLAGS" ++ X64},
 
+                     {"openbsd",   "CXXFLAGS", "$CXXFLAGS -std=c++11 -DHAVE_SETRESUID" ++ X64},
+                     {"openbsd",   "LDFLAGS",  "$LDFLAGS" ++ X64},
+
                      {"dragonfly",   "CXXFLAGS", "$CXXFLAGS -std=c++11 -DHAVE_SETRESUID" ++ X64},
                      {"dragonfly",   "LDFLAGS",  "$LDFLAGS" ++ X64},
 
