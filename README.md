@@ -40,7 +40,7 @@ when the emulator exits.
 See http://saleyn.github.com/erlexec for more information.
 
 ## SUPPORTED OS's ##
-Linux, Solaris, FreeBSD, MacOS X
+Linux, Solaris, FreeBSD, OpenBSD, MacOS X
 
 ## DOCUMENTATION ##
 See http://saleyn.github.io/erlexec
