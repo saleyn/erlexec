@@ -283,7 +283,8 @@ public:
         m_cenv = NULL;
     }
 
-    const char*         strerror()      const { return m_err.str().c_str(); }
+    const char*         cstr_error()    const { return m_err.str().c_str(); }
+    std::string         error()         const { return m_err.str();  }
     const std::string&  executable()    const { return m_executable; }
     const CmdArgsList&  cmd()           const { return m_cmd; }
     bool                shell()         const { return m_shell; }

@@ -356,7 +356,10 @@ bool process_command()
             CmdOptions po(run_as_euid);
 
             if (arity != 3 || po.ei_decode(eis, true) < 0) {
-                send_error_str(transId, false, po.strerror());
+                send_error_str(transId, false, po.error().c_str());
+                break;
+            } else if (po.cmd().empty() || po.cmd().front().empty()) {
+                send_error_str(transId, false, "empty command provided");
                 break;
             }
 

@@ -95,12 +95,12 @@
     | {debug, integer()}
     | root | {root, boolean()}
     | verbose
-    | {args, [string(), ...]}
+    | {args, [string()|binary(), ...]}
     | {alarm, non_neg_integer()}
-    | {user, string()}
-    | {limit_users, [string(), ...]}
-    | {portexe, string()}
-    | {env, [{string(), string()}, ...]}.
+    | {user, string()|binary()}
+    | {limit_users, [string()|binary(), ...]}
+    | {portexe, string()|binary()}
+    | {env, [{string()|binary(), string()|binary()}, ...]}.
 -export_type([exec_option/0, exec_options/0]).
 %% Options passed to the exec process at startup. They can be specified in the
 %% `sys.config' file for the `erlexec' application to customize application
@@ -137,7 +137,7 @@
 %%         in the spawned port process.</dd>
 %% </dl>.
 
--type cmd() :: string() | [string()].
+-type cmd() :: binary() | string() | [string()].
 -export_type([cmd/0]).
 %% Command to be executed. If specified as a string, the specified command
 %% will be executed through the shell. The current shell is obtained
@@ -180,21 +180,21 @@
       monitor
     | sync
     | link
-    | {executable, string()}
-    | {cd, WorkDir::string()}
-    | {env, [string() | {Name :: string(), Value :: string()}, ...]}
-    | {kill, KillCmd::string()}
+    | {executable, string()|binary()}
+    | {cd, WorkDir::string()|binary()}
+    | {env, [string() | {Name::string()|binary(), Val::string()|binary()}, ...]}
+    | {kill, KillCmd::string()|binary()}
     | {kill_timeout, Sec::non_neg_integer()}
     | kill_group
-    | {group, GID :: string() | integer()}
-    | {user, RunAsUser :: string()}
+    | {group, GID :: string()|binary() | integer()}
+    | {user, RunAsUser :: string()|binary()}
     | {nice, Priority :: integer()}
     | {success_exit_code, ExitCode :: integer() }
-    | stdin  | {stdin, null | close | string()}
+    | stdin  | {stdin, null | close | string()|binary()}
     | stdout | stderr
     | {stdout, stderr | output_dev_opt()}
     | {stderr, stdout | output_dev_opt()}
-    | {stdout | stderr, string(), [output_file_opt()]}
+    | {stdout | stderr, string()|binary(), [output_file_opt()]}
     | pty.
 -export_type([cmd_option/0, cmd_options/0]).
 %% Command options:
@@ -352,7 +352,7 @@ start(Options) when is_list(Options) ->
 %%-------------------------------------------------------------------------
 -spec run(cmd(), cmd_options()) ->
     {ok, pid(), ospid()} | {ok, [{stdout | stderr, [binary()]}]} | {error, any()}.
-run(Exe, Options) when is_list(Exe), is_list(Options) ->
+run(Exe, Options) when (is_binary(Exe) orelse is_list(Exe)) andalso is_list(Options) ->
     do_run({run, Exe, Options}, Options).
 
 %%-------------------------------------------------------------------------
@@ -367,7 +367,7 @@ run(Exe, Options) when is_list(Exe), is_list(Options) ->
 %%-------------------------------------------------------------------------
 -spec run_link(cmd(), cmd_options()) ->
     {ok, pid(), ospid()} | {ok, [{stdout | stderr, [binary()]}]} | {error, any()}.
-run_link(Exe, Options) when is_list(Exe), is_list(Options) ->
+run_link(Exe, Options) when (is_binary(Exe) orelse is_list(Exe)) andalso is_list(Options) ->
     do_run({run, Exe, Options}, [link | Options]).
 
 %%-------------------------------------------------------------------------
@@ -641,27 +641,27 @@ init([Options]) ->
                 [" -"++atom_to_list(Opt)++" " | Acc];
            ({Opt, I}, Acc) when is_atom(I) ->
                 [" -"++atom_to_list(Opt)++" "++atom_to_list(I) | Acc];
-           ({Opt, I}, Acc) when is_list(I), I =/= ""   ->
-                [" -"++atom_to_list(Opt)++" "++I | Acc];
+           ({Opt, I}, Acc) when is_list(I), I /= ""; is_binary(I), I /= <<"">> ->
+                [" -"++atom_to_list(Opt)++" "++to_list(I) | Acc];
            ({Opt, I}, Acc) when is_integer(I) ->
                 [" -"++atom_to_list(Opt)++" "++integer_to_list(I) | Acc];
            (_, Acc) -> Acc
         end, [], Opts),
     Exe0  = case proplists:get_value(portexe, Options, noportexe) of
             noportexe -> default(portexe);
-            UserExe   -> UserExe
+            UserExe   -> to_list(UserExe)
             end,
     Args  = lists:flatten(Args0),
     Users = case proplists:get_value(limit_users, Options, default(limit_users)) of
             [] -> [];
             L  -> [to_list(I) || I <- L]
             end,
-    User  = proplists:get_value(user,        Options),
+    User  = to_list(proplists:get_value(user,Options)),
     Debug = proplists:get_value(verbose,     Options, default(verbose)),
     Root  = proplists:get_value(root,        Options, default(root)),
     Env   = case proplists:get_value(env, Options) of
             undefined -> [];
-            Other     -> [{env, Other}]
+            Other     -> [{env, parse_env(Other)}]
             end,
     % When instructing to run as root, check that the port program has
     % the SUID bit set or else use "sudo"
@@ -858,8 +858,8 @@ do_run(Cmd, Options) ->
         wait_for_ospid_exit(OsPid, Pid, [], []);
     {ok, Pid, OsPid, _} ->
         {ok, Pid, OsPid};
-    {error, not_found} ->
-        {error, not_found}
+    {error, Reason} ->
+        {error, Reason}
     end.
 
 wait_for_ospid_exit(OsPid, Pid, OutAcc, ErrAcc) ->
@@ -1008,7 +1008,7 @@ check_options(Options) when is_list(Options) ->
                 Other     -> Other
             end,
     {SUID,NeedSudo} = is_suid_and_root_owner(Exe),
-    if Root, (User==undefined orelse User=="") ->
+    if Root, (User==undefined orelse User=="" orelse User == <<"">>) ->
         % Asked to enable root, but User is not set
         {error, "Not allowed to run without proviting effective user {user,User}!"};
     Root, Users==[] ->
@@ -1105,25 +1105,30 @@ is_port_command({kill, Pid, Sig}, _Pid, _State) when is_pid(Pid),is_integer(Sig)
 is_port_command({debug, Level}=T, _Pid, _State) when is_integer(Level),Level >= 0,Level =< 10 ->
     {ok, T, undefined, undefined, []}.
 
+parse_env([])        -> [];
+parse_env([{K,V}|T]) -> [{to_list(K), to_list(V)}|parse_env(T)];
+parse_env([H|T])     -> [to_list(H)|parse_env(T)].
+
 check_cmd_options([monitor|T], Pid, State, PortOpts, OtherOpts) ->
     check_cmd_options(T, Pid, State, PortOpts, OtherOpts);
 check_cmd_options([sync|T], Pid, State, PortOpts, OtherOpts) ->
     check_cmd_options(T, Pid, State, PortOpts, OtherOpts);
 check_cmd_options([link|T], Pid, State, PortOpts, OtherOpts) ->
     check_cmd_options(T, Pid, State, PortOpts, OtherOpts);
-check_cmd_options([{executable,V}=H|T], Pid, State, PortOpts, OtherOpts) when is_list(V) ->
+check_cmd_options([{executable,V}=H|T], Pid, State, PortOpts, OtherOpts) when is_list(V); is_binary(V) ->
     check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
-check_cmd_options([{cd, Dir}=H|T], Pid, State, PortOpts, OtherOpts) when is_list(Dir) ->
+check_cmd_options([{cd, Dir}=H|T], Pid, State, PortOpts, OtherOpts) when is_list(Dir); is_binary(Dir) ->
     check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
 check_cmd_options([{env, Env}=H|T], Pid, State, PortOpts, OtherOpts) when is_list(Env) ->
-    case lists:filter(fun(S) when is_list(S) -> false;
-                         ({S1,S2}) when is_list(S1), is_list(S2) -> false;
+    case lists:filter(fun(S) when is_list(S); is_binary(S) -> false;
+                         ({S1,S2}) when (is_list(S1) orelse is_binary(S1)) andalso
+                                        (is_list(S2) orelse is_binary(S2)) -> false;
                          (_) -> true
                       end, Env) of
     [] -> check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
     L  -> throw({error, {invalid_env_value, L}})
     end;
-check_cmd_options([{kill, Cmd}=H|T], Pid, State, PortOpts, OtherOpts) when is_list(Cmd) ->
+check_cmd_options([{kill, Cmd}=H|T], Pid, State, PortOpts, OtherOpts) when is_list(Cmd); is_binary(Cmd) ->
     check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
 check_cmd_options([{kill_timeout, I}=H|T], Pid, State, PortOpts, OtherOpts) when is_integer(I), I >= 0 ->
     check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
@@ -1139,10 +1144,10 @@ check_cmd_options([H|T], Pid, State, PortOpts, OtherOpts) when H=:=stdin; H=:=st
 check_cmd_options([H|T], Pid, State, PortOpts, OtherOpts) when H=:=pty ->
     check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
 check_cmd_options([{stdin, I}=H|T], Pid, State, PortOpts, OtherOpts)
-        when I=:=null; I=:=close; is_list(I) ->
+        when I=:=null; I=:=close; is_list(I); is_binary(I) ->
     check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
 check_cmd_options([{Std, I, Opts}=H|T], Pid, State, PortOpts, OtherOpts)
-        when (Std=:=stdout orelse Std=:=stderr), is_list(Opts) ->
+        when (Std=:=stdout orelse Std=:=stderr) andalso (is_list(Opts) orelse is_binary(Opts)) ->
     io_lib:printable_list(I) orelse
         throw({error, ?FMT("Invalid ~w filename: ~200p", [Std, I])}),
     lists:foreach(fun
@@ -1154,7 +1159,7 @@ check_cmd_options([{Std, I, Opts}=H|T], Pid, State, PortOpts, OtherOpts)
 check_cmd_options([{Std, I}=H|T], Pid, State, PortOpts, OtherOpts)
         when Std=:=stderr, I=/=Std; Std=:=stdout, I=/=Std ->
     if
-        I=:=null; I=:=close; I=:=stderr; I=:=stdout; is_list(I) ->
+        I=:=null; I=:=close; I=:=stderr; I=:=stdout; is_list(I); is_binary(I) ->
             check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
         I=:=print ->
             check_cmd_options(T, Pid, State, [Std | PortOpts], [{Std, fun print/3} | OtherOpts]);
@@ -1167,9 +1172,12 @@ check_cmd_options([{Std, I}=H|T], Pid, State, PortOpts, OtherOpts)
         true ->
             throw({error, ?FMT("Invalid ~w option ~p", [Std, I])})
     end;
-check_cmd_options([{group, I}=H|T], Pid, State, PortOpts, OtherOpts) when is_integer(I), I >= 0; is_list(I) ->
+check_cmd_options([{group, I}=H|T], Pid, State, PortOpts, OtherOpts) when is_integer(I), I >= 0
+                                                                        ; is_list(I); is_binary(I) ->
     check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
-check_cmd_options([{user, U}|T], Pid, State, PortOpts, OtherOpts) when is_list(U), U =/= ""; is_atom(U) ->
+check_cmd_options([{user, U}|T], Pid, State, PortOpts, OtherOpts) when (is_list(U) andalso U =/= "")
+                                                                     ; (is_binary(U) andalso U =/= <<"">>)
+                                                                     ; is_atom(U) ->
     case lists:member(U, State#state.limit_users) of
     true  -> check_cmd_options(T, Pid, State, [{user,to_list(U)}|PortOpts], OtherOpts);
     false -> throw({error, ?FMT("User ~s is not allowed to run commands!", [U])})
@@ -1257,6 +1265,10 @@ test_sync() ->
     ?assertMatch({ok, [{stdout, [<<"Test\n">>]}, {stderr, [<<"ERR\n">>]}]},
         exec:run("echo Test; echo ERR 1>&2", [stdout, stderr, sync])),
     ?assertMatch({ok,[{stdout,[<<"\n">>]}]},
+         exec:run([<<"/bin/echo">>, <<"">>], [sync, stdout])).
+    ?assertMatch({ok,[{stdout,[<<"\n">>]}]},
+         exec:run([<<"/bin/echo">>, ""], [sync, stdout])).
+    ?assertMatch({ok,[{stdout,[<<"\n">>]}]},
          exec:run(["/bin/echo", ""], [sync, stdout])).
 
 
@@ -1317,10 +1329,16 @@ test_cmd() ->
     ?assertMatch(
         {ok, [{stdout, [<<"ok\n">>]}]},
         exec:run("/bin/echo ok", [sync, stdout])),
+    ?assertMatch(
+        {ok, [{stdout, [<<"ok\n">>]}]},
+        exec:run(<<"/bin/echo ok">>, [sync, stdout])),
     % Cmd given as list
     ?assertMatch(
         {ok, [{stdout, [<<"ok\n">>]}]},
         exec:run(["/bin/bash", "-c", "echo ok"], [sync, stdout])),
+    ?assertMatch(
+        {ok, [{stdout, [<<"ok\n">>]}]},
+        exec:run([<<"/bin/bash">>, <<"-c">>, <<"echo ok">>], [sync, stdout])),
     ?assertMatch(
         {ok, [{stdout, [<<"ok\n">>]}]},
         exec:run(["/bin/echo", "ok"], [sync, stdout])).
@@ -1338,6 +1356,10 @@ test_executable() ->
     ?assertMatch(
         {ok, [{stdout,[<<"ok\n">>]}]},
         exec:run("echo ok", [sync, {executable, "/bin/sh"}, stdout, stderr])),
+
+    ?assertMatch(
+        {ok, [{stdout,[<<"ok\n">>]}]},
+        exec:run(<<"echo ok">>, [sync, {executable, <<"/bin/sh">>}, stdout, stderr])),
 
     % Cmd given as list
     ?assertMatch(
@@ -1361,11 +1383,13 @@ test_redirect_stdin() ->
         os:cmd("echo ttt > /tmp/output.txt; cat /tmp/output.txt")),
     ?assertMatch({ok,[{stdout,[<<"ttt\n">>]}]},
         exec:run("cat", [{stdin, "/tmp/output.txt"}, sync, stdout])),
+    ?assertMatch({ok,[{stdout,[<<"ttt\n">>]}]},
+        exec:run("cat", [{stdin, <<"/tmp/output.txt">>}, sync, stdout])),
     file:delete("/tmp/output.txt").
 
 test_env() ->
-    ?assertMatch({ok, [{stdout, [<<"X\n">>]}]},
-        exec:run("echo $XXX", [stdout, {env, [{"XXX", "X"}]}, sync])).
+    ?assertMatch({ok, [{stdout, [<<"X-Y\n">>]}]},
+        exec:run("echo $XXX-$YYY", [stdout, {env, [{"XXX", "X"}, {<<"YYY">>, <<"Y">>}]}, sync])).
 
 test_kill_timeout() ->
     %{ok, _OldDebug} = exec:debug(3),

@@ -335,6 +335,9 @@ pid_t start_child(CmdOptions& op, std::string& error)
             typedef CmdArgsList::const_iterator const_iter;
             for(const_iter it = op.cmd().begin(), end = op.cmd().end(); it != end; ++it)
                 fprintf(stderr, "  Args[%d]: %s\r\n", i++, it->c_str());
+        } else {
+            error = "cannot run empty command";
+            return -1;
         }
     }
 
@@ -461,8 +464,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
             *p++ = "-c";
         }
 
-        for (CmdArgsList::const_iterator
-                it = op.cmd().begin(), end = op.cmd().end(); it != end; ++it)
+        for (auto it = op.cmd().begin(), end = op.cmd().end(); it != end; ++it)
             *p++ = it->c_str();
 
         *p++ = (char*)NULL;
@@ -1002,8 +1004,9 @@ int set_nonblock_flag(pid_t pid, int fd, bool value)
 //------------------------------------------------------------------------------
 int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
 {
-    // {Cmd::string(), [Option]}
-    //      Option = {env, Strings} | {cd, Dir} | {kill, Cmd}
+    // {Cmd::string()|binary()|[string()|binary()], [Option]}
+    //      Option = {env, Strings::[string()]} | {cd, Dir::string()|binary()}
+    //                                          | {kill, Cmd::string()|binary()}
     int sz;
     std::string op, val;
 
@@ -1017,12 +1020,12 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
     if (getCmd) {
         std::string s;
 
-        if (eis.decodeString(s) != -1) {
+        if (eis.decodeStringOrBinary(s) == 0) {
             m_cmd.push_front(s);
             m_shell=true;
         } else if ((sz = eis.decodeListSize()) > 0) {
             for (int i=0; i < sz; i++) {
-                if (eis.decodeString(s) < 0) {
+                if (eis.decodeStringOrBinary(s) < 0) {
                     m_err << "badarg: invalid command argument #" << i;
                     return -1;
                 }
@@ -1031,7 +1034,9 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
             eis.decodeListEnd();
             m_shell = false;
         } else {
-            m_err << "badarg: cmd string or non-empty list is expected";
+            int n;
+            m_err << "badarg: cmd string, binary, or non-empty list is expected (type="
+                  << eis.decodeType(n) << ')';
             return -1;
         }
     }
@@ -1079,21 +1084,21 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
 
         switch (opt) {
             case EXECUTABLE:
-                if (eis.decodeString(m_executable) < 0) {
+                if (eis.decodeStringOrBinary(m_executable) < 0) {
                     m_err << op << " - bad option value"; return -1;
                 }
                 break;
 
             case CD:
                 // {cd, Dir::string()}
-                if (eis.decodeString(m_cd) < 0) {
+                if (eis.decodeStringOrBinary(m_cd) < 0) {
                     m_err << op << " - bad option value"; return -1;
                 }
                 break;
 
             case KILL:
                 // {kill, Cmd::string()}
-                if (eis.decodeString(m_kill_cmd) < 0) {
+                if (eis.decodeStringOrBinary(m_kill_cmd) < 0) {
                     m_err << op << " - bad option value"; return -1;
                 }
                 break;
@@ -1101,8 +1106,8 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
             case GROUP: {
                 // {group, integer() | string()}
                 type = eis.decodeType(arity);
-                if (type == etString) {
-                    if (eis.decodeString(val) < 0) {
+                if (type == etString || type == etBinary) {
+                    if (eis.decodeStringOrBinary(val) < 0) {
                         m_err << op << " - bad group value"; return -1;
                     }
                     struct group g;
@@ -1120,8 +1125,8 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
                 break;
             }
             case USER:
-                // {user, Dir::string()} | {kill, Cmd::string()}
-                if (eis.decodeString(val) < 0) {
+                // {user, Dir::string()|binary()} | {kill, Cmd::string()|binary()}
+                if (eis.decodeStringOrBinary(val) < 0) {
                     m_err << op << " - bad option value"; return -1;
                 }
                 if      (opt == CD)     m_cd        = val;
@@ -1171,8 +1176,8 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
                     bool res = false;
                     std::string s, key;
 
-                    if (type == ERL_STRING_EXT) {
-                        res = !eis.decodeString(s);
+                    if (type == etString || type == etBinary) {
+                        res = !eis.decodeStringOrBinary(s);
                         if (res) {
                             size_t pos = s.find_first_of('=');
                             if (pos == std::string::npos)
@@ -1180,12 +1185,13 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
                             else
                                 key = s.substr(0, pos);
                         }
-                    } else if (type == ERL_SMALL_TUPLE_EXT && sz == 2) {
+                    } else if (type == etTuple && sz == 2) {
                         eis.decodeTupleSize();
-                        std::string s2;
-                        if (eis.decodeString(key) == 0 && eis.decodeString(s2) == 0) {
+                        std::string val;
+                        if (eis.decodeStringOrBinary(key) == 0 && key.size() > 0 &&
+                            eis.decodeStringOrBinary(val) == 0) {
                             res = true;
-                            s = key + "=" + s2;
+                            s   = key + "=" + val;
                         }
                     }
 
@@ -1227,8 +1233,8 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
 
                     if (type == ERL_ATOM_EXT)
                         eis.decodeAtom(s);
-                    else if (type == ERL_STRING_EXT)
-                        eis.decodeString(s);
+                    else if (type == ERL_STRING_EXT || type == ERL_BINARY_EXT)
+                        eis.decodeStringOrBinary(s);
                     else {
                         m_err << op << " - atom or string value in tuple required";
                         return -1;
@@ -1250,7 +1256,7 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
                     int n, sz, mode = DEF_MODE;
                     bool append = false;
                     std::string s, a, fop;
-                    if (eis.decodeString(s) < 0) {
+                    if (eis.decodeStringOrBinary(s) < 0) {
                         m_err << "filename must be a string for option " << op;
                         return -1;
                     }
@@ -1313,7 +1319,7 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
 
     if (debug > 1) {
         fprintf(stderr, "Parsed cmd '%s' options\r\n  (stdin=%s, stdout=%s, stderr=%s)\r\n",
-            m_cmd.front().c_str(),
+            m_cmd.empty() ? "" : m_cmd.front().c_str(),
             stream_fd_type(0).c_str(), stream_fd_type(1).c_str(), stream_fd_type(2).c_str());
     }
 
