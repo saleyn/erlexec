@@ -516,18 +516,29 @@ namespace ei {
         int  decodeString(StringBuffer<N>& s) {
             int size;
             ErlTypeT tp = decodeType(size);
-            if ((tp != etString && tp != etNil) || !s.resize(size+1) || ei_decode_string(&m_rbuf, &m_rIdx, s.c_str()))
-                return -1;
-            return size;
+            if (tp == etNil) {
+                s.clear();
+                return 0;
+            } else if (tp == etString) {
+                return s.resize(size+1) && ei_decode_string(&m_rbuf, &m_rIdx, s.c_str())==0
+                     ? 0 : -1;
+            }
+            return -1;
         }
 
         int decodeBinary(std::string& data) {
             int size;
-            if (decodeType(size) != etBinary) return -1;
+            ErlTypeT tp = decodeType(size);
+            if (tp != etBinary) return -1;
             data.resize(size);
             long sz;
-            if (ei_decode_binary(&m_rbuf, &m_rIdx, (void*)data.c_str(), &sz) < 0) return -1;
-            return sz;
+            return ei_decode_binary(&m_rbuf, &m_rIdx, (void*)data.c_str(), &sz) < 0
+                 ? -1 : 0;
+        }
+
+        int decodeStringOrBinary(std::string& data) {
+            int    res =     decodeString(data);
+            return res < 0 ? decodeBinary(data) : res;
         }
 
         /// Print input buffer to stream
