@@ -1265,11 +1265,9 @@ test_sync() ->
     ?assertMatch({ok, [{stdout, [<<"Test\n">>]}, {stderr, [<<"ERR\n">>]}]},
         exec:run("echo Test; echo ERR 1>&2", [stdout, stderr, sync])),
     ?assertMatch({ok,[{stdout,[<<"\n">>]}]},
-         exec:run([<<"/bin/echo">>, <<"">>], [sync, stdout])).
+         exec:run([<<"/bin/echo">>], [sync, stdout])),
     ?assertMatch({ok,[{stdout,[<<"\n">>]}]},
-         exec:run([<<"/bin/echo">>, ""], [sync, stdout])).
-    ?assertMatch({ok,[{stdout,[<<"\n">>]}]},
-         exec:run(["/bin/echo", ""], [sync, stdout])).
+         exec:run(["/bin/echo"], [sync, stdout])).
 
 
 test_winsz() ->
