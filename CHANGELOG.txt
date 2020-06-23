@@ -1,2 +1,3 @@
+2020-06-14: Add support of binary commands to simplify erlexec's use by Elixir.
 2016-11-16: Fix timing bugs that caused occasionally missing SIGCHLD on busy systems.
 2015-12-10: Renamed exec.app to erlexec.app to match project name
