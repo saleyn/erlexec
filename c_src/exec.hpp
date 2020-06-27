@@ -239,6 +239,7 @@ private:
     bool                    m_kill_group;
     MapEnv                  m_env;
     const char**            m_cenv;
+    bool                    m_env_clear;
     long                    m_nice;     // niceness level
     int                     m_group;    // used in setgid()
     int                     m_user;     // run as
@@ -262,7 +263,8 @@ public:
         : m_tmp(0, 256), m_shell(true), m_pty(false)
         , m_kill_timeout(KILL_TIMEOUT_SEC)
         , m_kill_group(false)
-        , m_cenv(NULL), m_nice(INT_MAX)
+        , m_cenv(NULL), m_env_clear(false)
+        , m_nice(INT_MAX)
         , m_group(INT_MAX), m_user(def_user)
         , m_success_exit_code(0)
     {

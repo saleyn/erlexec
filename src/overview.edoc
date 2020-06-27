@@ -118,6 +118,21 @@ ok                                                      % Note that this could a
                                                         % by doing exec:stop(pid(0,34,0)).
 '''
 
+=== Clearing environment or unsetting an env variable of the child process ===
+```
+%% Clear environment with {env, [clear]} option:
+10> f(Bin), {ok, [{stdout, [Bin]}]} = exec:run("env", [sync, stdout, {env, [clear]}]), p(re:split(Bin, <<"\n">>)).
+[<<"PWD=/home/...">>,<<"SHLVL=0">>, <<"_=/usr/bin/env">>,<<>>]
+ok
+%% Clear env and add a "TEST" env variable:
+11> f(Bin), {ok, [{stdout, [Bin]}]} = exec:run("env", [sync, stdout, {env, [clear, {"TEST", "xxx"}]}]), p(re:split(Bin, <<"\n">>)).
+[<<"PWD=/home/...">>,<<"SHLVL=0">>, <<"_=/usr/bin/env">>,<<"TEST=xxx">>,<<>>]
+%% Unset an "EMU" env variable:
+11> f(Bin), {ok, [{stdout, [Bin]}]} = exec:run("env", [sync, stdout, {env, [{"EMU", false}]}]), p(re:split(Bin, <<"\n">>)).
+[...]
+ok
+'''
+
 === Running exec-port as another effective user ===
 
 In order to be able to use this feature the current user must either have `sudo'

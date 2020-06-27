@@ -29,7 +29,7 @@
 
     Options = [Option]
     Option  = {cd, Dir::string()} |
-              {env, [string() | {string(), string()}]} |
+              {env, [clear | string() | {string(), string()}]} |
               {kill, Cmd::string()} |
               {kill_timeout, Sec::integer()} |
               kill_group |

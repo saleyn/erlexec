@@ -1162,7 +1162,7 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
                 break;
 
             case ENV: {
-                // {env, [NameEqualsValue::string()]}
+                // {env, [clear | NameEqualsValue::string()]}
                 // passed in env variables are appended to the existing ones
                 // obtained from environ global var
                 int opt_env_sz = eis.decodeListSize();
@@ -1185,18 +1185,34 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
                             else
                                 key = s.substr(0, pos);
                         }
+                    } else if (type == etAtom && !eis.decodeAtom(s)) {
+                        if (s != "clear") {
+                            m_err << op << " - invalid env option " << s;
+                            return -1;
+                        }
+                        // Request to clear environment
+                        m_env_clear = true;
+                        continue;
                     } else if (type == etTuple && sz == 2) {
                         eis.decodeTupleSize();
                         std::string val;
-                        if (eis.decodeStringOrBinary(key) == 0 && key.size() > 0 &&
-                            eis.decodeStringOrBinary(val) == 0) {
-                            res = true;
-                            s   = key + "=" + val;
+                        if (!eis.decodeStringOrBinary(key) && key.size() > 0) {
+                            bool bval;
+                            if (!eis.decodeStringOrBinary(val)) {
+                                res = true;
+                                s   = key + "=" + val;
+                            } else if (!eis.decodeBool(bval) && !bval) {
+                                // {"VAR", false}  - this means to unset the variable
+                                res = true;
+                                s   = "";
+                            } else {
+                                res = false;
+                            }
                         }
                     }
 
                     if (!res) {
-                        m_err << op << " - invalid argument #" << i;
+                        m_err << op << " - invalid env argument #" << i;
                         return -1;
                     }
                     m_env[key] = s;
@@ -1330,17 +1346,18 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
 int CmdOptions::init_cenv()
 {
     if (m_env.empty()) {
-        m_cenv = (const char**)environ;
+        m_cenv = m_env_clear ? nullptr : (const char**)environ;
         return 0;
     }
 
     // Copy environment of the caller process
-    for (char **env_ptr = environ; *env_ptr; env_ptr++) {
-        std::string s(*env_ptr), key(s.substr(0, s.find_first_of('=')));
-        MapEnvIterator it = m_env.find(key);
-        if (it == m_env.end())
-            m_env[key] = s;
-    }
+    if (!m_env_clear)
+        for (char **env_ptr = environ; *env_ptr; env_ptr++) {
+            std::string s(*env_ptr), key(s.substr(0, s.find_first_of('=')));
+            MapEnvIterator it = m_env.find(key);
+            if (it == m_env.end())
+                m_env[key] = s;
+        }
 
     if ((m_cenv = (const char**) new char* [m_env.size()+1]) == NULL) {
         m_err << "Cannot allocate memory for " << m_env.size()+1 << " environment entries";
@@ -1348,8 +1365,11 @@ int CmdOptions::init_cenv()
     }
 
     int i = 0;
-    for (MapEnvIterator it = m_env.begin(), end = m_env.end(); it != end; ++it, ++i)
-        m_cenv[i] = it->second.c_str();
+    for (MapEnvIterator it = m_env.begin(), end = m_env.end(); it != end; ++it)
+        if (it->second.empty()) // Unset the env variable
+            continue;
+        else
+            m_cenv[i++] = it->second.c_str();
     m_cenv[i] = NULL;
 
     return 0;
