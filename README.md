@@ -37,7 +37,7 @@ over OS processes than built-in `erlang:open_port/2` command with a
 `{spawn, Command}` option, and performs proper OS child process cleanup
 when the emulator exits. 
 
-The `erlexec` application has been in use in production Erlang and Elixir systems,
+The `erlexec` application has been in production use by Erlang and Elixir systems,
 and is stable.
 
 See http://saleyn.github.com/erlexec for more information.
