@@ -100,7 +100,7 @@
     | {user, string()|binary()}
     | {limit_users, [string()|binary(), ...]}
     | {portexe, string()|binary()}
-    | {env, [{string()|binary(), string()|binary()}, ...]}.
+    | {env, [{string()|binary(), string()|binary()|false}, ...]}.
 -export_type([exec_option/0, exec_options/0]).
 %% Options passed to the exec process at startup. They can be specified in the
 %% `sys.config' file for the `erlexec' application to customize application
@@ -134,7 +134,8 @@
 %%     <dd>Extend environment of the port program by using `Env' specification.
 %%         `Env' should be a list of tuples `{Name, Val}', where Name is the
 %%         name of an environment variable, and Val is the value it is to have
-%%         in the spawned port process.</dd>
+%%         in the spawned port process. If Val is `false', then the `Name'
+%%         environment variable is unset.</dd>
 %% </dl>.
 
 -type cmd() :: binary() | string() | [string()].
@@ -182,7 +183,7 @@
     | link
     | {executable, string()|binary()}
     | {cd, WorkDir::string()|binary()}
-    | {env, [string() | {Name::string()|binary(), Val::string()|binary()}, ...]}
+    | {env, [string() | clear | {Name::string()|binary(), Val::string()|binary()|false}, ...]}
     | {kill, KillCmd::string()|binary()}
     | {kill_timeout, Sec::non_neg_integer()}
     | kill_group
@@ -228,11 +229,13 @@
 %%         string, on Unix the `Executable' specifies a replacement shell
 %%         for the default `/bin/sh'.</dd>
 %% <dt>{cd, WorkDir}</dt><dd>Working directory</dd>
-%% <dt>{env, Env}</dt>
+%% <dt>{env, Env :: [{Name,Value}|string()|clear]}</dt>
 %%     <dd>List of "VAR=VALUE" environment variables or
-%%         list of {Var, Value} tuples. Both representations are
-%%         used in other parts of Erlang/OTP
-%%         (e.g. os:getenv/0, erlang:open_port/2)</dd>
+%%         list of {Name, Value} tuples or strings (like "NAME=VALUE") or `clear'.
+%%         `clear' will clear environment of a spawned child OS process
+%%         (so that it doesn't inherit parent's environment).
+%%         If `Value' is `false' then the `Var' env variable is unset.
+%%     </dd>
 %% <dt>{kill, KillCmd}</dt>
 %%     <dd>This command will be used for killing the process. After
 %%         a 5-sec timeout if the process is still alive, it'll be
@@ -1105,9 +1108,10 @@ is_port_command({kill, Pid, Sig}, _Pid, _State) when is_pid(Pid),is_integer(Sig)
 is_port_command({debug, Level}=T, _Pid, _State) when is_integer(Level),Level >= 0,Level =< 10 ->
     {ok, T, undefined, undefined, []}.
 
-parse_env([])        -> [];
-parse_env([{K,V}|T]) -> [{to_list(K), to_list(V)}|parse_env(T)];
-parse_env([H|T])     -> [to_list(H)|parse_env(T)].
+parse_env([])            -> [];
+parse_env([{K,false}|T]) -> [{to_list(K), false}     |parse_env(T)]; %% Remove the env var K
+parse_env([{K,V}|T])     -> [{to_list(K), to_list(V)}|parse_env(T)];
+parse_env([H|T])         -> [to_list(H)|parse_env(T)].
 
 check_cmd_options([monitor|T], Pid, State, PortOpts, OtherOpts) ->
     check_cmd_options(T, Pid, State, PortOpts, OtherOpts);
@@ -1122,8 +1126,9 @@ check_cmd_options([{cd, Dir}=H|T], Pid, State, PortOpts, OtherOpts) when is_list
 check_cmd_options([{env, Env}=H|T], Pid, State, PortOpts, OtherOpts) when is_list(Env) ->
     case lists:filter(fun(S) when is_list(S); is_binary(S) -> false;
                          ({S1,S2}) when (is_list(S1) orelse is_binary(S1)) andalso
-                                        (is_list(S2) orelse is_binary(S2)) -> false;
-                         (_) -> true
+                                        (is_list(S2) orelse is_binary(S2) orelse S2 == false) -> false;
+                         (clear)   -> false;
+                         (_)       -> true
                       end, Env) of
     [] -> check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
     L  -> throw({error, {invalid_env_value, L}})
