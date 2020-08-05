@@ -464,7 +464,8 @@ pid_t start_child(CmdOptions& op, std::string& error)
             *p++ = "-c";
         }
 
-        for (auto it = op.cmd().begin(), end = op.cmd().end(); it != end; ++it)
+        for (std::list<std::string>::const_iterator it = op.cmd().begin(), end = op.cmd().end();
+             it != end; ++it)
             *p++ = it->c_str();
 
         *p++ = (char*)NULL;
