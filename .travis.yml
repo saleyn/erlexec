@@ -2,9 +2,23 @@ language: erlang
 otp_release:
   - 22.0
   - 23.0
-compiler: g++
-os:
-  - linux
+matrix:
+  include:
+    - os: linux
+      compiler: g++
+      addons:
+        apt:
+          sources:  ['ubuntu-toolchain-r-test']
+          packages: ['g++-4.8']
+      env: COMPILER=g++-4.8
+
+    - os: linux
+      compiler: g++
+      addons:
+        apt:
+          sources: ['ubuntu-toolchain-r-test']
+          packages: ['g++-9']
+      env: COMPILER=g++-9
   #- osx       # MacOS builds are not available on Travis
 
 #  addons:
@@ -20,5 +34,5 @@ before_install:
 - sudo apt-get update -qq
 
 install:
-- sudo apt-get install -qq g++-9
-- export CXX="g++-9"
+- export CXX="$COMPILER"
+- sudo apt-get install -qq $CXX

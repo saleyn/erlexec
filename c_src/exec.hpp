@@ -96,7 +96,11 @@ enum RedirectType {
     REDIRECT_NULL   = -7    // Redirect input/output to /dev/null
 };
 
-enum class FileOpenFlag {
+enum
+#if __cplusplus >= 201103L
+class
+#endif
+FileOpenFlag {
     READ     = 0,
     APPEND   = O_APPEND,
     TRUNCATE = O_TRUNC
