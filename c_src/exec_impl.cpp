@@ -1347,7 +1347,7 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
 int CmdOptions::init_cenv()
 {
     if (m_env.empty()) {
-        m_cenv = m_env_clear ? nullptr : (const char**)environ;
+        m_cenv = m_env_clear ? NULL : (const char**)environ;
         return 0;
     }
 
