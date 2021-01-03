@@ -161,14 +161,19 @@ int main(int argc, char* argv[])
                 exit(0);
             } else if (strcmp(argv[res], "-user") == 0 && res+1 < argc && argv[res+1][0] != '-') {
                 char* run_as_user = argv[++res];
-                struct stat    st;
-                struct passwd *pw = NULL;
+                struct stat st;
                 requested_root    = strcmp(run_as_user, "root") == 0;
-                if ((pw = getpwnam(run_as_user)) == NULL) {
-                    fprintf(stderr, "User %s not found!\r\n", run_as_user);
-                    exit(3);
+                if (requested_root) {
+                    userid = 0;
+                } else {
+                    struct passwd *pw = NULL;
+                    if ((pw = getpwnam(run_as_user)) == NULL) {
+                        fprintf(stderr, "User %s not found!\r\n", run_as_user);
+                        exit(3);
+                    }
+                    userid = pw->pw_uid;
                 }
-                run_as_euid = userid = pw->pw_uid;
+                run_as_euid = userid;
                 if (stat(argv[0], &st) < 0) {
                     fprintf(stderr, "Cannot stat the %s file: %s\r\n", argv[0],
                                     strerror(errno));
