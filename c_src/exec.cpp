@@ -90,7 +90,7 @@ pid_t           ei::self_pid;
 bool    process_command();
 void    initialize(int userid, bool use_alt_fds, bool is_root,
                    bool requested_root);
-int     finalize(fd_set& read_fds);
+int     finalize(fd_set& readfds);
 
 //-------------------------------------------------------------------------
 // Local Functions
