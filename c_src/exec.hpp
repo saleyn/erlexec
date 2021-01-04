@@ -328,7 +328,7 @@ public:
         m_std_stream[i].clear();
     }
 
-    int ei_decode(ei::Serializer& ei, bool getCmd = false);
+    int ei_decode(bool getCmd = false);
     int init_cenv();
 };
 
