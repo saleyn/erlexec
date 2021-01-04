@@ -483,7 +483,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
         }
 
         const char* executable = op.executable().empty()
-            ? (const char*)argv[0] : op.executable().c_str();
+            ? argv[0] : op.executable().c_str();
 
         // Execute the process
         if (execve(executable, (char* const*)argv, op.env()) < 0) {
