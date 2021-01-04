@@ -702,7 +702,6 @@ void close_stdin(CmdInfo& ci)
     close(fd);
     fd = REDIRECT_CLOSE;
     ci.stdin_queue.clear();
-    return;
 }
 
 //------------------------------------------------------------------------------
