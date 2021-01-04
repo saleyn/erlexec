@@ -239,7 +239,7 @@ int main(int argc, char* argv[])
         if (interrupted || cnt == 0) {
             now.now();
             if (check_children(now, terminated, pipe_valid) < 0) {
-                terminated = 11;
+                terminated = true;
                 break;
             }
         } else if (cnt < 0) {
@@ -250,14 +250,14 @@ int main(int argc, char* argv[])
                 continue;
             }
             fprintf(stderr, "Error %d in select: %s\r\n", errno, strerror(errno));
-            terminated = 12;
+            terminated = true;
             break;
         } else if ( FD_ISSET (sigchld_pipe[0], &readfds) ) {
             if (!process_sigchld())
                 break;
             now.now();
             if (check_children(now, terminated, pipe_valid) < 0) {
-                terminated = 13;
+                terminated = true;
                 break;
             }
         } else if ( FD_ISSET (eis.read_handle(), &readfds) ) {
@@ -288,7 +288,7 @@ bool process_command()
         if (debug)
             fprintf(stderr, "Broken Erlang command pipe (%d): %s [line:%d]\r\n",
                 errno, strerror(errno), __LINE__);
-        terminated = errno;
+        terminated = (errno != 0);
         return false;
     }
 
@@ -298,7 +298,7 @@ bool process_command()
         (eis.decodeInt(transId)) < 0 ||
         (arity = eis.decodeTupleSize()) < 1)
     {
-        terminated = 12;
+        terminated = true;
         return false;
     }
 
@@ -308,7 +308,7 @@ bool process_command()
     /* Determine the command */
     if ((int)(cmd = (CmdTypeT) eis.decodeAtomIndex(cmds, command)) < 0) {
         if (send_error_str(transId, false, "Unknown command: %s", command.c_str()) < 0) {
-            terminated = 13;
+            terminated = true;
             return false;
         }
         return true;
@@ -316,7 +316,7 @@ bool process_command()
 
     switch (cmd) {
         case SHUTDOWN: {
-            terminated = 0;
+            terminated = false;
             return false;
         }
         case MANAGE: {
@@ -604,8 +604,8 @@ int finalize(fd_set& readfds)
     if (debug) fprintf(stderr, "Setting alarm to %d seconds\r\n", alarm_max_time);
     alarm(alarm_max_time);  // Die in <alarm_max_time> seconds if not done
 
-    int old_terminated = terminated;
-    terminated = 0;
+    int old_terminated = terminated ? 1 : 0;
+    terminated = false;
 
     kill(0, SIGTERM); // Kill all children in our process group
 
