@@ -278,13 +278,13 @@ int main(int argc, char* argv[])
 
 bool process_command()
 {
-    int  err, arity;
+    int  arity;
     long transId;
     std::string command;
 
     // Note that if we were using non-blocking reads, we'd also need to check
     // for errno EWOULDBLOCK.
-    if ((err = eis.read()) < 0) {
+    if (eis.read() < 0) {
         if (debug)
             fprintf(stderr, "Broken Erlang command pipe (%d): %s [line:%d]\r\n",
                 errno, strerror(errno), __LINE__);
