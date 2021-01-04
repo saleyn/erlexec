@@ -326,7 +326,7 @@ bool process_command()
             pid_t      realpid;
             int        ret;
 
-            if (arity != 3 || (eis.decodeInt(pid)) < 0 || po.ei_decode(eis) < 0 || pid <= 0) {
+            if (arity != 3 || (eis.decodeInt(pid)) < 0 || po.ei_decode() < 0 || pid <= 0) {
                 send_error_str(transId, true, "badarg");
                 return true;
             }
@@ -354,7 +354,7 @@ bool process_command()
             // {run, Cmd::string(), Options::list()}
             CmdOptions po(run_as_euid);
 
-            if (arity != 3 || po.ei_decode(eis, true) < 0) {
+            if (arity != 3 || po.ei_decode(true) < 0) {
                 send_error_str(transId, false, po.error().c_str());
                 break;
             } else if (po.cmd().empty() || po.cmd().front().empty()) {

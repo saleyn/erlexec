@@ -1002,7 +1002,7 @@ int set_nonblock_flag(pid_t pid, int fd, bool value)
 }
 
 //------------------------------------------------------------------------------
-int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
+int CmdOptions::ei_decode(bool getCmd)
 {
     // {Cmd::string()|binary()|[string()|binary()], [Option]}
     //      Option = {env, Strings::[string()]} | {cd, Dir::string()|binary()}
