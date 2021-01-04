@@ -140,8 +140,7 @@ int main(int argc, char* argv[])
 
     // Process command arguments and do initialization
     if (argc > 1) {
-        int res;
-        for(res = 1; res < argc; res++) {
+        for(int res = 1; res < argc; res++) {
             if (strcmp(argv[res], "-h") == 0 || strcmp(argv[res], "--help") == 0) {
                 usage(argv[0]);
             } else if (strcmp(argv[res], "-debug") == 0) {
