@@ -325,7 +325,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
         );
         if (!op.executable().empty())
             fprintf(stderr, "  Executable: %s\r\n", op.executable().c_str());
-        if (op.cmd().size() > 0) {
+        if (!op.cmd().empty()) {
             int i = 0;
             if (op.shell()) {
                 const char* s = getenv("SHELL");
@@ -1196,7 +1196,7 @@ int CmdOptions::ei_decode(bool getCmd)
                     } else if (type == etTuple && sz == 2) {
                         eis.decodeTupleSize();
                         std::string val;
-                        if (!eis.decodeStringOrBinary(key) && key.size() > 0) {
+                        if (!eis.decodeStringOrBinary(key) && !key.empty()) {
                             bool bval;
                             if (!eis.decodeStringOrBinary(val)) {
                                 res = true;

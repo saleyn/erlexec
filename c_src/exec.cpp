@@ -462,7 +462,7 @@ bool process_command()
                 break;
             }
 
-            if (!data.size()) {
+            if (data.empty()) {
                 if (debug)
                     fprintf(stderr, "Warning: ignoring empty input on stdin of pid %ld.\r\n", pid);
                 break;
@@ -612,9 +612,9 @@ int finalize(fd_set& readfds)
     TimeVal now(TimeVal::NOW);
     TimeVal deadline(now, FINALIZE_DEADLINE_SEC, 0);
 
-    while (children.size() > 0) {
+    while (!children.empty()) {
         now.now();
-        if (children.size() > 0 || !exited_children.empty()) {
+        if (!children.empty() || !exited_children.empty()) {
             bool term = false;
             check_children(now, term, pipe_valid);
         }
@@ -627,7 +627,7 @@ int finalize(fd_set& readfds)
             transient_pids.erase(it);
         }
 
-        if (children.size() == 0)
+        if (children.empty())
             break;
 
         while (true) {
