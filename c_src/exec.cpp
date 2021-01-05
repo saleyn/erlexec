@@ -69,7 +69,7 @@ using namespace ei;
 ei::Serializer ei::eis(/* packet header size */ 2);
 
 int   ei::debug           = 0;
-int   ei::alarm_max_time  = FINALIZE_DEADLINE_SEC + 2;
+int   ei::alarm_max_time  = FINALIZE_DEADLINE_SEC + 5;
 bool  ei::terminated      = false; // indicates that we got a SIGINT / SIGTERM signal
 bool  ei::pipe_valid      = true;
 int   ei::max_fds;
@@ -142,8 +142,7 @@ int main(int argc, char* argv[])
 
     // Process command arguments and do initialization
     if (argc > 1) {
-        int res;
-        for(res = 1; res < argc; res++) {
+        for(int res = 1; res < argc; res++) {
             if (strcmp(argv[res], "-h") == 0 || strcmp(argv[res], "--help") == 0) {
                 usage(argv[0]);
             } else if (strcmp(argv[res], "-debug") == 0) {
@@ -163,14 +162,19 @@ int main(int argc, char* argv[])
                 exit(0);
             } else if (strcmp(argv[res], "-user") == 0 && res+1 < argc && argv[res+1][0] != '-') {
                 char* run_as_user = argv[++res];
-                struct stat    st;
-                struct passwd *pw = NULL;
+                struct stat st;
                 requested_root    = strcmp(run_as_user, "root") == 0;
-                if ((pw = getpwnam(run_as_user)) == NULL) {
-                    DEBUG(true, "User %s not found!", run_as_user);
-                    exit(3);
+                if (requested_root) {
+                    userid = 0;
+                } else {
+                    struct passwd *pw = NULL;
+                    if ((pw = getpwnam(run_as_user)) == NULL) {
+                        DEBUG(true, "User %s not found!", run_as_user);
+                        exit(3);
+                    }
+                    userid = pw->pw_uid;
                 }
-                run_as_euid = userid = pw->pw_uid;
+                run_as_euid = userid;
                 if (stat(argv[0], &st) < 0) {
                     DEBUG(true, "Cannot stat the %s file: %s", argv[0],
                                     strerror(errno));
@@ -273,7 +277,7 @@ int main(int argc, char* argv[])
         if (interrupted || cnt == 0) {
             now.now();
             if (check_children(now, terminated, pipe_valid) < 0) {
-                terminated = 11;
+                terminated = true;
                 break;
             }
         } else if (cnt < 0) {
@@ -283,12 +287,12 @@ int main(int argc, char* argv[])
                 continue;
             }
             DEBUG(true, "Error %d in select: %s", errno, strerror(errno));
-            terminated = 12;
+            terminated = true;
             break;
         }
-        else
+        else // Check for SIGCHLD
     #if defined(USE_POLL) && USE_POLL > 0
-        if (fds[1].revents & POLLIN)
+        if (fds[1].revents & (POLLIN|POLLHUP))
     #else
         if (FD_ISSET(sigchld_pipe[0], &readfds))
     #endif
@@ -297,13 +301,13 @@ int main(int argc, char* argv[])
                 break;
             now.now();
             if (check_children(now, terminated, pipe_valid) < 0) {
-                terminated = 13;
+                terminated = true;
                 break;
             }
         }
-        else
+        else // Check for command from Erlang or hangup
     #if defined(USE_POLL) && USE_POLL > 0
-        if (fds[0].revents & POLLIN)
+        if (fds[0].revents & (POLLIN|POLLHUP))
     #else
         if (FD_ISSET(eis.read_handle(), &readfds))
     #endif
@@ -329,16 +333,21 @@ int main(int argc, char* argv[])
 
 bool process_command()
 {
-    int  err, arity;
+    int  arity;
     long transId;
     std::string command;
 
-    // Note that if we were using non-blocking reads, we'd also need to check
-    // for errno EWOULDBLOCK.
-    if ((err = eis.read()) < 0) {
-        DEBUG(debug, "Broken Erlang command pipe (%d): %s [line:%d]",
-                errno, strerror(errno), __LINE__);
-        terminated = errno;
+    auto rc = eis.read();
+    if  (rc <= 0) {
+        // If we were using non-blocking reads, we'd also need to check
+        // for EAGAIN, that is not an error.
+        if (rc < 0 && errno == EAGAIN)
+            return true;
+
+        int err = errno;
+        DEBUG(debug, "Broken Erlang command pipe (%d): %s",
+              errno, strerror(errno));
+        terminated = (err != 0);
         return false;
     }
 
@@ -348,7 +357,7 @@ bool process_command()
         (eis.decodeInt(transId)) < 0 ||
         (arity = eis.decodeTupleSize()) < 1)
     {
-        terminated = 12;
+        terminated = true;
         return false;
     }
 
@@ -358,7 +367,7 @@ bool process_command()
     /* Determine the command */
     if ((int)(cmd = (CmdTypeT) eis.decodeAtomIndex(cmds, command)) < 0) {
         if (send_error_str(transId, false, "Unknown command: %s", command.c_str()) < 0) {
-            terminated = 13;
+            terminated = true;
             return false;
         }
         return true;
@@ -366,7 +375,7 @@ bool process_command()
 
     switch (cmd) {
         case SHUTDOWN: {
-            terminated = 0;
+            terminated = false;
             return false;
         }
         case MANAGE: {
@@ -376,7 +385,7 @@ bool process_command()
             pid_t      realpid;
             int        ret;
 
-            if (arity != 3 || (eis.decodeInt(pid)) < 0 || po.ei_decode(eis) < 0 || pid <= 0) {
+            if (arity != 3 || (eis.decodeInt(pid)) < 0 || po.ei_decode() < 0 || pid <= 0) {
                 send_error_str(transId, true, "badarg");
                 return true;
             }
@@ -404,7 +413,7 @@ bool process_command()
             // {run, Cmd::string(), Options::list()}
             CmdOptions po(run_as_euid);
 
-            if (arity != 3 || po.ei_decode(eis, true) < 0) {
+            if (arity != 3 || po.ei_decode(true) < 0) {
                 send_error_str(transId, false, po.error().c_str());
                 break;
             } else if (po.cmd().empty() || po.cmd().front().empty()) {
@@ -510,7 +519,7 @@ bool process_command()
                 break;
             }
 
-            if (!data.size()) {
+            if (data.empty()) {
                 DEBUG(debug, "Warning: ignoring empty input on stdin of pid %ld.", pid);
                 break;
             }
@@ -655,17 +664,17 @@ int finalize()
     DEBUG(debug, "Setting alarm to %d seconds", alarm_max_time);
     alarm(alarm_max_time);  // Die in <alarm_max_time> seconds if not done
 
-    int old_terminated = terminated;
-    terminated = 0;
+    int old_terminated = terminated ? 1 : 0;
+    terminated = false;
 
     kill(0, SIGTERM); // Kill all children in our process group
 
     TimeVal now(TimeVal::NOW);
     TimeVal deadline(now, FINALIZE_DEADLINE_SEC, 0);
 
-    while (children.size() > 0) {
+    while (!children.empty()) {
         now.now();
-        if (children.size() > 0 || !exited_children.empty()) {
+        if (!children.empty() || !exited_children.empty()) {
             bool term = false;
             check_children(now, term, pipe_valid);
         }
@@ -678,7 +687,7 @@ int finalize()
             transient_pids.erase(it);
         }
 
-        if (children.size() == 0)
+        if (children.empty())
             break;
 
         #if defined(USE_POLL) && USE_POLL > 0
@@ -692,11 +701,11 @@ int finalize()
             if (deadline < timeout)
                 break;
 
-            int     cnt;
+            int cnt;
 
             #if defined(USE_POLL) && USE_POLL > 0
             fds.resize(1);
-            fds[0]  = pollfd{sigchld_pipe[0], POLLIN, 0};
+            fds[0]  = pollfd{sigchld_pipe[0], POLLIN|POLLERR, 0};
             auto ts = deadline - timeout; 
             while ((cnt = poll(&fds[0], fds.size(), ts.millisec())) < 0 && errno == EINTR);
             #else
@@ -711,15 +720,14 @@ int finalize()
                 DEBUG(true, "Error in finalizing pselect(2): %s", strerror(errno));
                 break;
             }
-            else
-            #if defined(USE_POLL) && USE_POLL > 0
-            if (cnt > 0 && (fds[0].revents & POLLIN))
-            #else
-            if (cnt > 0 && FD_ISSET(sigchld_pipe[0], &readfds) )
-            #endif
-            {
-                if (!process_sigchld())
-                    break;
+            else if (cnt) {
+                #if defined(USE_POLL) && USE_POLL > 0
+                if (fds[0].revents & (POLLIN|POLLHUP))
+                #else
+                if (FD_ISSET(sigchld_pipe[0], &readfds))
+                #endif
+                    if (!process_sigchld())
+                        break;
             }
         }
     }
