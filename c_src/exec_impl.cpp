@@ -67,8 +67,8 @@ int read_sigchld(pid_t& child)
     do    { n = read(sigchld_pipe[0], p, e-p); if (n > 0) p += n; }
     while ((n < 0 && errno == EINTR) || (n > 0 && p < e));
 
-    if (debug && n < 0 && errno != EAGAIN)
-        fprintf(stderr, "Error reading from sigchld pipe descriptor: %s\r\n", strerror(errno));
+    if (n < 0 && errno != EAGAIN)
+        DEBUG(debug, "Error reading from sigchld pipe descriptor: %s", strerror(errno));
 
     return n <= 0 ? n : p - (char*)&child;
 }
@@ -94,8 +94,7 @@ int set_nice(pid_t pid,int nice, std::string& error)
     if (nice != INT_MAX && setpriority(PRIO_PROCESS, pid, nice) < 0) {
         err.write("Cannot set priority of pid %d to %d", pid, nice);
         error = err.c_str();
-        if (debug)
-            fprintf(stderr, "%s\r\n", error.c_str());
+        DEBUG(debug, "%s", error.c_str());
         return -1;
     }
     return 0;
@@ -110,8 +109,7 @@ bool set_pid_winsz(CmdInfo& ci, int rows, int cols)
     ws.ws_row = rows;
     ws.ws_col = cols;
     r = ioctl(fd, TIOCSWINSZ, &ws);
-    if (debug)
-        fprintf(stderr, "TIOCSWINSZ rows=%d cols=%d ret=%d\n", rows, cols, r);
+    DEBUG(debug, "TIOCSWINSZ rows=%d cols=%d ret=%d\n", rows, cols, r);
     
     return true;
 }
@@ -131,14 +129,12 @@ bool process_pid_input(CmdInfo& ci)
 
         while ((n = write(fd, p, len)) < 0 && errno == EINTR);
 
-        if (debug) {
-            if (n < 0)
-                fprintf(stderr, "Error writing %d bytes to stdin (fd=%d) of pid %d: %s\r\n",
-                    len, fd, ci.cmd_pid, strerror(errno));
-            else
-                fprintf(stderr, "Wrote %d/%d bytes to stdin (fd=%d) of pid %d\r\n",
-                    n, len, fd, ci.cmd_pid);
-        }
+        if (n < 0)
+            DEBUG(debug, "Error writing %d bytes to stdin (fd=%d) of pid %d: %s",
+                len, fd, ci.cmd_pid, strerror(errno));
+        else
+            DEBUG(debug, "Wrote %d/%d bytes to stdin (fd=%d) of pid %d",
+                n, len, fd, ci.cmd_pid);
 
         if (n > 0 && n < len) {
             ci.stdin_wr_pos += n;
@@ -169,9 +165,8 @@ void process_pid_output(CmdInfo& ci, int stream_id, int maxsize)
     if (fd >= 0) {
         for(int got=0, n=sizeof(buf); got < maxsize && n == sizeof(buf); got += n) {
             while ((n = read(fd, buf, sizeof(buf))) < 0 && errno == EINTR);
-            if (debug > 1)
-                fprintf(stderr, "Read %d bytes from pid %d's %s (fd=%d): %s\r\n",
-                    n, ci.cmd_pid, stream_name(stream_id), fd, n > 0 ? "ok" : strerror(errno));
+            DEBUG(debug > 1, "Read %d bytes from pid %d's %s (fd=%d): %s",
+                  n, ci.cmd_pid, stream_name(stream_id), fd, n > 0 ? "ok" : strerror(errno));
             if (n > 0) {
                 send_ospid_output(ci.cmd_pid, stream_name(stream_id), buf, n);
                 if (n < (int)sizeof(buf))
@@ -179,11 +174,11 @@ void process_pid_output(CmdInfo& ci, int stream_id, int maxsize)
             } else if (n < 0 && errno == EAGAIN)
                 break;
             else if (n <= 0) {
-                if (debug)
-                    fprintf(stderr, "Eof reading pid %d's %s, closing fd=%d: %s\r\n",
-                        ci.cmd_pid, stream_name(stream_id), fd, strerror(errno));
+                int fdc = fd;
                 close(fd);
                 fd = REDIRECT_CLOSE;
+                DEBUG(debug, "Eof reading pid %d's %s, closing fd=%d (%d)",
+                      ci.cmd_pid, stream_name(stream_id), fdc, ci.stream_fd[stream_id]);
                 dead = true;
                 break;
             }
@@ -221,8 +216,7 @@ int getpty(int& fdmp, ei::StringBuffer<128>& err) {
 
     fdmp = fdm;
 
-    if (debug)
-        fprintf(stderr, "  Opened PTY master=%d\r\n", fdm);
+    DEBUG(debug, "  Opened PTY master=%d", fdm);
 
     return 0;
 }
@@ -262,15 +256,13 @@ pid_t start_child(CmdOptions& op, std::string& error)
             case REDIRECT_CLOSE:
                 sfd[RD] = cfd;
                 sfd[WR] = cfd;
-                if (debug)
-                    fprintf(stderr, "  Closing %s\r\n", stream_name(i));
+                DEBUG(debug, "  Closing %s", stream_name(i));
                 break;
             case REDIRECT_STDOUT:
             case REDIRECT_STDERR:
                 sfd[crw] = cfd;
-                if (debug)
-                    fprintf(stderr, "  Redirecting [%s -> %s]\r\n", stream_name(i),
-                            fd_type(cfd).c_str());
+                DEBUG(debug, "  Redirecting [%s -> %s]",
+                      stream_name(i), fd_type(cfd).c_str());
                 break;
             case REDIRECT_ERL:
                 if (op.pty()) {
@@ -281,9 +273,8 @@ pid_t start_child(CmdOptions& op, std::string& error)
                         sfd[WR] = -1;
                         sfd[RD] = fdm;
                     }
-                    if (debug)
-                        fprintf(stderr, "  Redirecting [%s -> pipe:{r=%d,w=%d}] (PTY)\r\n",
-                            stream_name(i), sfd[0], sfd[1]);
+                    DEBUG(debug, "  Redirecting [%s -> pipe:{r=%d,w=%d}] (PTY)",
+                          stream_name(i), sfd[0], sfd[1]);
                 } else if (open_pipe(sfd, stream_name(i), err) < 0) {
                     error = err.c_str();
                     return -1;
@@ -291,9 +282,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
                 break;
             case REDIRECT_NULL:
                 sfd[crw] = dev_null;
-                if (debug)
-                    fprintf(stderr, "  Redirecting [%s -> null]\r\n",
-                            stream_name(i));
+                DEBUG(debug, "  Redirecting [%s -> null]", stream_name(i));
                 break;
             case REDIRECT_FILE: {
                 FileOpenFlag flag = i == STDIN_FILENO   ? READ   :
@@ -311,9 +300,9 @@ pid_t start_child(CmdOptions& op, std::string& error)
     }
 
     if (debug) {
-        fprintf(stderr, "Starting child: '%s' (euid=%d)\r\n"
-                        "  child  = (stdin=%s, stdout=%s, stderr=%s)\r\n"
-                        "  parent = (stdin=%s, stdout=%s, stderr=%s)\r\n",
+        DEBUG(true, "Starting child: '%s' (euid=%d)"
+                    "  child  = (stdin=%s, stdout=%s, stderr=%s)\r\n"
+                    "  parent = (stdin=%s, stdout=%s, stderr=%s)",
             op.cmd().front().c_str(), op.user(),
             fd_type(stream_fd[STDIN_FILENO ][RD]).c_str(),
             fd_type(stream_fd[STDOUT_FILENO][WR]).c_str(),
@@ -323,17 +312,17 @@ pid_t start_child(CmdOptions& op, std::string& error)
             fd_type(stream_fd[STDERR_FILENO][RD]).c_str()
         );
         if (!op.executable().empty())
-            fprintf(stderr, "  Executable: %s\r\n", op.executable().c_str());
+            DEBUG(true, "  Executable: %s", op.executable().c_str());
         if (op.cmd().size() > 0) {
             int i = 0;
             if (op.shell()) {
                 const char* s = getenv("SHELL");
-                fprintf(stderr, "  Args[%d]: %s\r\n", i++, s ? s : "(null)");
-                fprintf(stderr, "  Args[%d]: -c\r\n", i++);
+                DEBUG(true, "  Args[%d]: %s", i++, s ? s : "(null)");
+                DEBUG(true, "  Args[%d]: -c", i++);
             }
             typedef CmdArgsList::const_iterator const_iter;
             for(const_iter it = op.cmd().begin(), end = op.cmd().end(); it != end; ++it)
-                fprintf(stderr, "  Args[%d]: %s\r\n", i++, it->c_str());
+                DEBUG(true, "  Args[%d]: %s", i++, it->c_str());
         } else {
             error = "cannot run empty command";
             return -1;
@@ -356,12 +345,12 @@ pid_t start_child(CmdOptions& op, std::string& error)
             // have to open the pty slave in the child, otherwise TIOCSCTTY will fail later
             r = ptsname_r(fdm, pts_name, sizeof(pts_name));
             if( r < 0 ) {
-                fprintf(stderr, "ptsname_r(%d) failed: %s\n", fdm, strerror(errno));
+                DEBUG(true, "ptsname_r(%d) failed: %s", fdm, strerror(errno));
                 exit(1);
             }
             fds = open(pts_name, O_RDWR);
             if (fds < 0) {
-                fprintf(stderr, "open slave pty %s failed: %s\n", pts_name, strerror(errno));
+                DEBUG(true, "open slave pty %s failed: %s", pts_name, strerror(errno));
                 exit(1);
             }
             for (int i=STDIN_FILENO; i <= STDERR_FILENO; i++) {
@@ -372,9 +361,8 @@ pid_t start_child(CmdOptions& op, std::string& error)
                         sfd[RD] = fds;
                     else
                         sfd[WR] = fds;
-                    if (debug)
-                        fprintf(stderr, "  Redirecting [%s -> pipe:{r=%d,w=%d}] (PTY)\r\n",
-                                stream_name(i), sfd[0], sfd[1]);
+                    DEBUG(debug, "  Redirecting [%s -> pipe:{r=%d,w=%d}] (PTY)",
+                          stream_name(i), sfd[0], sfd[1]);
                 }
             }
         }
@@ -496,8 +484,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
 
     // I am the parent
 
-    if (debug > 1)
-        fprintf(stderr, "Spawned child pid %d\r\n", pid);
+    DEBUG(debug > 1, "Spawned child pid %d", pid);
 
     // Either the parent or the child could use setpgid() to change
     // the process group ID of the child. However, because the scheduling
@@ -513,11 +500,11 @@ pid_t start_child(CmdOptions& op, std::string& error)
 
     if (op.group() != INT_MAX) {
         pid_t gid = op.group() ? op.group() : pid;
-        if (setpgid(pid, gid) == -1 && errno != EACCES && debug)
-            fprintf(stderr, "  Parent failed to set group of pid %d to %d: %s\r\n",
-                    pid, gid, strerror(errno));
-        else if (debug)
-            fprintf(stderr, "  Set group of pid %d to %d\r\n", pid, gid);
+        if (setpgid(pid, gid) == -1 && errno != EACCES)
+            DEBUG(debug, "  Parent failed to set group of pid %d to %d: %s",
+                  pid, gid, strerror(errno));
+        else
+            DEBUG(debug, "  Set group of pid %d to %d", pid, gid);
     }
 
     for (int i=STDIN_FILENO; i <= STDERR_FILENO; i++) {
@@ -527,9 +514,8 @@ pid_t start_child(CmdOptions& op, std::string& error)
 
         int fd = sfd[i==0 ? RD : WR];
         if (fd >= 0 && fd != dev_null) {
-            if (debug)
-                fprintf(stderr, "  Parent closing pid %d pipe %s end (fd=%d)\r\n",
-                    pid, i==STDIN_FILENO ? "reading" : "writing", fd);
+            DEBUG(debug, "  Parent closing pid %d pipe %s end (fd=%d)",
+                  pid, i==STDIN_FILENO ? "reading" : "writing", fd);
             close(fd); // Close stdin/reading or stdout(err)/writing end of the child pipe
         }
 
@@ -538,10 +524,9 @@ pid_t start_child(CmdOptions& op, std::string& error)
             // Make sure the writing end is non-blocking
             set_nonblock_flag(pid, cfd, true);
 
-            if (debug)
-                fprintf(stderr, "  Setup %s end of pid %d %s redirection (fd=%d%s)\r\n",
-                    i==STDIN_FILENO ? "writing" : "reading", pid, stream_name(i), cfd,
-                    (fcntl(cfd, F_GETFL, 0) & O_NONBLOCK) == O_NONBLOCK ? " [non-block]" : "");
+            DEBUG(debug, "  Setup %s end of pid %d %s redirection (fd=%d%s)",
+                  i==STDIN_FILENO ? "writing" : "reading", pid, stream_name(i), cfd,
+                  (fcntl(cfd, F_GETFL, 0) & O_NONBLOCK) == O_NONBLOCK ? " [non-block]" : "");
         }
     }
 
@@ -576,9 +561,9 @@ int stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify)
         CmdOptions co(kill_cmd);
         std::string err;
         ci.kill_cmd_pid = start_child(co, err);
-        if (!err.empty() && debug)
-            fprintf(stderr, "Error executing kill command '%s': %s\r\r",
-                ci.kill_cmd.c_str(), err.c_str());
+        if (!err.empty())
+           DEBUG(debug, "Error executing kill command '%s': %s\r\r",
+                 ci.kill_cmd.c_str(), err.c_str());
 
         if (ci.kill_cmd_pid > 0) {
             transient_pids[ci.kill_cmd_pid] = ci.cmd_pid;
@@ -601,13 +586,11 @@ int stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify)
         const char* spid = ci.kill_group ? "gid" : "pid";
         int         n;
         if (!ci.sigterm && (n = kill_child(pid, SIGTERM, transId, notify)) == 0) {
-            if (debug)
-                fprintf(stderr, "Sent SIGTERM to %s %d (timeout=%ds)\r\n",
-                        spid, abs(pid), ci.kill_timeout);
+            DEBUG(debug, "Sent SIGTERM to %s %d (timeout=%ds)",
+                  spid, abs(pid), ci.kill_timeout);
             ci.deadline.set(now, ci.kill_timeout);
         } else if (!ci.sigkill && (n = kill_child(pid, SIGKILL, 0, false)) == 0) {
-            if (debug)
-                fprintf(stderr, "Sent SIGKILL to %s %d\r\n", spid, abs(pid));
+            DEBUG(debug, "Sent SIGKILL to %s %d", spid, abs(pid));
             ci.deadline.clear();
             ci.sigkill = true;
         } else {
@@ -615,8 +598,7 @@ int stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify)
             // Failed to send SIGTERM & SIGKILL to the process - give up
             ci.deadline.clear();
             ci.sigkill = true;
-            if (debug)
-                fprintf(stderr, "Failed to kill %s %d - leaving a zombie\r\n", spid, abs(pid));
+            DEBUG(debug, "Failed to kill %s %d - leaving a zombie", spid, abs(pid));
             MapChildrenT::iterator it = children.find(ci.cmd_pid);
             if (it != children.end())
                 erase_child(it);
@@ -694,9 +676,8 @@ void close_stdin(CmdInfo& ci)
     int& fd = ci.stream_fd[STDIN_FILENO];
 
     if (fd < 0) return;
-    if (debug)
-        fprintf(stderr, "Eof writing pid %d's stdin, closing fd=%d: %s\r\n",
-                ci.cmd_pid, fd, strerror(errno));
+    DEBUG(debug, "Eof writing pid %d's stdin, closing fd=%d: %s",
+          ci.cmd_pid, fd, strerror(errno));
     ci.stdin_wr_pos = 0;
     close(fd);
     fd = REDIRECT_CLOSE;
@@ -709,8 +690,7 @@ void erase_child(MapChildrenT::iterator& it)
 {
     for (int i=STDIN_FILENO; i<=STDERR_FILENO; i++)
         if (it->second.stream_fd[i] >= 0) {
-            if (debug)
-                fprintf(stderr, "Closing pid %d's %s\r\n", it->first, stream_name(i));
+            DEBUG(debug, "Closing pid %d's %s", it->first, stream_name(i));
             close(it->second.stream_fd[i]);
         }
 
@@ -720,16 +700,14 @@ void erase_child(MapChildrenT::iterator& it)
 //------------------------------------------------------------------------------
 int check_children(const TimeVal& now, bool& isTerminated, bool notify)
 {
-    if (debug > 2)
-        fprintf(stderr, "Checking %ld running children (exited count=%ld)\r\n",
-            children.size(), exited_children.size());
+    DEBUG(debug > 2, "Checking %ld running children (exited count=%ld)",
+          children.size(), exited_children.size());
 
     for (MapChildrenT::iterator it=children.begin(), end=children.end(); !isTerminated && it != end; ++it)
         check_child(now, it->first, it->second);
 
-    if (debug > 2)
-        fprintf(stderr, "Checking %ld exited children (notify=%d)\r\n",
-            exited_children.size(), notify);
+    DEBUG(debug > 2, "Checking %ld exited children (notify=%d)",
+          exited_children.size(), notify);
 
     // For each process info in the <exited_children> queue deliver it to the Erlang VM
     // and remove it from the managed <children> map.
@@ -739,7 +717,7 @@ int check_children(const TimeVal& now, bool& isTerminated, bool notify)
         MapKillPidT::iterator j;
 
         if (i != children.end()) {
-            for(int stream_id=STDOUT_FILENO; stream_id <= STDERR_FILENO; ++i)
+            for(int stream_id=STDOUT_FILENO; stream_id <= STDERR_FILENO; ++stream_id)
                 process_pid_output(i->second, stream_id, INT_MAX);
             // Override status code if termination was requested by Erlang
             PidStatusT ps(it->first,
@@ -790,13 +768,11 @@ void check_child(const TimeVal& now, pid_t pid, CmdInfo& cmd)
             if (WIFEXITED(status) || WIFSIGNALED(status)) {
                 add_exited_child(pid <= 0 ? n : pid, status);
             } else if (WIFSTOPPED(status)) {
-                if (debug)
-                    fprintf(stderr, "Pid %d %swas stopped by delivery of a signal %d\r\n",
-                        pid, cmd.managed ? "(managed) " : "", WSTOPSIG(status));
+                DEBUG(debug, "Pid %d %swas stopped by delivery of a signal %d",
+                      pid, cmd.managed ? "(managed) " : "", WSTOPSIG(status));
             } else if (WIFCONTINUED(status)) {
-                if (debug)
-                    fprintf(stderr, "Pid %d %swas resumed by delivery of SIGCONT\r\n",
-                        pid, cmd.managed ? "(managed) " : "");
+                DEBUG(debug, "Pid %d %swas resumed by delivery of SIGCONT",
+                      pid, cmd.managed ? "(managed) " : "");
             }
         }
     } else if (n < 0 && errno == ESRCH) {
@@ -818,10 +794,8 @@ void check_child_exit(pid_t pid)
 
     while ((ret = waitpid(pid, &status, WNOHANG)) < 0 && errno == EINTR);
 
-    if (debug)
-        fprintf(stderr,
-            "* Process %d (ret=%d, status=%d, exited_count=%ld%s%s)\r\n",
-            pid, ret, status, exited_children.size(),
+    DEBUG(debug, "* Process %d (ret=%d, status=%d, exited_count=%ld%s%s)",
+          pid, ret, status, exited_children.size(),
             ret > 0 && WIFEXITED(status) ? " [exited]":"",
             ret > 0 && WIFSIGNALED(status) ? " [signaled]":"");
 
@@ -934,10 +908,9 @@ int open_file(const char* file, FileOpenFlag flag, const char* stream,
         err.write("Failed to redirect %s to file: %s", stream, strerror(errno));
         return -1;
     }
-    if (debug)
-        fprintf(stderr, "  Redirecting [%s -> {file:%s, fd:%d}%s]\r\n",
-                stream, file, fd, flag == TRUNCATE ? " (truncate)" :
-                                  flag == APPEND   ? " (append)"   : "");
+    DEBUG(debug, "  Redirecting [%s -> {file:%s, fd:%d}%s]",
+          stream, file, fd, flag == TRUNCATE ? " (truncate)" :
+                            flag == APPEND   ? " (append)"   : "");
 
     return fd;
 }
@@ -955,8 +928,7 @@ int open_pipe(int fds[2], const char* stream, ei::StringBuffer<128>& err)
         err.write("Exceeded number of available file descriptors (fd=%d)", fds[1]);
         return -1;
     }
-    if (debug)
-        fprintf(stderr, "  Redirecting [%s -> pipe:{r=%d,w=%d}]\r\n", stream, fds[0], fds[1]);
+    DEBUG(debug, "  Redirecting [%s -> pipe:{r=%d,w=%d}]", stream, fds[0], fds[1]);
 
     return 0;
 }
@@ -968,15 +940,14 @@ int open_pipe(int fds[2], const char* stream, ei::StringBuffer<128>& err)
 //------------------------------------------------------------------------------
 int erl_exec_kill(pid_t pid, int signal) {
     if (pid == -1 || pid == 0) {
-        if (debug)
-            fprintf(stderr, "kill(%d, %d) attempt prohibited!\r\n", pid, signal);
+        DEBUG(debug, "kill(%d, %d) attempt prohibited!", pid, signal);
         return -1;
     }
 
     int r = kill(pid, signal);
 
-    if (debug && signal > 0)
-        fprintf(stderr, "Called kill(pid=%d, sig=%d) -> %d\r\n", pid, signal, r);
+    if (signal > 0)
+        DEBUG(debug, "Called kill(pid=%d, sig=%d) -> %d", pid, signal, r);
 
     return r;
 }
@@ -995,8 +966,8 @@ int set_nonblock_flag(pid_t pid, int fd, bool value)
     int ret = fcntl(fd, F_SETFL, oldflags);
     if (debug > 3) {
         oldflags = fcntl(fd, F_GETFL, 0);
-        fprintf(stderr, "  Set pid %d's fd=%d to non-blocking mode (flags=%x)\r\n",
-            pid, fd, oldflags);
+        DEBUG(true, "  Set pid %d's fd=%d to non-blocking mode (flags=%x)",
+              pid, fd, oldflags);
     }
 
     return ret;
@@ -1334,11 +1305,9 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
     //if (cmd_is_list && m_shell)
     //    m_shell = false;
 
-    if (debug > 1) {
-        fprintf(stderr, "Parsed cmd '%s' options\r\n  (stdin=%s, stdout=%s, stderr=%s)\r\n",
-            m_cmd.empty() ? "" : m_cmd.front().c_str(),
-            stream_fd_type(0).c_str(), stream_fd_type(1).c_str(), stream_fd_type(2).c_str());
-    }
+    DEBUG(debug > 1, "Parsed cmd '%s' options\r\n  (stdin=%s, stdout=%s, stderr=%s)",
+          m_cmd.empty() ? "" : m_cmd.front().c_str(),
+          stream_fd_type(0).c_str(), stream_fd_type(1).c_str(), stream_fd_type(2).c_str());
 
     return 0;
 }

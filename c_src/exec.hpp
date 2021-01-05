@@ -22,7 +22,7 @@ Date:   2016-11-14
 #include <sys/capability.h>
 #endif
 
-#ifdef USE_POLL
+#if defined(USE_POLL) && USE_POLL > 0
 #include <sys/poll.h>
 #endif
 
@@ -41,7 +41,7 @@ Date:   2016-11-14
 #include <set>
 #include <sstream>
 
-#ifdef USE_POLL
+#if defined(USE_POLL) && USE_POLL > 0
 #include <vector>
 #endif
 
@@ -58,6 +58,15 @@ Date:   2016-11-14
 #if __OpenBSD__ || __APPLE__ || (__NetBSD__ && __NetBSD_Version__ < 600000000)
 #   include <sys/event.h>
 #endif
+
+#define STR_HELPER(x) #x
+#define STR(x) STR_HELPER(x)
+
+#define DEBUG(Cond, Fmt, ...) \
+    do { \
+        if (Cond) \
+            fprintf(stderr, Fmt " [" __FILE__ ":" STR(__LINE__) "]\r\n", ##__VA_ARGS__); \
+    } while(0)
 
 #include <ei.h>
 #include "ei++.hpp"
@@ -214,8 +223,7 @@ inline void gotsigchild(int signal, siginfo_t* si, void* context)
 
     pid_t child = si->si_pid;
 
-    if (debug)
-        fprintf(stderr, "Child process %d exited\r\n", child);
+    DEBUG(debug, "Child process %d exited", child);
 
     write_sigchld(child);
 }
@@ -226,8 +234,7 @@ inline void gotsignal(int signal)
         terminated = true;
     if (signal == SIGPIPE)
         pipe_valid = false;
-    if (debug)
-        fprintf(stderr, "Got signal: %d\r\n", signal);
+    DEBUG(debug, "Got signal: %d", signal);
 }
 
 //-------------------------------------------------------------------------
@@ -360,7 +367,7 @@ struct CmdInfo {
     bool            managed;        // <true> if this pid is started externally, but managed by erlexec
     int             stream_fd[3];   // Pipe fd getting   process's stdin/stdout/stderr
     int             stdin_wr_pos;   // Offset of the unwritten portion of the head item of stdin_queue
-#ifdef USE_POLL
+#if defined(USE_POLL) && USE_POLL > 0
     int             poll_fd_idx[3]; // Indexes to the pollfd structure in the poll array
 #endif
     std::list<std::string> stdin_queue;
@@ -397,7 +404,7 @@ struct CmdInfo {
         , success_code(_success_code)
         , managed(_managed)
         , stdin_wr_pos(0)
-        #ifdef USE_POLL
+        #if defined(USE_POLL) && USE_POLL > 0
         , poll_fd_idx{-1,-1,-1}
         #endif
     {
@@ -412,14 +419,14 @@ struct CmdInfo {
 
         if (i == STDIN_FILENO) {
             ok = stream_fd[i] >= 0 && stdin_wr_pos > 0;
-            if (ok && debug > 2)
-                fprintf(stderr, "Pid %d adding stdin available notification (fd=%d, pos=%d)\r\n",
-                    cmd_pid, stream_fd[i], stdin_wr_pos);
+            if (ok)
+                DEBUG(debug > 2, "Pid %d adding stdin available notification (fd=%d, pos=%d)",
+                      cmd_pid, stream_fd[i], stdin_wr_pos);
             fds = writefds;
         } else {
             ok = stream_fd[i] >= 0;
-            if (ok && debug > 2)
-                fprintf(stderr, "Pid %d adding stdout checking (fd=%d)\r\n", cmd_pid, stream_fd[i]);
+            if (ok)
+                DEBUG(debug > 2, "Pid %d adding stdout checking (fd=%d)", cmd_pid, stream_fd[i]);
             fds = readfds;
         }
 
@@ -441,30 +448,27 @@ struct CmdInfo {
             process_pid_output(*this, i);
     }
 
-#ifdef USE_POLL
+#if defined(USE_POLL) && USE_POLL > 0
      void include_stream_fd(std::vector<pollfd>& v) {
         poll_fd_idx[STDIN_FILENO]  = -1;
         poll_fd_idx[STDOUT_FILENO] = -1;
         poll_fd_idx[STDERR_FILENO] = -1;
 
         if (stream_fd[STDIN_FILENO] >= 0 && stdin_wr_pos > 0) {
-            if (debug > 2)
-                fprintf(stderr, "Pid %d adding stdin available notification (fd=%d, pos=%d)\r\n",
-                        cmd_pid, stream_fd[STDIN_FILENO], stdin_wr_pos);
+            DEBUG(debug > 2, "Pid %d adding stdin available notification (fd=%d, pos=%d)",
+                  cmd_pid, stream_fd[STDIN_FILENO], stdin_wr_pos);
             v.push_back(pollfd{stream_fd[STDIN_FILENO], POLLOUT, 0});
             poll_fd_idx[STDIN_FILENO] = v.size()-1;
         }
         if (stream_fd[STDOUT_FILENO] >= 0) {
-            if (debug > 2)
-                fprintf(stderr, "Pid %d adding stdout checking (fd=%d)\r\n",
-                        cmd_pid, stream_fd[STDOUT_FILENO]);
+            DEBUG(debug > 2, "Pid %d adding stdout checking (fd=%d)",
+                  cmd_pid, stream_fd[STDOUT_FILENO]);
             v.push_back(pollfd{stream_fd[STDOUT_FILENO], POLLIN, 0});
             poll_fd_idx[STDOUT_FILENO] = v.size()-1;
         }
         if (stream_fd[STDERR_FILENO] >= 0) {
-            if (debug > 2)
-                fprintf(stderr, "Pid %d adding stderr checking (fd=%d)\r\n",
-                        cmd_pid, stream_fd[STDERR_FILENO]);
+            DEBUG(debug > 2, "Pid %d adding stderr checking (fd=%d)",
+                  cmd_pid, stream_fd[STDERR_FILENO]);
             v.push_back(pollfd{stream_fd[STDERR_FILENO], POLLIN, 0});
             poll_fd_idx[STDERR_FILENO] = v.size()-1;
         }
