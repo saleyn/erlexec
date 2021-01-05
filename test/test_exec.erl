@@ -32,13 +32,13 @@
 %% API
 %%--------------------------------------------------------------------
 run() ->
-    run(1000).
+    run(2000).
 
 run(Count) ->
     run(Count, 30000).
 
 run(Count, Timeout) ->
-    run(Count, Timeout, 1).
+    run(Count, Timeout, 1000).
 
 run(Count, Timeout, DelayMS) when is_integer(Count), is_integer(Timeout), is_integer(DelayMS) ->
     ok = application:ensure_started(erlexec),
