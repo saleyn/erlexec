@@ -364,11 +364,11 @@ namespace ei {
             if (m_wbuf.resize(m_wIdx + n + 16, true) == NULL)
                 throw "out of memory";
         }
-        static int ei_decode_double(const char *buf, int *m_wIdx, double *p);
-        static int ei_encode_double(char *buf, int *m_wIdx, double p);
+        static int ei_decode_double(const char *buf, int *index, double *p);
+        static int ei_encode_double(char *buf, int *index, double p);
         static int ei_x_encode_double(ei_x_buff* x, double d);
-        static int read_exact (int fd, char *buf, size_t len, size_t& offset);
-        static int write_exact(int fd, const char *buf, size_t len, size_t& offset);
+        static int read_exact (int fd, char *buf, size_t len, size_t& got);
+        static int write_exact(int fd, const char *buf, size_t len, size_t& wrote);
     public:
 
         Serializer(int _headerSz = 2)
@@ -592,10 +592,10 @@ namespace ei {
     };
 
     /// Dump content of internal buffer to stream.
-    std::ostream& dump(std::ostream& out, const unsigned char* a_buf = NULL, int n = 0, bool eol = true);
+    std::ostream& dump(std::ostream& os, const unsigned char* buf = NULL, int n = 0, bool eol = true);
     // Write ei_x_buff to stream
     std::ostream& operator<< (std::ostream& os, const ei_x_buff& buf);
-    bool dump(const char* header, std::ostream& out, const ei_x_buff& buf, bool condition);
+    bool dump(const char* header, std::ostream& os, const ei_x_buff& buf, bool condition);
 
 } // namespace
 
