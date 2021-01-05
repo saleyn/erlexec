@@ -10,6 +10,13 @@
                   string:strip(os:cmd(Compiler ++ " -print-sysroot"), right, $\n)}
     end,
 
+UsePoll =
+    case os:getenv("USE_POLL") of
+    false  -> "";
+    "1"    -> " -DUSE_POLL=1";
+    "true" -> " -DUSE_POLL=1"
+    end,
+
 %% Commonly on Linux, compilers report the target triplet as <arch>-<vendor>-linux,
 %% however, Erlang runtime reports and expects it as <arch>-<vendor>-linux-gnu.
 %% Fix by appending "-gnu".
@@ -52,22 +59,22 @@ maps:to_list(lists:foldl(
     end,
     maps:from_list(CONFIG),
     [
-        {port_env,  [{"solaris", "CXXFLAGS", "$CXXFLAGS -DHAVE_SETREUID" ++ X64},
+        {port_env,  [{"solaris", "CXXFLAGS", "$CXXFLAGS -DHAVE_SETREUID" ++ X64 ++ UsePoll},
                      {"solaris", "LDFLAGS",  "$LDFLAGS -lrt" ++ X64},
 
-                     {"darwin",  "CXXFLAGS", "$CXXFLAGS -DHAVE_SETREUID" ++ X64},
+                     {"darwin",  "CXXFLAGS", "$CXXFLAGS -DHAVE_SETREUID" ++ X64 ++ UsePoll},
                      {"darwin",  "LDFLAGS",  "$LDFLAGS" ++ X64},
 
-                     {"freebsd",   "CXXFLAGS", "$CXXFLAGS -DHAVE_SETRESUID" ++ X64},
+                     {"freebsd",   "CXXFLAGS", "$CXXFLAGS -DHAVE_SETRESUID" ++ X64 ++ UsePoll},
                      {"freebsd",   "LDFLAGS",  "$LDFLAGS" ++ X64},
 
-                     {"openbsd",   "CXXFLAGS", "$CXXFLAGS -DHAVE_SETRESUID" ++ X64},
+                     {"openbsd",   "CXXFLAGS", "$CXXFLAGS -DHAVE_SETRESUID" ++ X64 ++ UsePoll},
                      {"openbsd",   "LDFLAGS",  "$LDFLAGS" ++ X64},
 
-                     {"dragonfly",   "CXXFLAGS", "$CXXFLAGS -DHAVE_SETRESUID" ++ X64},
+                     {"dragonfly",   "CXXFLAGS", "$CXXFLAGS -DHAVE_SETRESUID" ++ X64 ++ UsePoll},
                      {"dragonfly",   "LDFLAGS",  "$LDFLAGS" ++ X64},
 
-                     {"linux",   "CXXFLAGS", "$CXXFLAGS -DHAVE_SETRESUID" ++ LinCXX},
+                     {"linux",   "CXXFLAGS", "$CXXFLAGS -DHAVE_SETRESUID" ++ LinCXX ++ UsePoll},
                      {"linux",   "LDFLAGS",  "$LDFLAGS" ++ LinLD},
 
                      {"CC",  CXX},

@@ -158,35 +158,34 @@ bool process_pid_input(CmdInfo& ci)
 }
 
 //------------------------------------------------------------------------------
-void process_pid_output(CmdInfo& ci, int maxsize)
+void process_pid_output(CmdInfo& ci, int stream_id, int maxsize)
 {
     char buf[4096];
     bool dead = false;
 
-    for (int i=STDOUT_FILENO; i <= STDERR_FILENO; i++) {
-        int& fd = ci.stream_fd[i];
+    assert(stream_id >= STDOUT_FILENO && stream_id <= STDERR_FILENO);
+    int& fd = ci.stream_fd[stream_id];
 
-        if (fd >= 0) {
-            for(int got = 0, n = sizeof(buf); got < maxsize && n == sizeof(buf); got += n) {
-                while ((n = read(fd, buf, sizeof(buf))) < 0 && errno == EINTR);
-                if (debug > 1)
-                    fprintf(stderr, "Read %d bytes from pid %d's %s (fd=%d): %s\r\n",
-                        n, ci.cmd_pid, stream_name(i), fd, n > 0 ? "ok" : strerror(errno));
-                if (n > 0) {
-                    send_ospid_output(ci.cmd_pid, stream_name(i), buf, n);
-                    if (n < (int)sizeof(buf))
-                        break;
-                } else if (n < 0 && errno == EAGAIN)
+    if (fd >= 0) {
+        for(int got=0, n=sizeof(buf); got < maxsize && n == sizeof(buf); got += n) {
+            while ((n = read(fd, buf, sizeof(buf))) < 0 && errno == EINTR);
+            if (debug > 1)
+                fprintf(stderr, "Read %d bytes from pid %d's %s (fd=%d): %s\r\n",
+                    n, ci.cmd_pid, stream_name(stream_id), fd, n > 0 ? "ok" : strerror(errno));
+            if (n > 0) {
+                send_ospid_output(ci.cmd_pid, stream_name(stream_id), buf, n);
+                if (n < (int)sizeof(buf))
                     break;
-                else if (n <= 0) {
-                    if (debug)
-                        fprintf(stderr, "Eof reading pid %d's %s, closing fd=%d: %s\r\n",
-                            ci.cmd_pid, stream_name(i), fd, strerror(errno));
-                    close(fd);
-                    fd = REDIRECT_CLOSE;
-                    dead = true;
-                    break;
-                }
+            } else if (n < 0 && errno == EAGAIN)
+                break;
+            else if (n <= 0) {
+                if (debug)
+                    fprintf(stderr, "Eof reading pid %d's %s, closing fd=%d: %s\r\n",
+                        ci.cmd_pid, stream_name(stream_id), fd, strerror(errno));
+                close(fd);
+                fd = REDIRECT_CLOSE;
+                dead = true;
+                break;
             }
         }
     }
@@ -740,7 +739,8 @@ int check_children(const TimeVal& now, bool& isTerminated, bool notify)
         MapKillPidT::iterator j;
 
         if (i != children.end()) {
-            process_pid_output(i->second, INT_MAX);
+            for(int stream_id=STDOUT_FILENO; stream_id <= STDERR_FILENO; ++i)
+                process_pid_output(i->second, stream_id, INT_MAX);
             // Override status code if termination was requested by Erlang
             PidStatusT ps(it->first,
                 i->second.sigterm

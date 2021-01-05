@@ -22,6 +22,10 @@ Date:   2016-11-14
 #include <sys/capability.h>
 #endif
 
+#ifdef USE_POLL
+#include <sys/poll.h>
+#endif
+
 #include <assert.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -36,6 +40,10 @@ Date:   2016-11-14
 #include <deque>
 #include <set>
 #include <sstream>
+
+#ifdef USE_POLL
+#include <vector>
+#endif
 
 #if defined(__CYGWIN__) || defined(__WIN32) || defined(__APPLE__) \
      || (defined(__sun) && defined(__SVR4))
@@ -160,7 +168,7 @@ int     set_nice(pid_t pid,int nice, std::string& error);
 bool    process_sigchld();
 bool    set_pid_winsz(CmdInfo& ci, int rows, int cols);
 bool    process_pid_input(CmdInfo& ci);
-void    process_pid_output(CmdInfo& ci, int maxsize = 4096);
+void    process_pid_output(CmdInfo& ci, int stream_id, int maxsize = 4096);
 int     send_ok(int transId, long value = -1);
 int     send_pid(int transId, pid_t pid);
 int     send_pid_status_term(const PidStatusT& stat);
@@ -352,6 +360,9 @@ struct CmdInfo {
     bool            managed;        // <true> if this pid is started externally, but managed by erlexec
     int             stream_fd[3];   // Pipe fd getting   process's stdin/stdout/stderr
     int             stdin_wr_pos;   // Offset of the unwritten portion of the head item of stdin_queue
+#ifdef USE_POLL
+    int             poll_fd_idx[3]; // Indexes to the pollfd structure in the poll array
+#endif
     std::list<std::string> stdin_queue;
 
     CmdInfo() {
@@ -384,7 +395,11 @@ struct CmdInfo {
         , kill_timeout(_kill_timeout)
         , kill_group(_kill_group)
         , success_code(_success_code)
-        , managed(_managed), stdin_wr_pos(0)
+        , managed(_managed)
+        , stdin_wr_pos(0)
+        #ifdef USE_POLL
+        , poll_fd_idx{-1,-1,-1}
+        #endif
     {
         stream_fd[STDIN_FILENO]  = _stdin_fd;
         stream_fd[STDOUT_FILENO] = _stdout_fd;
@@ -423,8 +438,54 @@ struct CmdInfo {
         if (i == STDIN_FILENO)
             process_pid_input(*this);
         else
-            process_pid_output(*this);
+            process_pid_output(*this, i);
     }
+
+#ifdef USE_POLL
+     void include_stream_fd(std::vector<pollfd>& v) {
+        poll_fd_idx[STDIN_FILENO]  = -1;
+        poll_fd_idx[STDOUT_FILENO] = -1;
+        poll_fd_idx[STDERR_FILENO] = -1;
+
+        if (stream_fd[STDIN_FILENO] >= 0 && stdin_wr_pos > 0) {
+            if (debug > 2)
+                fprintf(stderr, "Pid %d adding stdin available notification (fd=%d, pos=%d)\r\n",
+                        cmd_pid, stream_fd[STDIN_FILENO], stdin_wr_pos);
+            v.push_back(pollfd{stream_fd[STDIN_FILENO], POLLOUT, 0});
+            poll_fd_idx[STDIN_FILENO] = v.size()-1;
+        }
+        if (stream_fd[STDOUT_FILENO] >= 0) {
+            if (debug > 2)
+                fprintf(stderr, "Pid %d adding stdout checking (fd=%d)\r\n",
+                        cmd_pid, stream_fd[STDOUT_FILENO]);
+            v.push_back(pollfd{stream_fd[STDOUT_FILENO], POLLIN, 0});
+            poll_fd_idx[STDOUT_FILENO] = v.size()-1;
+        }
+        if (stream_fd[STDERR_FILENO] >= 0) {
+            if (debug > 2)
+                fprintf(stderr, "Pid %d adding stderr checking (fd=%d)\r\n",
+                        cmd_pid, stream_fd[STDERR_FILENO]);
+            v.push_back(pollfd{stream_fd[STDERR_FILENO], POLLIN, 0});
+            poll_fd_idx[STDERR_FILENO] = v.size()-1;
+        }
+    }
+
+    void process_stream_data(std::vector<pollfd> const& v) {
+        for (int  i = STDIN_FILENO; i <= STDERR_FILENO; i++) {
+            int idx = poll_fd_idx[i];
+            if (idx < 0)
+                continue;
+            assert(idx < int(v.size()));
+            if (v[idx].revents & (i == STDIN_FILENO ? POLLOUT : POLLIN)) {
+                // Event signaled
+                if (i == STDIN_FILENO)
+                    process_pid_input(*this);
+                else
+                    process_pid_output(*this, i);
+            }
+        }
+    }
+#endif
 };
 
 } // namespace ei
