@@ -313,7 +313,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
         );
         if (!op.executable().empty())
             DEBUG(true, "  Executable: %s", op.executable().c_str());
-        if (op.cmd().size() > 0) {
+        if (!op.cmd().empty()) {
             int i = 0;
             if (op.shell()) {
                 const char* s = getenv("SHELL");
@@ -470,7 +470,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
         }
 
         const char* executable = op.executable().empty()
-            ? (const char*)argv[0] : op.executable().c_str();
+            ? argv[0] : op.executable().c_str();
 
         // Execute the process
         if (execve(executable, (char* const*)argv, op.env()) < 0) {
@@ -682,7 +682,6 @@ void close_stdin(CmdInfo& ci)
     close(fd);
     fd = REDIRECT_CLOSE;
     ci.stdin_queue.clear();
-    return;
 }
 
 //------------------------------------------------------------------------------
@@ -974,7 +973,7 @@ int set_nonblock_flag(pid_t pid, int fd, bool value)
 }
 
 //------------------------------------------------------------------------------
-int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
+int CmdOptions::ei_decode(bool getCmd)
 {
     // {Cmd::string()|binary()|[string()|binary()], [Option]}
     //      Option = {env, Strings::[string()]} | {cd, Dir::string()|binary()}
@@ -1168,7 +1167,7 @@ int CmdOptions::ei_decode(ei::Serializer& ei, bool getCmd)
                     } else if (type == etTuple && sz == 2) {
                         eis.decodeTupleSize();
                         std::string val;
-                        if (!eis.decodeStringOrBinary(key) && key.size() > 0) {
+                        if (!eis.decodeStringOrBinary(key) && !key.empty()) {
                             bool bval;
                             if (!eis.decodeStringOrBinary(val)) {
                                 res = true;

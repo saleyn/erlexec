@@ -10,11 +10,12 @@
                   string:strip(os:cmd(Compiler ++ " -print-sysroot"), right, $\n)}
     end,
 
+%% By default use poll(2).  If USE_POLL=0 is defined, use select(2):
 UsePoll =
     case os:getenv("USE_POLL") of
-    false  -> "";
-    "1"    -> " -DUSE_POLL=1";
-    "true" -> " -DUSE_POLL=1"
+    false   -> " -DUSE_POLL=1";
+    "0"     -> "";
+    "false" -> ""
     end,
 
 %% Commonly on Linux, compilers report the target triplet as <arch>-<vendor>-linux,

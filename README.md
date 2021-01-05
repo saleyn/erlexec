@@ -74,6 +74,13 @@ $ make
 $ OPTIMIZE=true make
 ```
 
+By default port program's implementation uses `poll(2)` call for event
+demultiplexing. If you prefer to use `select(2)`, set the following environment
+variable:
+```
+$ USE_POLL=0 make
+```
+
 ## LICENSE ##
 The program is distributed under BSD license.
 Copyright (c) 2003 Serge Aleynikov <saleyn at gmail dot com>
