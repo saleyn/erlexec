@@ -35,7 +35,7 @@ run() ->
     run(1000).
 
 run(Count) ->
-    run(Count, 25000).
+    run(Count, 30000).
 
 run(Count, Timeout) ->
     run(Count, Timeout, 1).
@@ -76,10 +76,10 @@ init([Owner, Count, DelayMS]) ->
     Delay = integer_to_binary(DelayMS),
     ok = file:write_file(?SCRIPT,
         <<"#!/bin/bash\n"
-          "echo 'This is a test script $$'\n"
-          "sleep $[ ( $RANDOM % ", Delay/binary, " ) + 1 ]s\n"
+          "echo \"This is a test script $$\"\n"
+          "sleep $[ ((($RANDOM % ", Delay/binary, ") + 1)/1000) ]\n"
           "exit 12\n">>),
-    file:change_mode(?SCRIPT, 8#755),
+    ok = file:change_mode(?SCRIPT, 8#755),
     self() ! start_child,
     {ok, #state{owner=Owner, delay=DelayMS, count=Count, pids = sets:new()}}.
 
@@ -154,6 +154,7 @@ handle_info({'DOWN', OsPid, process, _Pid, {exit_status, ExitStatus}}, #state{pi
     end;
 
 handle_info(_Msg, State) ->
+    io:format("Unhandled message: ~p\n", [_Msg]),
     {noreply, State}.
 
 terminate(_Reason, _State) ->

@@ -56,7 +56,7 @@
 */
 
 #include "exec.hpp"
-#ifdef USE_POLL
+#if defined(USE_POLL) && USE_POLL > 0
 # include <sys/poll.h>
 #endif
 
@@ -112,7 +112,7 @@ void usage(char* progname) {
         "Description:\n"
         "   This is a port program intended to be started by an Erlang\n"
         "   virtual machine.  It can start/kill/list OS processes\n"
-        "   as requested by the virtual machine.\n",
+        "   as requested by the virtual machine.\r\n",
         progname, alarm_max_time);
     exit(1);
 }
@@ -159,7 +159,7 @@ int main(int argc, char* argv[])
                 use_alt_fds = true;
             } else if (strcmp(argv[res], "--whoami") == 0) {
                 struct passwd* pws = getpwuid(geteuid());
-                fprintf(stderr, "%s\n", pws->pw_name);
+                DEBUG(true, "%s\n", pws->pw_name);
                 exit(0);
             } else if (strcmp(argv[res], "-user") == 0 && res+1 < argc && argv[res+1][0] != '-') {
                 char* run_as_user = argv[++res];
@@ -167,19 +167,19 @@ int main(int argc, char* argv[])
                 struct passwd *pw = NULL;
                 requested_root    = strcmp(run_as_user, "root") == 0;
                 if ((pw = getpwnam(run_as_user)) == NULL) {
-                    fprintf(stderr, "User %s not found!\r\n", run_as_user);
+                    DEBUG(true, "User %s not found!", run_as_user);
                     exit(3);
                 }
                 run_as_euid = userid = pw->pw_uid;
                 if (stat(argv[0], &st) < 0) {
-                    fprintf(stderr, "Cannot stat the %s file: %s\r\n", argv[0],
+                    DEBUG(true, "Cannot stat the %s file: %s", argv[0],
                                     strerror(errno));
                     exit(3);
                 }
                 if (st.st_mode & S_ISUID && st.st_uid == 0)
                     is_root = true;
                 if (debug > 2)
-                    fprintf(stderr, "SUID bit %sset on %s owned by uid=%d\r\n",
+                    DEBUG(true, "SUID bit %sset on %s owned by uid=%d",
                                     argv[0], (st.st_mode & S_ISUID) ? "" : " NOT", st.st_uid);
             }
         }
@@ -189,7 +189,7 @@ int main(int argc, char* argv[])
 
     // Set up a pipe to deliver SIGCHLD details to pselect() and setup SIGCHLD handler
     if (pipe(sigchld_pipe) < 0) {
-        fprintf(stderr, "Cannot create pipe: %s\r\n", strerror(errno));
+        DEBUG(true, "Cannot create pipe: %s", strerror(errno));
         exit(3);
     }
     set_nonblock_flag(self_pid, sigchld_pipe[0], true);
@@ -201,7 +201,7 @@ int main(int argc, char* argv[])
     sigemptyset(&sact.sa_mask);
     sigaction(SIGCHLD, &sact, NULL);
 
-#ifdef USE_POLL
+#if defined(USE_POLL) && USE_POLL > 0
     std::vector<pollfd> fds;
 #else
     fd_set readfds, writefds;
@@ -213,7 +213,7 @@ int main(int argc, char* argv[])
         double  wakeup = SLEEP_TIMEOUT_SEC;
         TimeVal now(TimeVal::NOW);
 
-    #ifdef USE_POLL
+    #if defined(USE_POLL) && USE_POLL > 0
         fds.resize(2);
         fds[0] = pollfd{eis.read_handle(), POLLIN, 0};  // Erlang communication pipe
         fds[1] = pollfd{sigchld_pipe[0],   POLLIN, 0};  // pipe for delivering SIGCHLD signals
@@ -245,22 +245,21 @@ int main(int argc, char* argv[])
         int secs = int(wakeup);
         ei::TimeVal timeout(secs, int((wakeup - secs)*1000000.0 + 0.5));
 
-        if (debug > 2)
-            fprintf(stderr, "Selecting "
-                    #ifdef USE_POLL
+        DEBUG(debug > 2, "Selecting "
+                    #if defined(USE_POLL) && USE_POLL > 0
                     "fds"
                     #else
                     "maxfd"
                     #endif
                     "=%d (sleep=%dms)\r\n",
-                    #ifdef USE_POLL
+                    #if defined(USE_POLL) && USE_POLL > 0
                     int(fds.size()),
                     #else
                     maxfd,
                     #endif
                     int(timeout.millisec()));
         int cnt = 
-    #ifdef USE_POLL
+    #if defined(USE_POLL) && USE_POLL > 0
             poll(&fds[0], fds.size(), timeout.millisec());
     #else
             select(maxfd+1, &readfds, &writefds, NULL, &timeout);
@@ -268,8 +267,7 @@ int main(int argc, char* argv[])
         int interrupted = (cnt < 0 && errno == EINTR);
         // Note that the process will not be interrupted while outside of pselectx()
 
-        if (debug > 2)
-            fprintf(stderr, "Select got %d events%s\r\n",
+        DEBUG(debug > 2, "Select got %d events%s",
                     cnt, interrupted ?  " (interrupted)" : "");
 
         if (interrupted || cnt == 0) {
@@ -280,17 +278,16 @@ int main(int argc, char* argv[])
             }
         } else if (cnt < 0) {
             if (errno == EBADF) {
-                if (debug)
-                    fprintf(stderr, "Error EBADF(9) in select: %s (terminated=%d)\r\n",
+                DEBUG(debug, "Error EBADF(9) in select: %s (terminated=%d)",
                         strerror(errno), terminated);
                 continue;
             }
-            fprintf(stderr, "Error %d in select: %s\r\n", errno, strerror(errno));
+            DEBUG(true, "Error %d in select: %s", errno, strerror(errno));
             terminated = 12;
             break;
         }
         else
-    #ifdef USE_POLL
+    #if defined(USE_POLL) && USE_POLL > 0
         if (fds[1].revents & POLLIN)
     #else
         if (FD_ISSET(sigchld_pipe[0], &readfds))
@@ -305,7 +302,7 @@ int main(int argc, char* argv[])
             }
         }
         else
-    #ifdef USE_POLL
+    #if defined(USE_POLL) && USE_POLL > 0
         if (fds[0].revents & POLLIN)
     #else
         if (FD_ISSET(eis.read_handle(), &readfds))
@@ -317,7 +314,7 @@ int main(int argc, char* argv[])
         } else {
             // Check if any stdout/stderr streams have data
             for(auto it=children.begin(), end=children.end(); it != end; ++it)
-    #ifdef USE_POLL
+    #if defined(USE_POLL) && USE_POLL > 0
                 it->second.process_stream_data(fds);
     #else
                 for (int i=STDIN_FILENO; i <= STDERR_FILENO; i++)
@@ -339,8 +336,7 @@ bool process_command()
     // Note that if we were using non-blocking reads, we'd also need to check
     // for errno EWOULDBLOCK.
     if ((err = eis.read()) < 0) {
-        if (debug)
-            fprintf(stderr, "Broken Erlang command pipe (%d): %s [line:%d]\r\n",
+        DEBUG(debug, "Broken Erlang command pipe (%d): %s [line:%d]",
                 errno, strerror(errno), __LINE__);
         terminated = errno;
         return false;
@@ -481,8 +477,7 @@ bool process_command()
             }
             MapChildrenT::iterator it = children.find(pid);
             if (it == children.end()) {
-                if (debug)
-                    fprintf(stderr, "pid %ld doesn't exist\r\n", pid);
+                DEBUG(debug, "pid %ld doesn't exist", pid);
                 break;
             }
             set_pid_winsz(it->second, rows, cols);
@@ -505,8 +500,7 @@ bool process_command()
 
             MapChildrenT::iterator it = children.find(pid);
             if (it == children.end()) {
-                if (debug)
-                    fprintf(stderr, "Stdin (%ld bytes) cannot be sent to non-existing pid %ld\r\n",
+                DEBUG(debug, "Stdin (%ld bytes) cannot be sent to non-existing pid %ld",
                         data.size(), pid);
                 break;
             }
@@ -517,8 +511,7 @@ bool process_command()
             }
 
             if (!data.size()) {
-                if (debug)
-                    fprintf(stderr, "Warning: ignoring empty input on stdin of pid %ld.\r\n", pid);
+                DEBUG(debug, "Warning: ignoring empty input on stdin of pid %ld.", pid);
                 break;
             }
 
@@ -564,30 +557,35 @@ void initialize(int userid, bool use_alt_fds, bool is_root, bool requested_root)
     // to be effective users.
 
     if (is_root && userid == 0 && !requested_root) {
-        fprintf(stderr, "Not allowed to run as root without setting effective user (-user option)!\r\n");
+        DEBUG(true, "Not allowed to run as root without setting effective user (-user option)!");
         exit(4);
     } else if (!is_root && userid == 0 && requested_root) {
-        fprintf(stderr, "Requested to run as root (-user root), but effective user is not root!\r\n");
+        DEBUG(true, "Requested to run as root (-user root), but effective user is not root!");
         exit(4);
     } else if (!is_root && userid > 0 && int(geteuid()) != userid) {
-        fprintf(stderr, "Cannot switch effective user to euid=%d\r\n", userid);
+        DEBUG(true, "Cannot switch effective user to euid=%d", userid);
         exit(4);
     } else if (!getenv("SHELL") || strcmp(getenv("SHELL"), "") == 0) {
-        fprintf(stderr, "SHELL environment variable not set!\r\n");
+        DEBUG(true, "SHELL environment variable not set!");
         exit(4);
     }
 
     // (is_root && requested_root && userid > 0)
     // Make sure that we can switch effective user without issues
     if (userid > 0 && ei::set_euid(userid) < 0) {
-        fprintf(stderr, "Failed to set effective userid: %s\r\n", strerror(errno));
+        DEBUG(true, "Failed to set effective userid: %s", strerror(errno));
         exit(4);
     }
 
-    if (debug)
-        fprintf(stderr, "Initializing: uid=%d, userid=%d%s%s\r\n",
+    DEBUG(debug, "Initializing: uid=%d, userid=%d%s%s%s",
             getuid(), userid, is_root ? " is-root":"",
-            requested_root ? " requested-root":"");
+            requested_root ? " requested-root":"",
+            #if defined(USE_POLL) && USE_POLL > 0
+            ", use-poll=1"
+            #else
+            ""
+            #endif
+        );
 
     // If we were root, set capabilities
     // to be able to adjust niceness and run commands as other users.
@@ -601,29 +599,28 @@ void initialize(int userid, bool use_alt_fds, bool is_root, bool requested_root)
         #endif
 
         struct passwd* pw;
-        if (debug && (pw = getpwuid(geteuid())) != NULL)
-            fprintf(stderr, "exec: running as: %s (euid=%d)\r\n", pw->pw_name, geteuid());
+        DEBUG(debug && (pw = getpwuid(geteuid())) != NULL,
+              "exec: running as: %s (euid=%d)\r\n", pw->pw_name, geteuid());
 
         #ifdef HAVE_CAP
         cap_t cur;
         if ((cur = cap_from_text("cap_setuid=eip cap_kill=eip cap_sys_nice=eip")) == 0) {
-            fprintf(stderr, "exec: failed to convert cap_setuid & cap_sys_nice from text");
+            DEBUG(true, "exec: failed to convert cap_setuid & cap_sys_nice from text");
             exit(8);
         }
         if (cap_set_proc(cur) < 0) {
-            fprintf(stderr, "exec: failed to set cap_setuid & cap_sys_nice");
+            DEBUG(true, "exec: failed to set cap_setuid & cap_sys_nice");
             exit(9);
         }
         cap_free(cur);
 
         if (debug) {
             cur = cap_get_proc();
-            fprintf(stderr, "exec: current capabilities: %s\r\n", cur ? cap_to_text(cur, NULL) : "none");
+            DEBUG(true, "exec: current capabilities: %s", cur ? cap_to_text(cur, NULL) : "none");
             cap_free(cur);
         }
         #else
-        if (debug)
-            fprintf(stderr, "exec: capability feature is not implemented for this plaform!\r\n");
+        DEBUG(debug, "exec: capability feature is not implemented for this plaform!");
         #endif
 
     }
@@ -638,7 +635,7 @@ void initialize(int userid, bool use_alt_fds, bool is_root, bool requested_root)
     dev_null = open(CS_DEV_NULL, O_RDWR);
 
     if (dev_null < 0) {
-        fprintf(stderr, "exec: cannot open %s: %s\r\n", CS_DEV_NULL, strerror(errno));
+        DEBUG(true, "exec: cannot open %s: %s", CS_DEV_NULL, strerror(errno));
         exit(10);
     }
 
@@ -655,7 +652,7 @@ void initialize(int userid, bool use_alt_fds, bool is_root, bool requested_root)
 
 int finalize()
 {
-    if (debug) fprintf(stderr, "Setting alarm to %d seconds\r\n", alarm_max_time);
+    DEBUG(debug, "Setting alarm to %d seconds", alarm_max_time);
     alarm(alarm_max_time);  // Die in <alarm_max_time> seconds if not done
 
     int old_terminated = terminated;
@@ -684,7 +681,7 @@ int finalize()
         if (children.size() == 0)
             break;
 
-        #ifdef USE_POLL
+        #if defined(USE_POLL) && USE_POLL > 0
         std::vector<pollfd> fds;
         #else
         fd_set readfds;
@@ -697,7 +694,7 @@ int finalize()
 
             int     cnt;
 
-            #ifdef USE_POLL
+            #if defined(USE_POLL) && USE_POLL > 0
             fds.resize(1);
             fds[0]  = pollfd{sigchld_pipe[0], POLLIN, 0};
             auto ts = deadline - timeout; 
@@ -711,11 +708,11 @@ int finalize()
             #endif
 
             if (cnt < 0) {
-                fprintf(stderr, "Error in finalizing pselect(2): %s\r\n", strerror(errno));
+                DEBUG(true, "Error in finalizing pselect(2): %s", strerror(errno));
                 break;
             }
             else
-            #ifdef USE_POLL
+            #if defined(USE_POLL) && USE_POLL > 0
             if (cnt > 0 && (fds[0].revents & POLLIN))
             #else
             if (cnt > 0 && FD_ISSET(sigchld_pipe[0], &readfds) )
@@ -727,8 +724,7 @@ int finalize()
         }
     }
 
-    if (debug)
-        fprintf(stderr, "Exiting (%d)\r\n", old_terminated);
+    DEBUG(debug, "Exiting (%d)", old_terminated);
 
     return old_terminated;
 }
