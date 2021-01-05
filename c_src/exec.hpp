@@ -285,7 +285,6 @@ public:
         m_cenv = NULL;
     }
 
-    const char*         cstr_error()    const { return m_err.str().c_str(); }
     std::string         error()         const { return m_err.str();  }
     const std::string&  executable()    const { return m_executable; }
     const CmdArgsList&  cmd()           const { return m_cmd; }
@@ -328,7 +327,7 @@ public:
         m_std_stream[i].clear();
     }
 
-    int ei_decode(ei::Serializer& ei, bool getCmd = false);
+    int ei_decode(bool getCmd = false);
     int init_cenv();
 };
 

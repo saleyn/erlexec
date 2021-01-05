@@ -348,7 +348,7 @@ int Serializer::ei_x_encode_double(ei_x_buff* x, double dbl)
     int i = x->index;
     ei_encode_double(NULL, &i, dbl);
     if (!x_fix_buff(x, i))
-    return -1;
+        return -1;
     return ei_encode_double(x->buff, &x->index, dbl);
 }
 
