@@ -1,16 +1,16 @@
 language: erlang
 matrix:
   include:
-    - os: linux
-      compiler: g++
-      addons:
-        apt:
-          sources:  ['ubuntu-toolchain-r-test']
-          packages: ['g++-4.8']
-      otp_release:
-        - 22.0
-        - 23.0          
-      env: COMPILER=g++-4.8
+#    - os: linux
+#  compiler: g++
+#      addons:
+#        apt:
+#          sources:  ['ubuntu-toolchain-r-test']
+#          packages: ['g++-4.8']
+#      otp_release:
+#        - 22.0
+#        - 23.0          
+#      env: COMPILER=g++-4.8
 
     - os: linux
       compiler: g++
@@ -23,14 +23,6 @@ matrix:
         - 23.0          
       env: COMPILER=g++-9
   #- osx       # MacOS builds are not available on Travis
-
-#  addons:
-#    apt:
-#      sources:
-#        - ubuntu-toolchain-r-test
-#      packages:
-#        - g++-9
-#  env: COMPILER=g++-9
 
 before_install:
 - sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
