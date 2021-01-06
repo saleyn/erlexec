@@ -62,7 +62,7 @@
 -export([
     start/0, start/1, start_link/1, run/2, run_link/2, manage/2, send/2, winsz/3,
     which_children/0, kill/2,       setpgid/2, stop/1, stop_and_wait/2,
-    ospid/1, pid/1,   status/1,     signal/1,  debug/1
+    ospid/1, pid/1,   status/1,     signal/1,  signal_to_int/1, debug/1
 ]).
 
 %% Internal exports
@@ -196,7 +196,8 @@
     | {stdout, stderr | output_dev_opt()}
     | {stderr, stdout | output_dev_opt()}
     | {stdout | stderr, string()|binary(), [output_file_opt()]}
-    | pty.
+    | pty
+    | debug | {debug, integer()}.
 -export_type([cmd_option/0, cmd_options/0]).
 %% Command options:
 %% <dl>
@@ -281,6 +282,10 @@
 %%     <dd>Redirect process's stdout/stderr stream to file</dd>
 %% <dt>pty</dt>
 %%     <dd>Use pseudo terminal for the process's stdin, stdout and stderr</dd>
+%% <dt>debug</dt>
+%%     <dd>Same as `{debug, 1}'</dd>
+%% <dt>{debug, Level::integer()}</dt>
+%%     <dd>Enable debug printing in port program for this command</dd>
 %% </dl>
 
 -type output_dev_opt() :: null | close | print | string() | pid()
@@ -399,8 +404,11 @@ which_children() ->
 %% @doc Send a `Signal' to a child `Pid', `OsPid' or an Erlang `Port'.
 %% @end
 %%-------------------------------------------------------------------------
--spec kill(pid() | ospid(), integer()) -> ok | {error, any()}.
-kill(Pid, Signal) when is_pid(Pid); is_integer(Pid) ->
+-spec kill(pid() | ospid(), atom()|integer()) -> ok | {error, any()}.
+kill(Pid, Signal) when is_atom(Signal) ->
+    kill(Pid, signal_to_int(Signal));
+kill(Pid, Signal) when (is_pid(Pid) orelse is_integer(Pid))
+                       andalso is_integer(Signal) ->
     gen_server:call(?MODULE, {port, {kill, Pid, Signal}});
 kill(Port, Signal) when is_port(Port) ->
     {os_pid, Pid} = erlang:port_info(Port, os_pid),
@@ -580,6 +588,38 @@ signal(31) -> sigsys;
 signal(34) -> sigrtmin;
 signal(64) -> sigrtmax;
 signal(Num) when is_integer(Num) -> Num.
+
+signal_to_int(sighup)     ->  1;
+signal_to_int(sigint)     ->  2;
+signal_to_int(sigquit)    ->  3;
+signal_to_int(sigill)     ->  4;
+signal_to_int(sigtrap)    ->  5;
+signal_to_int(sigabrt)    ->  6;
+signal_to_int(sigbus)     ->  7;
+signal_to_int(sigfpe)     ->  8;
+signal_to_int(sigkill)    ->  9;
+signal_to_int(sigsegv)    -> 11;
+signal_to_int(sigpipe)    -> 13;
+signal_to_int(sigalrm)    -> 14;
+signal_to_int(sigterm)    -> 15;
+signal_to_int(sigstkflt)  -> 16;
+signal_to_int(sigchld)    -> 17;
+signal_to_int(sigcont)    -> 18;
+signal_to_int(sigstop)    -> 19;
+signal_to_int(sigtstp)    -> 20;
+signal_to_int(sigttin)    -> 21;
+signal_to_int(sigttou)    -> 22;
+signal_to_int(sigurg)     -> 23;
+signal_to_int(sigxcpu)    -> 24;
+signal_to_int(sigxfsz)    -> 25;
+signal_to_int(sigvtalrm)  -> 26;
+signal_to_int(sigprof)    -> 27;
+signal_to_int(sigwinch)   -> 28;
+signal_to_int(sigio)      -> 29;
+signal_to_int(sigpwr)     -> 30;
+signal_to_int(sigsys)     -> 31;
+signal_to_int(sigrtmin)   -> 34;
+signal_to_int(sigrtmax)   -> 64.
 
 %%-------------------------------------------------------------------------
 %% @private
@@ -1140,6 +1180,10 @@ check_cmd_options([{kill_timeout, I}=H|T], Pid, State, PortOpts, OtherOpts) when
 check_cmd_options([kill_group=H|T], Pid, State, PortOpts, OtherOpts) ->
     check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
 check_cmd_options([{nice, I}=H|T], Pid, State, PortOpts, OtherOpts) when is_integer(I), I >= -20, I =< 20 ->
+    check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+check_cmd_options([debug|T], Pid, State, PortOpts, OtherOpts) ->
+    check_cmd_options(T, Pid, State, [{debug,1}|PortOpts], OtherOpts);
+check_cmd_options([{debug, I}=H|T], Pid, State, PortOpts, OtherOpts) when is_integer(I), I >= 0, I =< 10 ->
     check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
 check_cmd_options([{success_exit_code, I}=H|T], Pid, State, PortOpts, OtherOpts)
   when is_integer(I), I >= 0, I < 256 ->

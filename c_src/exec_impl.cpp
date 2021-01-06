@@ -24,6 +24,92 @@ int ptsname_r(int fd, char* buf, size_t buflen) {
 #endif
 
 //------------------------------------------------------------------------------
+// CmdInfo
+//------------------------------------------------------------------------------
+void CmdInfo::include_stream_fd(int i, int& maxfd, fd_set* readfds, fd_set* writefds)
+{
+	bool ok;
+	fd_set* fds;
+
+	if (i == STDIN_FILENO) {
+		ok = stream_fd[i] >= 0 && stdin_wr_pos > 0;
+		if (ok)
+			DEBUG(debug > 2, "Pid %d adding stdin available notification (fd=%d, pos=%d)",
+				  cmd_pid, stream_fd[i], stdin_wr_pos);
+		fds = writefds;
+	} else {
+		ok = stream_fd[i] >= 0;
+		if (ok)
+			DEBUG(debug > 2, "Pid %d adding stdout checking (fd=%d)", cmd_pid, stream_fd[i]);
+		fds = readfds;
+	}
+
+	if (ok) {
+		FD_SET(stream_fd[i], fds);
+		if (stream_fd[i] > maxfd) maxfd = stream_fd[i];
+	}
+}
+
+
+void CmdInfo::process_stream_data(int i, fd_set* readfds, fd_set* writefds)
+{
+	int     fd  = stream_fd[i];
+	fd_set* fds = i == STDIN_FILENO ? writefds : readfds;
+
+	if (fd < 0 || !FD_ISSET(fd, fds)) return;
+
+	if (i == STDIN_FILENO)
+		process_pid_input(*this);
+	else
+		process_pid_output(*this, i);
+}
+
+#if defined(USE_POLL) && USE_POLL > 0
+void CmdInfo::include_stream_fd(std::vector<pollfd>& v)
+{
+	poll_fd_idx[STDIN_FILENO]  = -1;
+	poll_fd_idx[STDOUT_FILENO] = -1;
+	poll_fd_idx[STDERR_FILENO] = -1;
+
+	if (stream_fd[STDIN_FILENO] >= 0 && stdin_wr_pos > 0) {
+		DEBUG(debug > 2, "Pid %d adding stdin available notification (fd=%d, pos=%d)",
+			  cmd_pid, stream_fd[STDIN_FILENO], stdin_wr_pos);
+		v.push_back(pollfd{stream_fd[STDIN_FILENO], POLLOUT, 0});
+		poll_fd_idx[STDIN_FILENO] = v.size()-1;
+	}
+	if (stream_fd[STDOUT_FILENO] >= 0) {
+		DEBUG(debug > 2, "Pid %d adding stdout checking (fd=%d)",
+			  cmd_pid, stream_fd[STDOUT_FILENO]);
+		v.push_back(pollfd{stream_fd[STDOUT_FILENO], POLLIN, 0});
+		poll_fd_idx[STDOUT_FILENO] = v.size()-1;
+	}
+	if (stream_fd[STDERR_FILENO] >= 0) {
+		DEBUG(debug > 2, "Pid %d adding stderr checking (fd=%d)",
+			  cmd_pid, stream_fd[STDERR_FILENO]);
+		v.push_back(pollfd{stream_fd[STDERR_FILENO], POLLIN, 0});
+		poll_fd_idx[STDERR_FILENO] = v.size()-1;
+	}
+}
+
+void CmdInfo::process_stream_data(std::vector<pollfd> const& v)
+{
+	for (int  i = STDIN_FILENO; i <= STDERR_FILENO; i++) {
+		int idx = poll_fd_idx[i];
+		if (idx < 0)
+			continue;
+		assert(idx < int(v.size()));
+		if (v[idx].revents & (i == STDIN_FILENO ? POLLOUT : POLLIN)) {
+			// Event signaled
+			if (i == STDIN_FILENO)
+				process_pid_input(*this);
+			else
+				process_pid_output(*this, i);
+		}
+	}
+}
+#endif
+
+//------------------------------------------------------------------------------
 std::string fd_type(int tp) {
     switch (tp) {
         case REDIRECT_STDOUT:   return "stdout";
@@ -299,11 +385,12 @@ pid_t start_child(CmdOptions& op, std::string& error)
         }
     }
 
-    if (debug) {
-        DEBUG(true, "Starting child: '%s' (euid=%d)"
+    if (debug || op.dbg()) {
+        DEBUG(true, "Starting child: '%s' (euid=%d)",
+              op.cmd().front().c_str(), op.user() == INT_MAX ? -1 : op.user());
+        fprintf(stderr,
                     "  child  = (stdin=%s, stdout=%s, stderr=%s)\r\n"
-                    "  parent = (stdin=%s, stdout=%s, stderr=%s)",
-            op.cmd().front().c_str(), op.user(),
+                    "  parent = (stdin=%s, stdout=%s, stderr=%s)\r\n",
             fd_type(stream_fd[STDIN_FILENO ][RD]).c_str(),
             fd_type(stream_fd[STDOUT_FILENO][WR]).c_str(),
             fd_type(stream_fd[STDERR_FILENO][WR]).c_str(),
@@ -312,21 +399,26 @@ pid_t start_child(CmdOptions& op, std::string& error)
             fd_type(stream_fd[STDERR_FILENO][RD]).c_str()
         );
         if (!op.executable().empty())
-            DEBUG(true, "  Executable: %s", op.executable().c_str());
+            fprintf(stderr, "  Executable: %s", op.executable().c_str());
         if (!op.cmd().empty()) {
             int i = 0;
             if (op.shell()) {
                 const char* s = getenv("SHELL");
-                DEBUG(true, "  Args[%d]: %s", i++, s ? s : "(null)");
-                DEBUG(true, "  Args[%d]: -c", i++);
+                fprintf(stderr, "  Args[%d]: %s\r\n"
+                                "  Args[%d]: -c\r\n", i, s ? s : "(null)", i+1);
+                i+=2;
             }
             typedef CmdArgsList::const_iterator const_iter;
             for(const_iter it = op.cmd().begin(), end = op.cmd().end(); it != end; ++it)
-                DEBUG(true, "  Args[%d]: %s", i++, it->c_str());
+                fprintf(stderr, "  Args[%d]: %s\r\n", i++, it->c_str());
         } else {
             error = "cannot run empty command";
             return -1;
         }
+        if (!op.mapenv().empty() && op.dbg())
+            for (auto& kv : op.mapenv())
+                fprintf(stderr, "  Env[%s]: %s\r\n", kv.first.c_str(), kv.second.c_str());
+
     }
 
     pid_t pid = fork();
@@ -545,10 +637,12 @@ int stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify)
     else if (ci.kill_cmd_pid > 0 || ci.sigterm) {
         // There was already an attempt to kill it.
         if (ci.sigterm && now.diff(ci.deadline) > 0) {
-            // More than KILL_TIMEOUT_SEC secs elapsed since the last kill attempt
-            erl_exec_kill(ci.kill_group ? -ci.cmd_gid : ci.cmd_pid, SIGKILL);
+            DEBUG(debug,
+                  "PID %d: more than %ds elapsed since the kill attempt by pid %d: executing SIGKILL",
+                  KILL_TIMEOUT_SEC, ci.cmd_pid, ci.kill_cmd_pid);
+            erl_exec_kill(ci.kill_group ? -ci.cmd_gid : ci.cmd_pid, SIGKILL, SRCLOC);
             if (ci.kill_cmd_pid > 0)
-                erl_exec_kill(ci.kill_cmd_pid, SIGKILL);
+                erl_exec_kill(ci.kill_cmd_pid, SIGKILL, SRCLOC);
 
             ci.sigkill = true;
         }
@@ -558,7 +652,8 @@ int stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify)
         // This is the first attempt to kill this pid and kill command is provided.
         CmdArgsList kill_cmd;
         kill_cmd.push_front(ci.kill_cmd.c_str());
-        CmdOptions co(kill_cmd);
+        MapEnv env{{"CHILD_PID", std::to_string(ci.cmd_pid)}};
+        CmdOptions co(kill_cmd, NULL, env);
         std::string err;
         ci.kill_cmd_pid = start_child(co, err);
         if (!err.empty())
@@ -566,8 +661,8 @@ int stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify)
                  ci.kill_cmd.c_str(), err.c_str());
 
         if (ci.kill_cmd_pid > 0) {
-            transient_pids[ci.kill_cmd_pid] = ci.cmd_pid;
             ci.deadline.set(now, ci.kill_timeout);
+            transient_pids[ci.kill_cmd_pid] = std::make_pair(ci.cmd_pid, ci.deadline);
             if (notify) send_ok(transId);
             return 0;
         } else {
@@ -618,7 +713,7 @@ void stop_child(pid_t pid, int transId, const TimeVal& now)
     if (it == children.end()) {
         send_error_str(transId, false, "pid not alive");
         return;
-    } else if ((n = erl_exec_kill(pid, 0)) < 0) {
+    } else if ((n = erl_exec_kill(pid, 0, SRCLOC)) < 0) {
         send_error_str(transId, false, "pid not alive (err: %d)", n);
         return;
     }
@@ -658,7 +753,7 @@ int kill_child(pid_t pid, int signal, int transId, bool notify)
 {
     // We can't use -pid here to kill the whole process group, because our process is
     // the group leader.
-    int err = erl_exec_kill(pid, signal);
+    int err = erl_exec_kill(pid, signal, SRCLOC);
     switch (err) {
         case EINVAL:
             if (notify) send_error_str(transId, false, "Invalid signal: %d", signal);
@@ -727,7 +822,7 @@ int check_children(const TimeVal& now, bool& isTerminated, bool notify)
                     : it->second);
             // The process exited and it requires to kill all other processes in the group
             if (i->second.kill_group && i->second.cmd_gid != INT_MAX && i->second.cmd_gid)
-                erl_exec_kill(-(i->second.cmd_gid), SIGTERM); // Kill all children in this group
+                erl_exec_kill(-(i->second.cmd_gid), SIGTERM, SRCLOC); // Kill all children in this group
 
             if (notify && send_pid_status_term(ps) < 0) {
                 isTerminated = 1;
@@ -751,7 +846,7 @@ void check_child(const TimeVal& now, pid_t pid, CmdInfo& cmd)
     if (pid == self_pid)    // Safety check. Never kill itself
         return;
 
-    int n = erl_exec_kill(pid, 0);
+    int n = erl_exec_kill(pid, 0, SRCLOC);
 
     if (n == 0) { // process is alive
         /* If a deadline has been set, and we're over it, wack it. */
@@ -799,7 +894,7 @@ void check_child_exit(pid_t pid)
             ret > 0 && WIFSIGNALED(status) ? " [signaled]":"");
 
     if (ret < 0 && errno == ECHILD) {
-        if (erl_exec_kill(pid, 0) == 0) // process likely forked and is alive
+        if (erl_exec_kill(pid, 0, SRCLOC) == 0) // process likely forked and is alive
             status = 0;
         if (status != 0)
             exited_children.insert(std::make_pair(pid <= 0 ? ret : pid, status));
@@ -937,16 +1032,16 @@ int open_pipe(int fds[2], const char* stream, ei::StringBuffer<128>& err)
 // kill(-1, SIGKILL), which will cause all kinds of bad things to
 // happen.
 //------------------------------------------------------------------------------
-int erl_exec_kill(pid_t pid, int signal) {
+int erl_exec_kill(pid_t pid, int signal, const char* srcloc) {
     if (pid == -1 || pid == 0) {
-        DEBUG(debug, "kill(%d, %d) attempt prohibited!", pid, signal);
+        DEBUG(debug, "kill(%d, %d) attempt prohibited!%s", pid, signal, srcloc);
         return -1;
     }
 
     int r = kill(pid, signal);
 
     if (signal > 0)
-        DEBUG(debug, "Called kill(pid=%d, sig=%d) -> %d", pid, signal, r);
+        DEBUG(debug, "Called kill(pid=%d, sig=%d) -> %d%s", pid, signal, r, srcloc);
 
     return r;
 }
@@ -1022,13 +1117,15 @@ int CmdOptions::ei_decode(bool getCmd)
         STDIN,      STDOUT,            STDERR,
         PTY,        SUCCESS_EXIT_CODE, CD,     ENV,
         EXECUTABLE, KILL,              KILL_TIMEOUT,
-        KILL_GROUP, NICE,              USER,    GROUP
+        KILL_GROUP, NICE,              USER,    GROUP,
+        DEBUG_OPT
     } opt;
     const char* opts[] = {
         "stdin",      "stdout",            "stderr",
         "pty",        "success_exit_code", "cd", "env",
         "executable", "kill",              "kill_timeout",
-        "kill_group", "nice",              "user",  "group"
+        "kill_group", "nice",              "user",  "group",
+        "debug"
     };
 
     bool seen_opt[sizeof(opts) / sizeof(char*)] = {false};
@@ -1063,6 +1160,12 @@ int CmdOptions::ei_decode(bool getCmd)
             case CD:
                 // {cd, Dir::string()}
                 if (eis.decodeStringOrBinary(m_cd) < 0) {
+                    m_err << op << " - bad option value"; return -1;
+                }
+                break;
+
+            case DEBUG_OPT:
+                if (eis.decodeInt(m_debug) < 0) {
                     m_err << op << " - bad option value"; return -1;
                 }
                 break;
