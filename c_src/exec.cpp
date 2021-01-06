@@ -398,7 +398,8 @@ bool process_command()
                 return true;
             }
 
-            CmdInfo ci(true, po.kill_cmd(), realpid, po.success_exit_code(), po.kill_group());
+            CmdInfo ci(true, po.kill_cmd(), realpid, po.success_exit_code(), po.kill_group(),
+                       po.dbg());
             ci.kill_timeout = po.kill_timeout();
             children[realpid] = ci;
 
@@ -433,7 +434,8 @@ bool process_command()
                            po.stream_fd(STDOUT_FILENO),
                            po.stream_fd(STDERR_FILENO),
                            po.kill_timeout(),
-                           po.kill_group());
+                           po.kill_group(),
+                           po.dbg());
                 children[pid] = ci;
                 send_pid(transId, pid);
             }
@@ -458,7 +460,7 @@ bool process_command()
             } else if (pid < 0) {
                 send_error_str(transId, false, "Not allowed to send signal to all processes");
                 break;
-            } else if (children.find(pid) == children.end()) {
+            } else if (!child_exists(pid)) {
                 send_error_str(transId, false, "Cannot kill a pid not managed by this application");
                 break;
             }
@@ -507,10 +509,10 @@ bool process_command()
                 break;
             }
 
-            MapChildrenT::iterator it = children.find(pid);
+            auto it = children.find(pid);
             if (it == children.end()) {
                 DEBUG(debug, "Stdin (%ld bytes) cannot be sent to non-existing pid %ld",
-                        data.size(), pid);
+                      data.size(), pid);
                 break;
             }
 
@@ -679,11 +681,17 @@ int finalize()
             check_children(now, term, pipe_valid);
         }
 
-        for(MapChildrenT::iterator it=children.begin(), end=children.end(); it != end; ++it)
+        for(auto it=children.begin(), end=children.end(); it != end; ++it)
             stop_child(it->second, 0, now, false);
 
-        for(MapKillPidT::iterator it=transient_pids.begin(), end=transient_pids.end(); it != end; ++it) {
-            erl_exec_kill(it->first, SIGKILL);
+        // Check if we need to kill the custom kill commands, but give then enough
+        // time to execute the kill action.
+        for(auto it=transient_pids.begin(), end=transient_pids.end(); it != end; ++it) {
+            auto& pid_deadline = it->second.second;
+            if ((now - pid_deadline).millisec() < 100)
+                continue;
+            if (child_exists(it->first))
+                erl_exec_kill(it->first, SIGKILL, SRCLOC);
             transient_pids.erase(it);
         }
 

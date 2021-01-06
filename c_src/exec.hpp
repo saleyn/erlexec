@@ -62,10 +62,12 @@ Date:   2016-11-14
 #define STR_HELPER(x) #x
 #define STR(x) STR_HELPER(x)
 
+#define SRCLOC " [" __FILE__ ":" STR(__LINE__) "]"
+
 #define DEBUG(Cond, Fmt, ...) \
     do { \
         if (Cond) \
-            fprintf(stderr, Fmt " [" __FILE__ ":" STR(__LINE__) "]\r\n", ##__VA_ARGS__); \
+            fprintf(stderr, Fmt SRCLOC "\r\n", ##__VA_ARGS__); \
     } while(0)
 
 #include <ei.h>
@@ -132,15 +134,16 @@ struct CmdOptions;
 typedef unsigned char byte;
 typedef int   exit_status_t;
 typedef pid_t kill_cmd_pid_t;
-typedef std::list<std::string>              CmdArgsList;
-typedef std::pair<pid_t, exit_status_t>     PidStatusT;
-typedef std::pair<pid_t, CmdInfo>           PidInfoT;
-typedef std::map <pid_t, CmdInfo>           MapChildrenT;
-typedef std::pair<kill_cmd_pid_t, pid_t>    KillPidStatusT;
-typedef std::map <kill_cmd_pid_t, pid_t>    MapKillPidT;
-typedef std::map<std::string, std::string>  MapEnv;
-typedef MapEnv::iterator                    MapEnvIterator;
-typedef std::map<pid_t, exit_status_t>      ExitedChildrenT;
+typedef std::list<std::string>                  CmdArgsList;
+typedef std::pair<pid_t, exit_status_t>         PidStatusT;
+typedef std::pair<pid_t, CmdInfo>               PidInfoT;
+typedef std::map <pid_t, CmdInfo>               MapChildrenT;
+typedef std::pair<kill_cmd_pid_t, pid_t>        KillPidStatusT;
+typedef std::pair<pid_t, ei::TimeVal>           KillPidInfoT;
+typedef std::map <kill_cmd_pid_t, KillPidInfoT> MapKillPidT;
+typedef std::map<std::string, std::string>      MapEnv;
+typedef MapEnv::iterator                        MapEnvIterator;
+typedef std::map<pid_t, exit_status_t>          ExitedChildrenT;
 
 static const char* CS_DEV_NULL  = "/dev/null";
 
@@ -160,82 +163,8 @@ extern MapKillPidT     transient_pids; // Map of pids of custom kill commands.
 extern ExitedChildrenT exited_children;// Set of processed SIGCHLD events
 extern pid_t           self_pid;
 
-//-------------------------------------------------------------------------
-// Functions
-//-------------------------------------------------------------------------
-
 /// Convert file descriptor to a meaningful string
 std::string fd_type(int tp);
-
-/// Symbolic name of stdin/stdout/stderr fd stream
-const char* stream_name(int i);
-
-int     read_sigchld(pid_t& child);
-void    check_child_exit(pid_t pid);
-int     set_euid(int userid);
-int     set_nice(pid_t pid,int nice, std::string& error);
-bool    process_sigchld();
-bool    set_pid_winsz(CmdInfo& ci, int rows, int cols);
-bool    process_pid_input(CmdInfo& ci);
-void    process_pid_output(CmdInfo& ci, int stream_id, int maxsize = 4096);
-int     send_ok(int transId, long value = -1);
-int     send_pid(int transId, pid_t pid);
-int     send_pid_status_term(const PidStatusT& stat);
-int     send_error_str(int transId, bool asAtom, const char* fmt, ...);
-int     send_pid_list(int transId, const MapChildrenT& children);
-int     send_ospid_output(int pid, const char* type, const char* data, int len);
-
-pid_t   start_child(CmdOptions& op, std::string& err);
-int     kill_child(pid_t pid, int sig, int transId, bool notify=true);
-int     check_children(const TimeVal& now, bool& isTerminated, bool notify = true);
-void    check_child(const TimeVal& now, pid_t pid, CmdInfo& cmd);
-void    check_child_exit(pid_t pid);
-void    close_stdin(CmdInfo& ci);
-void    stop_child(pid_t pid, int transId, const TimeVal& now);
-int     stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify = true);
-void    erase_child(MapChildrenT::iterator& it);
-
-int     set_nonblock_flag(pid_t pid, int fd, bool value);
-int     erl_exec_kill(pid_t pid, int signal);
-int     open_file(const char* file, FileOpenFlag flag, const char* stream,
-                  ei::StringBuffer<128>& err, int mode = DEF_MODE);
-int     open_pipe(int fds[2], const char* stream, ei::StringBuffer<128>& err);
-
-inline void add_exited_child(pid_t pid, exit_status_t status) {
-    // Note the following function doesn't insert anything if the element
-    // with given key was already present in the map
-    exited_children.insert(std::make_pair(pid, status));
-}
-
-// Write details of terminated child to pipe
-inline int write_sigchld(pid_t child)
-{
-    if (terminated || write(sigchld_pipe[1], (char*)&child, sizeof(child)) <= 0)
-        return -1;
-    return 0;
-}
-
-inline void gotsigchild(int signal, siginfo_t* si, void* context)
-{
-    // If someone used kill() to send SIGCHLD ignore the event
-    if (si->si_code == SI_USER || signal != SIGCHLD)
-        return;
-
-    pid_t child = si->si_pid;
-
-    DEBUG(debug, "Child process %d exited", child);
-
-    write_sigchld(child);
-}
-
-inline void gotsignal(int signal)
-{
-    if (signal == SIGTERM || signal == SIGINT || signal == SIGPIPE)
-        terminated = true;
-    if (signal == SIGPIPE)
-        pipe_valid = false;
-    DEBUG(debug, "Got signal: %d", signal);
-}
 
 //-------------------------------------------------------------------------
 // Structs
@@ -263,6 +192,7 @@ private:
     bool                    m_std_stream_append[3];
     int                     m_std_stream_fd[3];
     int                     m_std_stream_mode[3];
+    int                     m_debug = 0;
 
     void init_streams() {
         for (int i=STDIN_FILENO; i <= STDERR_FILENO; i++) {
@@ -285,12 +215,13 @@ public:
     {
         init_streams();
     }
-    CmdOptions(const CmdArgsList& cmd, const char* cd = NULL, const char** env = NULL,
+    CmdOptions(const CmdArgsList& cmd, const char* cd = NULL, const MapEnv& env = MapEnv(),
                int user = INT_MAX, int nice = INT_MAX, int group = INT_MAX)
         : m_shell(true), m_pty(false), m_cmd(cmd), m_cd(cd ? cd : "")
         , m_kill_timeout(KILL_TIMEOUT_SEC)
         , m_kill_group(false)
-        , m_cenv(NULL), m_nice(INT_MAX)
+        , m_env(env)
+        , m_cenv(NULL),   m_nice(INT_MAX)
         , m_group(group), m_user(user)
     {
         init_streams();
@@ -305,21 +236,23 @@ public:
     const CmdArgsList&  cmd()           const { return m_cmd; }
     bool                shell()         const { return m_shell; }
     bool                pty()           const { return m_pty; }
-    const char*  cd()                   const { return m_cd.c_str(); }
-    char* const* env()                  const { return (char* const*)m_cenv; }
-    const char*  kill_cmd()             const { return m_kill_cmd.c_str(); }
-    int          kill_timeout()         const { return m_kill_timeout; }
-    bool         kill_group()           const { return m_kill_group; }
-    int          group()                const { return m_group; }
-    int          user()                 const { return m_user; }
-    int          success_exit_code()    const { return m_success_exit_code; }
-    int          nice()                 const { return m_nice; }
-    const char*  stream_file(int i)     const { return m_std_stream[i].c_str(); }
-    bool         stream_append(int i)   const { return m_std_stream_append[i]; }
-    int          stream_mode(int i)     const { return m_std_stream_mode[i]; }
-    int          stream_fd(int i)       const { return m_std_stream_fd[i]; }
-    int&         stream_fd(int i)             { return m_std_stream_fd[i]; }
-    std::string  stream_fd_type(int i)  const { return fd_type(stream_fd(i)); }
+    const char*   cd()                  const { return m_cd.c_str(); }
+    MapEnv const& mapenv()              const { return m_env; }
+    char* const*  env()                 const { return (char* const*)m_cenv; }
+    int           dbg()                 const { return m_debug; }
+    const char*   kill_cmd()            const { return m_kill_cmd.c_str(); }
+    int           kill_timeout()        const { return m_kill_timeout; }
+    bool          kill_group()          const { return m_kill_group; }
+    int           group()               const { return m_group; }
+    int           user()                const { return m_user; }
+    int           success_exit_code()   const { return m_success_exit_code; }
+    int           nice()                const { return m_nice; }
+    const char*   stream_file(int i)    const { return m_std_stream[i].c_str(); }
+    bool          stream_append(int i)  const { return m_std_stream_append[i]; }
+    int           stream_mode(int i)    const { return m_std_stream_mode[i]; }
+    int           stream_fd(int i)      const { return m_std_stream_fd[i]; }
+    int&          stream_fd(int i)            { return m_std_stream_fd[i]; }
+    std::string   stream_fd_type(int i) const { return fd_type(stream_fd(i)); }
 
     void executable(const std::string& s) { m_executable = s; }
 
@@ -366,6 +299,7 @@ struct CmdInfo {
     bool            managed;        // <true> if this pid is started externally, but managed by erlexec
     int             stream_fd[3];   // Pipe fd getting   process's stdin/stdout/stderr
     int             stdin_wr_pos;   // Offset of the unwritten portion of the head item of stdin_queue
+    int             dbg = 0;        // Debug flag
 #if defined(USE_POLL) && USE_POLL > 0
     int             poll_fd_idx[3]; // Indexes to the pollfd structure in the poll array
 #endif
@@ -381,9 +315,10 @@ struct CmdInfo {
                            ci.stream_fd[STDERR_FILENO], ci.kill_timeout, ci.kill_group);
     }
     CmdInfo(bool managed, const char* _kill_cmd, pid_t _cmd_pid, int _ok_code,
-            bool _kill_group = false) {
-        new (this) CmdInfo(cmd, _kill_cmd, _cmd_pid, getpgid(_cmd_pid), _ok_code, managed);
-        kill_group = _kill_group;
+            bool _kill_group = false, int _debug = 0) {
+        new (this) CmdInfo(cmd, _kill_cmd, _cmd_pid, getpgid(_cmd_pid), _ok_code, managed,
+                           REDIRECT_NULL, REDIRECT_NONE, REDIRECT_NONE, KILL_TIMEOUT_SEC,
+                           _kill_group, _debug);
     }
     CmdInfo(const CmdArgsList& _cmd, const char* _kill_cmd, pid_t _cmd_pid, pid_t _cmd_gid,
             int  _success_code,
@@ -392,7 +327,8 @@ struct CmdInfo {
             int  _stdout_fd    = REDIRECT_NONE,
             int  _stderr_fd    = REDIRECT_NONE,
             int  _kill_timeout = KILL_TIMEOUT_SEC,
-            bool _kill_group   = false)
+            bool _kill_group   = false,
+            int  _debug        = 0)
         : cmd(_cmd)
         , cmd_pid(_cmd_pid)
         , cmd_gid(_cmd_gid)
@@ -403,6 +339,7 @@ struct CmdInfo {
         , success_code(_success_code)
         , managed(_managed)
         , stdin_wr_pos(0)
+        , dbg(_debug)
         #if defined(USE_POLL) && USE_POLL > 0
         , poll_fd_idx{-1,-1,-1}
         #endif
@@ -412,83 +349,87 @@ struct CmdInfo {
         stream_fd[STDERR_FILENO] = _stderr_fd;
     }
 
-    void include_stream_fd(int i, int& maxfd, fd_set* readfds, fd_set* writefds) {
-        bool ok;
-        fd_set* fds;
-
-        if (i == STDIN_FILENO) {
-            ok = stream_fd[i] >= 0 && stdin_wr_pos > 0;
-            if (ok)
-                DEBUG(debug > 2, "Pid %d adding stdin available notification (fd=%d, pos=%d)",
-                      cmd_pid, stream_fd[i], stdin_wr_pos);
-            fds = writefds;
-        } else {
-            ok = stream_fd[i] >= 0;
-            if (ok)
-                DEBUG(debug > 2, "Pid %d adding stdout checking (fd=%d)", cmd_pid, stream_fd[i]);
-            fds = readfds;
-        }
-
-        if (ok) {
-            FD_SET(stream_fd[i], fds);
-            if (stream_fd[i] > maxfd) maxfd = stream_fd[i];
-        }
-    }
-
-    void process_stream_data(int i, fd_set* readfds, fd_set* writefds) {
-        int     fd  = stream_fd[i];
-        fd_set* fds = i == STDIN_FILENO ? writefds : readfds;
-
-        if (fd < 0 || !FD_ISSET(fd, fds)) return;
-
-        if (i == STDIN_FILENO)
-            process_pid_input(*this);
-        else
-            process_pid_output(*this, i);
-    }
-
+    void include_stream_fd(int i, int& maxfd, fd_set* readfds, fd_set* writefds);
+    void process_stream_data(int i, fd_set* readfds, fd_set* writefds);
 #if defined(USE_POLL) && USE_POLL > 0
-     void include_stream_fd(std::vector<pollfd>& v) {
-        poll_fd_idx[STDIN_FILENO]  = -1;
-        poll_fd_idx[STDOUT_FILENO] = -1;
-        poll_fd_idx[STDERR_FILENO] = -1;
-
-        if (stream_fd[STDIN_FILENO] >= 0 && stdin_wr_pos > 0) {
-            DEBUG(debug > 2, "Pid %d adding stdin available notification (fd=%d, pos=%d)",
-                  cmd_pid, stream_fd[STDIN_FILENO], stdin_wr_pos);
-            v.push_back(pollfd{stream_fd[STDIN_FILENO], POLLOUT, 0});
-            poll_fd_idx[STDIN_FILENO] = v.size()-1;
-        }
-        if (stream_fd[STDOUT_FILENO] >= 0) {
-            DEBUG(debug > 2, "Pid %d adding stdout checking (fd=%d)",
-                  cmd_pid, stream_fd[STDOUT_FILENO]);
-            v.push_back(pollfd{stream_fd[STDOUT_FILENO], POLLIN, 0});
-            poll_fd_idx[STDOUT_FILENO] = v.size()-1;
-        }
-        if (stream_fd[STDERR_FILENO] >= 0) {
-            DEBUG(debug > 2, "Pid %d adding stderr checking (fd=%d)",
-                  cmd_pid, stream_fd[STDERR_FILENO]);
-            v.push_back(pollfd{stream_fd[STDERR_FILENO], POLLIN, 0});
-            poll_fd_idx[STDERR_FILENO] = v.size()-1;
-        }
-    }
-
-    void process_stream_data(std::vector<pollfd> const& v) {
-        for (int  i = STDIN_FILENO; i <= STDERR_FILENO; i++) {
-            int idx = poll_fd_idx[i];
-            if (idx < 0)
-                continue;
-            assert(idx < int(v.size()));
-            if (v[idx].revents & (i == STDIN_FILENO ? POLLOUT : POLLIN)) {
-                // Event signaled
-                if (i == STDIN_FILENO)
-                    process_pid_input(*this);
-                else
-                    process_pid_output(*this, i);
-            }
-        }
-    }
+    void include_stream_fd(std::vector<pollfd>& v);
+    void process_stream_data(std::vector<pollfd> const& v);
 #endif
 };
+
+//-------------------------------------------------------------------------
+// Functions
+//-------------------------------------------------------------------------
+
+/// Symbolic name of stdin/stdout/stderr fd stream
+const char* stream_name(int i);
+
+int     read_sigchld(pid_t& child);
+void    check_child_exit(pid_t pid);
+int     set_euid(int userid);
+int     set_nice(pid_t pid,int nice, std::string& error);
+bool    process_sigchld();
+bool    set_pid_winsz(CmdInfo& ci, int rows, int cols);
+bool    process_pid_input(CmdInfo& ci);
+void    process_pid_output(CmdInfo& ci, int stream_id, int maxsize = 4096);
+int     send_ok(int transId, long value = -1);
+int     send_pid(int transId, pid_t pid);
+int     send_pid_status_term(const PidStatusT& stat);
+int     send_error_str(int transId, bool asAtom, const char* fmt, ...);
+int     send_pid_list(int transId, const MapChildrenT& children);
+int     send_ospid_output(int pid, const char* type, const char* data, int len);
+
+pid_t   start_child(CmdOptions& op, std::string& err);
+int     kill_child(pid_t pid, int sig, int transId, bool notify=true);
+int     check_children(const TimeVal& now, bool& isTerminated, bool notify = true);
+void    check_child(const TimeVal& now, pid_t pid, CmdInfo& cmd);
+void    close_stdin(CmdInfo& ci);
+void    stop_child(pid_t pid, int transId, const TimeVal& now);
+int     stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify = true);
+void    erase_child(MapChildrenT::iterator& it);
+inline bool child_exists(pid_t pid) { return children.find(pid) != children.end(); }
+
+int     set_nonblock_flag(pid_t pid, int fd, bool value);
+int     erl_exec_kill(pid_t pid, int signal, const char* srcloc="");
+int     open_file(const char* file, FileOpenFlag flag, const char* stream,
+                  ei::StringBuffer<128>& err, int mode = DEF_MODE);
+int     open_pipe(int fds[2], const char* stream, ei::StringBuffer<128>& err);
+
+inline void add_exited_child(pid_t pid, exit_status_t status) {
+    // Note the following function doesn't insert anything if the element
+    // with given key was already present in the map
+    exited_children.insert(std::make_pair(pid, status));
+}
+
+// Write details of terminated child to pipe
+inline int write_sigchld(pid_t child)
+{
+    if (terminated || write(sigchld_pipe[1], (char*)&child, sizeof(child)) <= 0)
+        return -1;
+    return 0;
+}
+
+inline void gotsigchild(int signal, siginfo_t* si, void* context)
+{
+    // If someone used kill() to send SIGCHLD ignore the event
+    if (si->si_code == SI_USER || signal != SIGCHLD)
+        return;
+
+    pid_t child = si->si_pid;
+
+    DEBUG(debug, "Child process %d exited", child);
+
+    write_sigchld(child);
+}
+
+inline void gotsignal(int signal)
+{
+    if (signal == SIGTERM || signal == SIGINT || signal == SIGPIPE)
+        terminated = true;
+    if (signal == SIGPIPE)
+        pipe_valid = false;
+    DEBUG(debug, "Got signal: %d", signal);
+}
+
 
 } // namespace ei
