@@ -32,7 +32,7 @@ doc ebin:
 test:
 	@$(REBAR) eunit
 
-publish:
+publish: docs clean
 	$(REBAR) hex cut
 
 clean-docs:
