@@ -60,7 +60,9 @@
 
 %% External exports
 -export([
-    start/0, start/1, start_link/1, run/2, run_link/2, manage/2, send/2, winsz/3,
+    start/0, start/1, start_link/1, run/2, run/3,
+    run_link/2, run_link/3,
+    manage/2, send/2, winsz/3,
     which_children/0, kill/2,       setpgid/2, stop/1, stop_and_wait/2,
     ospid/1, pid/1,   status/1,     signal/1,  signal_to_int/1, debug/1
 ]).
@@ -78,6 +80,8 @@
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
+
+-define(TIMEOUT, 30000).
 
 -record(state, {
     port,
@@ -358,10 +362,13 @@ start(Options) when is_list(Options) ->
 %%      process's exit code and if it was killed by signal.
 %% @end
 %%-------------------------------------------------------------------------
--spec run(cmd(), cmd_options()) ->
+-spec run(cmd(), cmd_options(), integer()) ->
     {ok, pid(), ospid()} | {ok, [{stdout | stderr, [binary()]}]} | {error, any()}.
-run(Exe, Options) when (is_binary(Exe) orelse is_list(Exe)) andalso is_list(Options) ->
-    do_run({run, Exe, Options}, Options).
+run(Exe, Options, Timeout) when (is_binary(Exe)  orelse  is_list(Exe))
+                        andalso is_list(Options) andalso is_integer(Timeout) ->
+    do_run({run, Exe, Options}, Options, Timeout).
+run(Exe, Options) ->
+    run(Exe, Options, ?TIMEOUT).
 
 %%-------------------------------------------------------------------------
 %% @equiv run/2
@@ -373,10 +380,13 @@ run(Exe, Options) when (is_binary(Exe) orelse is_list(Exe)) andalso is_list(Opti
 %%      process's exit code and if it was killed by signal.
 %% @end
 %%-------------------------------------------------------------------------
--spec run_link(cmd(), cmd_options()) ->
+-spec run_link(cmd(), cmd_options(), integer()) ->
     {ok, pid(), ospid()} | {ok, [{stdout | stderr, [binary()]}]} | {error, any()}.
-run_link(Exe, Options) when (is_binary(Exe) orelse is_list(Exe)) andalso is_list(Options) ->
-    do_run({run, Exe, Options}, [link | Options]).
+run_link(Exe, Options, Timeout) when (is_binary(Exe)  orelse  is_list(Exe))
+                             andalso is_list(Options) andalso is_integer(Timeout) ->
+    do_run({run, Exe, Options}, [link | Options], Timeout).
+run_link(Exe, Options) ->
+    run_link(Exe, Options, ?TIMEOUT).
 
 %%-------------------------------------------------------------------------
 %% @doc Manage an existing external process. `OsPid' is the OS process
@@ -384,13 +394,15 @@ run_link(Exe, Options) when (is_binary(Exe) orelse is_list(Exe)) andalso is_list
 %%      would be managed by erlexec.
 %% @end
 %%-------------------------------------------------------------------------
--spec manage(ospid() | port(), Options::cmd_options()) ->
+-spec manage(ospid() | port(), Options::cmd_options(), Timeout::integer()) ->
     {ok, pid(), ospid()} | {error, any()}.
-manage(Pid, Options) when is_integer(Pid) ->
-    do_run({manage, Pid, Options}, Options);
-manage(Port, Options) when is_port(Port) ->
+manage(Pid, Options, Timeout) when is_integer(Pid), is_integer(Timeout) ->
+    do_run({manage, Pid, Options}, Options, Timeout);
+manage(Port, Options, Timeout) when is_port(Port), is_integer(Timeout) ->
     {os_pid, OsPid} = erlang:port_info(Port, os_pid),
-    manage(OsPid, Options).
+    manage(OsPid, Options, Timeout).
+manage(Port, Options) ->
+    manage(Port, Options, ?TIMEOUT).
 
 %%-------------------------------------------------------------------------
 %% @doc Get a list of children managed by port program.
@@ -885,9 +897,9 @@ wait_port_exit(Port) ->
 %%% Internal functions
 %%%---------------------------------------------------------------------
 
--spec do_run(Cmd::any(), Options::cmd_options()) ->
+-spec do_run(Cmd::any(), Options::cmd_options(), Timeout::integer()) ->
     {ok, pid(), ospid()} | {ok, [{stdout | stderr, [binary()]}]} | {error, any()}.
-do_run(Cmd, Options) ->
+do_run(Cmd, Options, Timeout) when is_integer(Timeout) ->
     Link = case {proplists:get_bool(link,    Options),
                  proplists:get_bool(monitor, Options)} of
            {true, _} -> link;
@@ -896,7 +908,7 @@ do_run(Cmd, Options) ->
            end,
     Sync = proplists:get_value(sync, Options, false),
     Cmd2 = {port, {Cmd, Link, Sync}},
-    case gen_server:call(?MODULE, Cmd2, 30000) of
+    case gen_server:call(?MODULE, Cmd2, Timeout) of
     {ok, Pid, OsPid, _Sync = true} ->
         wait_for_ospid_exit(OsPid, Pid, [], []);
     {ok, Pid, OsPid, _} ->
