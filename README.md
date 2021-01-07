@@ -70,8 +70,8 @@ OS-specific libcap-dev installation instructions:
 $ git clone git@github.com:saleyn/erlexec.git
 $ make
 
-# NOTE: for enabling optimized build of exec-port, do the following instead:
-$ OPTIMIZE=true make
+# NOTE: for disabling optimized build of exec-port, do the following instead:
+$ OPTIMIZE=0 make
 ```
 
 By default port program's implementation uses `poll(2)` call for event
