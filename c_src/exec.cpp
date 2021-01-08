@@ -75,7 +75,8 @@ bool  ei::pipe_valid      = true;
 int   ei::max_fds;
 int   ei::dev_null;
 int   ei::sigchld_pipe[2] = { -1, -1 }; // Pipe for delivering sig child details
-int   run_as_euid         = INT_MAX;
+
+static int run_as_euid    = INT_MAX;
 
 //-------------------------------------------------------------------------
 // Types & variables
@@ -99,7 +100,7 @@ int     finalize();
 // Local Functions
 //-------------------------------------------------------------------------
 
-void usage(char* progname) {
+static void usage(char* progname) {
     fprintf(stderr,
         "Usage:\n"
         "   %s [-n] [-root] [-alarm N] [-debug [Level]] [-user User]\n"
