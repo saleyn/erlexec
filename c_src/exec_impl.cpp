@@ -1311,7 +1311,7 @@ int CmdOptions::ei_decode(bool getCmd)
                             bool bval;
                             if (!eis.decodeStringOrBinary(val)) {
                                 res = true;
-                                s   = key + "=" + val;
+                                s   = val;
                             } else if (!eis.decodeBool(bval) && !bval) {
                                 // {"VAR", false}  - this means to unset the variable
                                 res = true;
