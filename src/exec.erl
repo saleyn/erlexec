@@ -244,9 +244,11 @@
 %% <dt>{kill, KillCmd}</dt>
 %%     <dd>This command will be used for killing the process. After
 %%         a 5-sec timeout if the process is still alive, it'll be
-%%         killed with SIGTERM followed by SIGKILL.  By default
-%%         SIGTERM/SIGKILL combination is used for process
-%%         termination.</dd>
+%%         killed with SIGKILL. The kill command will have a `CHILD_PID'
+%%         environment variable set to the pid of the process it is
+%%         expected to kill.  If the `kill' option is not specified,
+%%         by default first the command is sent a `SIGTERM' signal,
+%%         followed by `SIGKILL' after a default timeout.</dd>
 %% <dt>{kill_timeout, Sec::integer()}</dt>
 %%     <dd>Number of seconds to wait after issueing a SIGTERM or
 %%         executing the custom `kill' command (if specified) before

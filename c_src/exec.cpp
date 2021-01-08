@@ -90,7 +90,7 @@ pid_t           ei::self_pid;
 //-------------------------------------------------------------------------
 // Local Functions
 //-------------------------------------------------------------------------
-bool    process_command();
+bool    process_command(bool is_err);
 void    initialize(int userid, bool use_alt_fds, bool is_root,
                    bool requested_root);
 int     finalize();
@@ -208,7 +208,7 @@ int main(int argc, char* argv[])
 #if defined(USE_POLL) && USE_POLL > 0
     std::vector<pollfd> fds;
 #else
-    fd_set readfds, writefds;
+    fd_set readfds, writefds, errfds;
 #endif
 
     // Main processing loop
@@ -230,8 +230,10 @@ int main(int argc, char* argv[])
     #else
         FD_ZERO(&writefds);
         FD_ZERO(&readfds);
+        FD_ZERO(&errfds);
         FD_SET (eis.read_handle(), &readfds); // Erlang communication pipe
         FD_SET (sigchld_pipe[0],   &readfds); // pipe for delivering SIGCHLD signals
+        FD_SET (eis.read_handle(), &errfds);  // Erlang communication pipe
         int     maxfd  = std::max<int>(eis.read_handle(), sigchld_pipe[0]);
 
         // Set up all stdout/stderr input streams that we need to monitor and redirect to Erlang
@@ -266,7 +268,7 @@ int main(int argc, char* argv[])
     #if defined(USE_POLL) && USE_POLL > 0
             poll(&fds[0], fds.size(), timeout.millisec());
     #else
-            select(maxfd+1, &readfds, &writefds, NULL, &timeout);
+            select(maxfd+1, &readfds, &writefds, &errfds, NULL, &timeout);
     #endif
         int interrupted = (cnt < 0 && errno == EINTR);
         // Note that the process will not be interrupted while outside of pselectx()
@@ -280,6 +282,7 @@ int main(int argc, char* argv[])
                 terminated = true;
                 break;
             }
+            continue;
         } else if (cnt < 0) {
             if (errno == EBADF) {
                 DEBUG(debug, "Error EBADF(9) in select: %s (terminated=%d)",
@@ -290,7 +293,10 @@ int main(int argc, char* argv[])
             terminated = true;
             break;
         }
-        else // Check for SIGCHLD
+        
+        auto is_err = false;
+        
+        // Check for SIGCHLD
     #if defined(USE_POLL) && USE_POLL > 0
         if (fds[1].revents & (POLLIN|POLLHUP))
     #else
@@ -307,13 +313,15 @@ int main(int argc, char* argv[])
         }
         else // Check for command from Erlang or hangup
     #if defined(USE_POLL) && USE_POLL > 0
-        if (fds[0].revents & (POLLIN|POLLHUP))
+        if ((fds[0].revents & POLLIN) ||
+            (is_err = (fds[0].revents & POLLHUP)))
     #else
-        if (FD_ISSET(eis.read_handle(), &readfds))
+        if (FD_ISSET(eis.read_handle(), &readfds) ||
+            (is_err = FD_ISSET(eis.read_handle(), &errfds)))
     #endif
         {
             // Read from input stream a command sent by Erlang
-            if (!process_command())
+            if (!process_command(is_err))
                 break;
         } else {
             // Check if any stdout/stderr streams have data
@@ -331,23 +339,26 @@ int main(int argc, char* argv[])
     return finalize();
 }
 
-bool process_command()
+bool process_command(bool is_err)
 {
     int  arity;
     long transId;
     std::string command;
 
-    auto rc = eis.read();
+    auto rc = is_err ? 0 : eis.read();
     if  (rc <= 0) {
+        int err = errno;
+
+        DEBUG(debug, "Broken Erlang command pipe %s(%d): %s",
+              is_err ? "[was error] " : "",
+              errno, errno==EAGAIN ? "EAGAIN" : strerror(errno));
+
         // If we were using non-blocking reads, we'd also need to check
         // for EAGAIN, that is not an error.
-        if (rc < 0 && errno == EAGAIN)
+        if (rc < 0 && err == EAGAIN)
             return true;
 
-        int err = errno;
-        DEBUG(debug, "Broken Erlang command pipe (%d): %s",
-              errno, strerror(errno));
-        terminated = (err != 0);
+        terminated = (err != 0) || is_err;
         return false;
     }
 

@@ -181,6 +181,7 @@ private:
     std::string             m_kill_cmd;
     int                     m_kill_timeout;
     bool                    m_kill_group;
+    bool                    m_is_kill_cmd; // true if this represents a custom kill command
     MapEnv                  m_env;
     const char**            m_cenv;
     bool                    m_env_clear;
@@ -208,6 +209,7 @@ public:
         : m_tmp(0, 256), m_shell(true), m_pty(false)
         , m_kill_timeout(KILL_TIMEOUT_SEC)
         , m_kill_group(false)
+        , m_is_kill_cmd(false)
         , m_cenv(NULL), m_env_clear(false)
         , m_nice(INT_MAX)
         , m_group(INT_MAX), m_user(def_user)
@@ -216,10 +218,12 @@ public:
         init_streams();
     }
     CmdOptions(const CmdArgsList& cmd, const char* cd = NULL, const MapEnv& env = MapEnv(),
-               int user = INT_MAX, int nice = INT_MAX, int group = INT_MAX)
+               int  user = INT_MAX, int nice = INT_MAX, int group = INT_MAX,
+               bool is_kill_cmd=false)
         : m_shell(true), m_pty(false), m_cmd(cmd), m_cd(cd ? cd : "")
         , m_kill_timeout(KILL_TIMEOUT_SEC)
         , m_kill_group(false)
+        , m_is_kill_cmd(is_kill_cmd)
         , m_env(env)
         , m_cenv(NULL),   m_nice(INT_MAX)
         , m_group(group), m_user(user)
@@ -243,6 +247,7 @@ public:
     const char*   kill_cmd()            const { return m_kill_cmd.c_str(); }
     int           kill_timeout()        const { return m_kill_timeout; }
     bool          kill_group()          const { return m_kill_group; }
+    bool          is_kill_cmd()         const { return m_is_kill_cmd; }
     int           group()               const { return m_group; }
     int           user()                const { return m_user; }
     int           success_exit_code()   const { return m_success_exit_code; }
@@ -387,7 +392,6 @@ void    close_stdin(CmdInfo& ci);
 void    stop_child(pid_t pid, int transId, const TimeVal& now);
 int     stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify = true);
 void    erase_child(MapChildrenT::iterator& it);
-inline bool child_exists(pid_t pid) { return children.find(pid) != children.end(); }
 
 int     set_nonblock_flag(pid_t pid, int fd, bool value);
 int     erl_exec_kill(pid_t pid, int signal, const char* srcloc="");
@@ -395,6 +399,7 @@ int     open_file(const char* file, FileOpenFlag flag, const char* stream,
                   ei::StringBuffer<128>& err, int mode = DEF_MODE);
 int     open_pipe(int fds[2], const char* stream, ei::StringBuffer<128>& err);
 
+inline bool child_exists(pid_t pid) { return children.find(pid) != children.end(); }
 inline void add_exited_child(pid_t pid, exit_status_t status) {
     // Note the following function doesn't insert anything if the element
     // with given key was already present in the map
