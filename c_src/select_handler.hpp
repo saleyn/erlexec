@@ -12,7 +12,7 @@ struct SelectHandler {
         FD_ZERO(&writefds);
         FD_ZERO(&readfds);
         FD_ZERO(&errfds);
-    };
+    }
     
     void clear() { new (this)(); }
     
