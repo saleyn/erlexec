@@ -123,6 +123,7 @@ void usage(char* progname) {
 
 int main(int argc, char* argv[])
 {
+    FdHandler fdhandler;
     struct sigaction sact, sterm;
     int    userid         = 0;
     bool   use_alt_fds    = false;
@@ -205,71 +206,31 @@ int main(int argc, char* argv[])
     sigemptyset(&sact.sa_mask);
     sigaction(SIGCHLD, &sact, NULL);
 
-#if defined(USE_POLL) && USE_POLL > 0
-    std::vector<pollfd> fds;
-#else
-    fd_set readfds, writefds, errfds;
-#endif
-
     // Main processing loop
     while (!terminated) {
 
         double  wakeup = SLEEP_TIMEOUT_SEC;
         TimeVal now(TimeVal::NOW);
 
-    #if defined(USE_POLL) && USE_POLL > 0
-        fds.resize(2);
-        fds[0] = pollfd{eis.read_handle(), POLLIN, 0};  // Erlang communication pipe
-        fds[1] = pollfd{sigchld_pipe[0],   POLLIN, 0};  // pipe for delivering SIGCHLD signals
+        fdhandler.clear_fds();
+        fdhandler.append_read_fd(eis.read_handle(), FdType::COMMAND);  // Erlang communication pipe
+        fdhandler.append_read_fd(sigchld_pipe[0], FdType::SIGCHILD);   // pipe for delivering SIGCHLD signals
         // Set up all stdout/stderr input streams that we need to monitor and redirect to Erlang
-        for(auto it=children.begin(), end=children.end(); it != end; ++it) {
-            it->second.include_stream_fd(fds);
-            if (!it->second.deadline.zero())
-                wakeup = std::max(0.1, std::min(wakeup, it->second.deadline.diff(now)));
+        for (auto &it: children) {
+            it.second.include_stream_fd(fdhandler);
+            if (!it.second.deadline.zero())
+                wakeup = std::max(0.1, std::min(wakeup, it.second.deadline.diff(now)));
         }
-    #else
-        FD_ZERO(&writefds);
-        FD_ZERO(&readfds);
-        FD_ZERO(&errfds);
-        FD_SET (eis.read_handle(), &readfds); // Erlang communication pipe
-        FD_SET (sigchld_pipe[0],   &readfds); // pipe for delivering SIGCHLD signals
-        FD_SET (eis.read_handle(), &errfds);  // Erlang communication pipe
-        int     maxfd  = std::max<int>(eis.read_handle(), sigchld_pipe[0]);
-
-        // Set up all stdout/stderr input streams that we need to monitor and redirect to Erlang
-        for(auto it=children.begin(), end=children.end(); it != end; ++it)
-            for (int i=STDIN_FILENO; i <= STDERR_FILENO; i++) {
-                it->second.include_stream_fd(i, maxfd, &readfds, &writefds);
-                if (!it->second.deadline.zero())
-                    wakeup = std::max(0.1, std::min(wakeup, it->second.deadline.diff(now)));
-            }
-
-    #endif
 
         if (terminated || wakeup < 0) break;
 
         int secs = int(wakeup);
         ei::TimeVal timeout(secs, int((wakeup - secs)*1000000.0 + 0.5));
 
-        DEBUG(debug > 2, "Selecting "
-                    #if defined(USE_POLL) && USE_POLL > 0
-                    "fds"
-                    #else
-                    "maxfd"
-                    #endif
-                    "=%d (sleep=%dms)\r\n",
-                    #if defined(USE_POLL) && USE_POLL > 0
-                    int(fds.size()),
-                    #else
-                    maxfd,
-                    #endif
+        DEBUG(debug > 2, "Selecting fds=%d (sleep=%dms)\r\n",
+                    int(fdhandler.size()),
                     int(timeout.millisec()));
-        int cnt = 
-    #if defined(USE_POLL) && USE_POLL > 0
-            poll(&fds[0], fds.size(), timeout.millisec());
-    #else
-            select(maxfd+1, &readfds, &writefds, &errfds, NULL, &timeout);
-    #endif
+        int cnt = fdhandler.wait_for_event(timeout);
         int interrupted = (cnt < 0 && errno == EINTR);
         // Note that the process will not be interrupted while outside of pselectx()
 
@@ -297,12 +258,7 @@ int main(int argc, char* argv[])
         auto is_err = false;
         
         // Check for SIGCHLD
-    #if defined(USE_POLL) && USE_POLL > 0
-        if (fds[1].revents & (POLLIN|POLLHUP))
-    #else
-        if (FD_ISSET(sigchld_pipe[0], &readfds))
-    #endif
-        {
+        if (fdhandler.is_readable(FdType::SIGCHILD)) {
             if (!process_sigchld())
                 break;
             now.now();
@@ -311,29 +267,17 @@ int main(int argc, char* argv[])
                 break;
             }
         }
-        else // Check for command from Erlang or hangup
-    #if defined(USE_POLL) && USE_POLL > 0
-        if ((fds[0].revents & POLLIN) ||
-            (is_err = (fds[0].revents & POLLHUP)))
-    #else
-        if (FD_ISSET(eis.read_handle(), &readfds) ||
-            (is_err = FD_ISSET(eis.read_handle(), &errfds)))
-    #endif
+        // Check for command from Erlang or hangup
+        else if (fdhandler.is_readable(FdType::COMMAND) || (is_err = fdhandler.is_error(FdType::COMMAND)))
         {
             // Read from input stream a command sent by Erlang
             if (!process_command(is_err))
                 break;
         } else {
             // Check if any stdout/stderr streams have data
-            for(auto it=children.begin(), end=children.end(); it != end; ++it)
-    #if defined(USE_POLL) && USE_POLL > 0
-                it->second.process_stream_data(fds);
-    #else
-                for (int i=STDIN_FILENO; i <= STDERR_FILENO; i++)
-                    it->second.process_stream_data(i, &readfds, &writefds);
-    #endif
+            for(auto &it: children)
+                it.second.process_stream_data(fdhandler);
         }
-
     }
 
     return finalize();
@@ -709,11 +653,7 @@ int finalize()
         if (children.empty())
             break;
 
-        #if defined(USE_POLL) && USE_POLL > 0
-        std::vector<pollfd> fds;
-        #else
-        fd_set readfds;
-        #endif
+        FdHandler fdhandler;
 
         while (true) {
             TimeVal timeout(TimeVal::NOW);
@@ -722,29 +662,17 @@ int finalize()
 
             int cnt;
 
-            #if defined(USE_POLL) && USE_POLL > 0
-            fds.resize(1);
-            fds[0]  = pollfd{sigchld_pipe[0], POLLIN|POLLERR, 0};
+            fdhandler.clear_fds();
+            fdhandler.append_read_fd(sigchld_pipe[0], FdType::SIGCHILD, true);
             auto ts = deadline - timeout; 
-            while ((cnt = poll(&fds[0], fds.size(), ts.millisec())) < 0 && errno == EINTR);
-            #else
-            FD_ZERO(&readfds);
-            FD_SET (sigchld_pipe[0], &readfds); // pipe for delivering SIGCHLD signals
-            int   maxfd = std::max<int>(eis.read_handle(), sigchld_pipe[0]);
-            timeval  ts = (deadline - timeout).timeval();
-            while ((cnt = select(maxfd+1, &readfds, NULL, NULL, &ts)) < 0 && errno == EINTR);
-            #endif
+            while ((cnt = fdhandler.wait_for_event(ts)) < 0 && errno == EINTR);
 
             if (cnt < 0) {
                 DEBUG(true, "Error in finalizing pselect(2): %s", strerror(errno));
                 break;
             }
             else if (cnt) {
-                #if defined(USE_POLL) && USE_POLL > 0
-                if (fds[0].revents & (POLLIN|POLLHUP))
-                #else
-                if (FD_ISSET(sigchld_pipe[0], &readfds))
-                #endif
+                if (fdhandler.is_readable(FdType::SIGCHILD))
                     if (!process_sigchld())
                         break;
             }
