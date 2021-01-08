@@ -14,7 +14,7 @@ struct SelectHandler {
         FD_ZERO(&errfds);
     }
     
-    void clear() { new (this)(); }
+    void clear() { new (this) SelectHandler(); }
     
     void append_read_fd(int fd, FdType type = FdType::CHILD_PROC, bool _error = false) {
         FD_SET(fd, &readfds);
