@@ -368,7 +368,8 @@ pid_t start_child(CmdOptions& op, std::string& error)
                 break;
             case REDIRECT_NULL:
                 sfd[crw] = dev_null;
-                DEBUG(debug, "  Redirecting [%s -> null]", stream_name(i));
+                if (!op.is_kill_cmd())
+                    DEBUG(debug, "  Redirecting [%s -> null]", stream_name(i));
                 break;
             case REDIRECT_FILE: {
                 FileOpenFlag flag = i == STDIN_FILENO   ? READ   :
@@ -386,18 +387,20 @@ pid_t start_child(CmdOptions& op, std::string& error)
     }
 
     if (debug || op.dbg()) {
-        DEBUG(true, "Starting child: '%s' (euid=%d)",
+        DEBUG(true, "Starting %s: '%s' (euid=%d)",
+              op.is_kill_cmd() ? "custom kill command" : "child",
               op.cmd().front().c_str(), op.user() == INT_MAX ? -1 : op.user());
-        fprintf(stderr,
+        if (!op.is_kill_cmd())
+            fprintf(stderr,
                     "  child  = (stdin=%s, stdout=%s, stderr=%s)\r\n"
                     "  parent = (stdin=%s, stdout=%s, stderr=%s)\r\n",
-            fd_type(stream_fd[STDIN_FILENO ][RD]).c_str(),
-            fd_type(stream_fd[STDOUT_FILENO][WR]).c_str(),
-            fd_type(stream_fd[STDERR_FILENO][WR]).c_str(),
-            fd_type(stream_fd[STDIN_FILENO ][WR]).c_str(),
-            fd_type(stream_fd[STDOUT_FILENO][RD]).c_str(),
-            fd_type(stream_fd[STDERR_FILENO][RD]).c_str()
-        );
+                fd_type(stream_fd[STDIN_FILENO ][RD]).c_str(),
+                fd_type(stream_fd[STDOUT_FILENO][WR]).c_str(),
+                fd_type(stream_fd[STDERR_FILENO][WR]).c_str(),
+                fd_type(stream_fd[STDIN_FILENO ][WR]).c_str(),
+                fd_type(stream_fd[STDOUT_FILENO][RD]).c_str(),
+                fd_type(stream_fd[STDERR_FILENO][RD]).c_str()
+            );
         if (!op.executable().empty())
             fprintf(stderr, "  Executable: %s", op.executable().c_str());
         if (!op.cmd().empty()) {
@@ -415,7 +418,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
             error = "cannot run empty command";
             return -1;
         }
-        if (!op.mapenv().empty() && op.dbg())
+        if (!op.mapenv().empty() && (debug || op.dbg()))
             for (auto& kv : op.mapenv())
                 fprintf(stderr, "  Env[%s]: %s\r\n", kv.first.c_str(), kv.second.c_str());
 
@@ -560,6 +563,14 @@ pid_t start_child(CmdOptions& op, std::string& error)
             perror(err.c_str());
             exit(EXIT_FAILURE);
         }
+        /*
+        // Print the environment of the child
+        if ((debug > 3 || op.dbg() > 3) && op.env()) {
+            int i=0;
+            for (auto p = op.env()[i]; p; p = op.env()[++i])
+                fprintf(stderr, "  CEnv: %s\r\n", p);
+        }
+        */
 
         const char* executable = op.executable().empty()
             ? argv[0] : op.executable().c_str();
@@ -634,12 +645,13 @@ int stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify)
 
     if (ci.sigkill)     // Kill signal already sent
         return 0;
-    else if (ci.kill_cmd_pid > 0 || ci.sigterm) {
+
+    if (ci.kill_cmd_pid > 0 || ci.sigterm) {
         // There was already an attempt to kill it.
-        if (ci.sigterm && now.diff(ci.deadline) > 0) {
+        if (now.diff(ci.deadline) > 0) {
             DEBUG(debug,
                   "PID %d: more than %ds elapsed since the kill attempt by pid %d: executing SIGKILL",
-                  KILL_TIMEOUT_SEC, ci.cmd_pid, ci.kill_cmd_pid);
+                  ci.cmd_pid, KILL_TIMEOUT_SEC, ci.kill_cmd_pid);
             erl_exec_kill(ci.kill_group ? -ci.cmd_gid : ci.cmd_pid, SIGKILL, SRCLOC);
             if (ci.kill_cmd_pid > 0)
                 erl_exec_kill(ci.kill_cmd_pid, SIGKILL, SRCLOC);
@@ -648,12 +660,25 @@ int stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify)
         }
         if (notify) send_ok(transId);
         return 0;
-    } else if (!ci.kill_cmd.empty()) {
+    }
+
+    DEBUG(debug, "Request to stop pid %d", ci.cmd_pid);
+
+    if (!ci.kill_cmd.empty()) {
         // This is the first attempt to kill this pid and kill command is provided.
         CmdArgsList kill_cmd;
         kill_cmd.push_front(ci.kill_cmd.c_str());
         MapEnv env{{"CHILD_PID", std::to_string(ci.cmd_pid)}};
-        CmdOptions co(kill_cmd, NULL, env);
+        CmdOptions co(kill_cmd, NULL, env,
+                      INT_MAX, // user
+                      INT_MAX, // nice
+                      INT_MAX, // group
+                      true     // this is a custom kill command
+                     );
+
+        if (debug > 3 || co.dbg() > 3)
+            co.stream_redirect(STDERR_FILENO, REDIRECT_NONE); // Don't redirect STDERR of the kill command
+
         std::string err;
         ci.kill_cmd_pid = start_child(co, err);
         if (!err.empty())
@@ -662,6 +687,8 @@ int stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify)
 
         if (ci.kill_cmd_pid > 0) {
             ci.deadline.set(now, ci.kill_timeout);
+            DEBUG(debug, "Set kill deadline for pid %d of %ds (for being killed by custom command's pid %d)",
+                  ci.cmd_pid, ci.kill_timeout, ci.kill_cmd_pid);
             transient_pids[ci.kill_cmd_pid] = std::make_pair(ci.cmd_pid, ci.deadline);
             if (notify) send_ok(transId);
             return 0;
@@ -694,7 +721,7 @@ int stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify)
             ci.deadline.clear();
             ci.sigkill = true;
             DEBUG(debug, "Failed to kill %s %d - leaving a zombie", spid, abs(pid));
-            MapChildrenT::iterator it = children.find(ci.cmd_pid);
+            auto it = children.find(ci.cmd_pid);
             if (it != children.end())
                 erase_child(it);
         }
@@ -709,7 +736,7 @@ void stop_child(pid_t pid, int transId, const TimeVal& now)
 {
     int n = 0;
 
-    MapChildrenT::iterator it = children.find(pid);
+    auto it = children.find(pid);
     if (it == children.end()) {
         send_error_str(transId, false, "pid not alive");
         return;
@@ -797,7 +824,7 @@ int check_children(const TimeVal& now, bool& isTerminated, bool notify)
     DEBUG(debug > 2, "Checking %ld running children (exited count=%ld)",
           children.size(), exited_children.size());
 
-    for (MapChildrenT::iterator it=children.begin(), end=children.end(); !isTerminated && it != end; ++it)
+    for (auto it=children.begin(), end=children.end(); !isTerminated && it != end; ++it)
         check_child(now, it->first, it->second);
 
     DEBUG(debug > 2, "Checking %ld exited children (notify=%d)",
@@ -805,9 +832,9 @@ int check_children(const TimeVal& now, bool& isTerminated, bool notify)
 
     // For each process info in the <exited_children> queue deliver it to the Erlang VM
     // and remove it from the managed <children> map.
-    for (ExitedChildrenT::iterator it=exited_children.begin(); !isTerminated && it!=exited_children.end();)
+    for (auto it=exited_children.begin(); !isTerminated && it!=exited_children.end();)
     {
-        MapChildrenT::iterator i = children.find(it->first);
+        auto i = children.find(it->first);
         MapKillPidT::iterator j;
 
         if (i != children.end()) {
@@ -831,10 +858,19 @@ int check_children(const TimeVal& now, bool& isTerminated, bool notify)
             erase_child(i);
         } else if ((j = transient_pids.find(it->first)) != transient_pids.end()) {
             // the pid is one of the custom 'kill' commands started by us.
+            // If the cmd that was intended to be killed by this pid still exists
+            // clear its kill_cmd_pid value
+            auto cmd_pid = j->second.first;
+            i = children.find(cmd_pid);
+            if (i != children.end()) {
+                i->second.kill_cmd_pid = 0;     // Since this command is no longer alive
+                i->second.sigterm      = true;  // Since we already made an attempt to kill
+            }
+            // Erase the kill command's pid entry
             transient_pids.erase(j);
         }
 
-        exited_children.erase(it++);
+        it = exited_children.erase(it);
     }
 
     return 0;
@@ -886,6 +922,7 @@ void check_child_exit(pid_t pid)
     if (exited_children.find(pid) != exited_children.end())
         return;
 
+    // Read process's exit status
     while ((ret = waitpid(pid, &status, WNOHANG)) < 0 && errno == EINTR);
 
     DEBUG(debug, "* Process %d (ret=%d, status=%d, exited_count=%ld%s%s)",
@@ -914,7 +951,7 @@ int send_pid_list(int transId, const MapChildrenT& children)
     eis.encodeTupleSize(2);
     eis.encode(transId);
     eis.encodeListSize(children.size());
-    for(MapChildrenT::const_iterator it=children.begin(), end=children.end(); it != end; ++it)
+    for(auto it=children.begin(), end=children.end(); it != end; ++it)
         eis.encode(it->first);
     eis.encodeListEnd();
     return eis.write();
@@ -1335,12 +1372,12 @@ int CmdOptions::ei_decode(bool getCmd)
                         fdr = REDIRECT_NULL;
                     } else if (s == "close") {
                         stream_redirect(opt, REDIRECT_CLOSE);
-                    } else if (s == "stderr" && opt == STDOUT)
+                    } else if (s == "stderr" && opt == STDOUT) // Redirect STDOUT to STDERR
                         stream_redirect(opt, REDIRECT_STDERR);
-                    else if (s == "stdout" && opt == STDERR)
+                    else if (s == "stdout" && opt == STDERR)   // Redirect STDERR to STDOUT
                         stream_redirect(opt, REDIRECT_STDOUT);
                     else if (!s.empty()) {
-                        stream_file(opt, s);
+                        stream_file(opt, s);                   // Redirect to file
                     }
                 } else if (arity == 3) {
                     int n, sz, mode = DEF_MODE;
@@ -1437,11 +1474,15 @@ int CmdOptions::init_cenv()
     }
 
     int i = 0;
-    for (MapEnvIterator it = m_env.begin(), end = m_env.end(); it != end; ++it)
+    for (auto it = m_env.begin(), end = m_env.end(); it != end; ++it)
         if (it->second.empty()) // Unset the env variable
             continue;
-        else
+        else {
+            // Reformat the environment in the form: KEY=VALUE
+            it->second = it->first + "=" + it->second;
             m_cenv[i++] = it->second.c_str();
+        }
+
     m_cenv[i] = NULL;
 
     return 0;
