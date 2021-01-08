@@ -181,22 +181,22 @@ struct CmdOptions {
 private:
     ei::StringBuffer<256>   m_tmp;
     std::stringstream       m_err;
-    bool                    m_shell;
-    bool                    m_pty;
+    bool                    m_shell = true;
+    bool                    m_pty = false;
     std::string             m_executable;
     CmdArgsList             m_cmd;
     std::string             m_cd;
     std::string             m_kill_cmd;
-    int                     m_kill_timeout;
-    bool                    m_kill_group;
+    int                     m_kill_timeout = KILL_TIMEOUT_SEC;
+    bool                    m_kill_group = false;
     bool                    m_is_kill_cmd; // true if this represents a custom kill command
     MapEnv                  m_env;
-    const char**            m_cenv;
-    bool                    m_env_clear;
+    const char**            m_cenv = NULL;
+    bool                    m_env_clear = false;
     long                    m_nice;     // niceness level
     int                     m_group;    // used in setgid()
     int                     m_user;     // run as
-    int                     m_success_exit_code;
+    int                     m_success_exit_code = 0;
     std::string             m_std_stream[3];
     bool                    m_std_stream_append[3];
     int                     m_std_stream_fd[3];
@@ -213,31 +213,29 @@ private:
     }
 
 public:
-    CmdOptions(int def_user=INT_MAX)
-        : m_tmp(0, 256), m_shell(true), m_pty(false)
-        , m_kill_timeout(KILL_TIMEOUT_SEC)
-        , m_kill_group(false)
+    explicit CmdOptions(int def_user=INT_MAX)
+        : m_tmp(0, 256)
         , m_is_kill_cmd(false)
-        , m_cenv(NULL), m_env_clear(false)
         , m_nice(INT_MAX)
         , m_group(INT_MAX), m_user(def_user)
-        , m_success_exit_code(0)
     {
         init_streams();
     }
-    CmdOptions(const CmdArgsList& cmd, const char* cd = NULL, const MapEnv& env = MapEnv(),
-               int  user = INT_MAX, int nice = INT_MAX, int group = INT_MAX,
-               bool is_kill_cmd=false)
-        : m_shell(true), m_pty(false), m_cmd(cmd), m_cd(cd ? cd : "")
-        , m_kill_timeout(KILL_TIMEOUT_SEC)
-        , m_kill_group(false)
+    CmdOptions(const CmdArgsList& cmd, const char* cd, const MapEnv& env,
+               int user, int nice, int group, bool is_kill_cmd)
+        : m_cmd(cmd), m_cd(cd ? cd : "")
         , m_is_kill_cmd(is_kill_cmd)
         , m_env(env)
-        , m_cenv(NULL),   m_nice(INT_MAX)
+        , m_nice(nice)
         , m_group(group), m_user(user)
     {
         init_streams();
     }
+
+    // prevent copying
+    CmdOptions(const CmdOptions&) = delete;
+    CmdOptions& operator=(const CmdOptions&) = delete;
+
     ~CmdOptions() {
         if (m_cenv != (const char**)environ) delete [] m_cenv;
         m_cenv = NULL;
