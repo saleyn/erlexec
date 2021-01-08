@@ -16,13 +16,14 @@ struct PollHandler {
     void append_read_fd(int fd, FdType type = FdType::CHILD_PROC, bool error = false) {
         fds.push_back(pollfd{fd, (short) (error ? (POLLIN | POLLERR) : POLLIN), 0});
         switch (type) {
-        case FdType::COMMAND:
-            command_index = fds.size() - 1;
-            break;
-        case FdType::SIGCHILD:
-            sigchild_index = fds.size() - 1;
-            break;
-        case FdType::CHILD_PROC: break;
+            case FdType::COMMAND:
+                command_index = fds.size() - 1;
+                break;
+            case FdType::SIGCHILD:
+                sigchild_index = fds.size() - 1;
+                break;
+            case FdType::CHILD_PROC:
+                break;
         }
     }
     
@@ -30,55 +31,48 @@ struct PollHandler {
         fds.push_back(pollfd{fd, POLLOUT, 0});
     }
     
-    void clear_fds() {
+    void clear() {
         fds.clear();
-        command_index = -1;
+        command_index  = -1;
         sigchild_index = -1;
     }
     
-    size_t size() {
-        return fds.size();
-    }
+    size_t size() { return fds.size(); }
     
     int wait_for_event(const ei::TimeVal &timeout) {
-        return poll(&fds[0], fds.size(), timeout.millisec());
+        assert(!fds.empty());
+        return poll(&fds.front(), fds.size(), timeout.millisec());
     }
     
     bool is_readable(FdType type, int index = -1) {
-        if ((type == FdType::CHILD_PROC) && (index >= 0)) {
-            return fds[index].revents & (POLLIN|POLLHUP);
+        switch (type) {
+            case FdType::CHILD_PROC: return is_readable(index);
+            case FdType::COMMAND:    return is_readable(command_index);
+            case FdType::SIGCHILD:   return is_readable(sigchild_index);
+            default:                 return false;
         }
-        
-        if ((type == FdType::COMMAND) && (command_index >= 0)) {
-            return fds[command_index].revents & (POLLIN|POLLHUP);
-        }
-        
-        if ((type == FdType::SIGCHILD) && (sigchild_index >= 0)) {
-            return fds[sigchild_index].revents & (POLLIN|POLLHUP);
-        }
-        
-        return false;
     }
     
     bool is_error(FdType type, int index = -1) {
-        if ((type == FdType::CHILD_PROC) && (index >= 0)) {
-            return fds[index].revents & POLLHUP;
+        switch (type) {
+            case FdType::CHILD_PROC: return is_error(index);
+            case FdType::COMMAND:    return is_error(command_index);
+            case FdType::SIGCHILD:   return is_error(sigchild_index);
+            default:                 return false;
         }
-        
-        if ((type == FdType::COMMAND) && (command_index >= 0)) {
-            return fds[command_index].revents & POLLHUP;
-        }
-        
-        if ((type == FdType::SIGCHILD) && (sigchild_index >= 0)) {
-            return fds[sigchild_index].revents & POLLHUP;
-        }
-        
-        return false;
     }
-    
+   
+    bool is_readable(int index) {
+        assert(index < int(fds.size()));
+        return index >= 0 && (fds[index].revents & (POLLIN|POLLHUP));
+    }
     bool is_writable(int index) {
         assert(index < int(fds.size()));
-        return fds[index].revents & POLLOUT;
+        return index >= 0 && (fds[index].revents & POLLOUT);
+    }
+    bool is_error(int index) {
+        assert(index < int(fds.size()));
+        return index >= 0 && (fds[index].revents & POLLHUP);
     }
     
 private:
