@@ -325,7 +325,7 @@ ok
 ok
 '''
 
-=== Specifying custom process shutdown delay in seconds ===
+=== Specifying a custom process shutdown delay in seconds ===
 ```
 % Execute an OS process (script) that blocks SIGTERM with custom kill timeout, and monitor
 22> f(I), {ok, _, I} = exec:run("trap '' SIGTERM; sleep 30", [{kill_timeout, 3}, monitor]).
@@ -335,6 +335,27 @@ ok
 ok
 % Wait for its completion
 24> f(M), receive M -> M after 10000 -> timeout end.                                          
+{'DOWN',26347,process,<0.403.0>,normal}
+'''
+
+=== Specifying a custom kill command for a process ===
+```
+% Execute an OS process (script) that blocks SIGTERM, and uses a custom kill command,
+% which kills it with a SIGINT. Add a monitor so that we can wait for process exit
+% notification. Note the use of the special environment variable "CHILD_PID" by the
+% kill command. This environment variable is set by the port program before invoking
+% the kill command:
+2> f(I), {ok, _, I} = exec:run("trap '' SIGTERM; sleep 30", [{kill, "kill -n 2 ${CHILD_PID}"},
+                                                             {kill_timeout, 2}, monitor]).
+{ok,<0.399.0>,26347}
+% Try to kill by SIGTERM. This does nothing, since the process is blocking SIGTERM:
+3> exec:kill(I, sigterm), f(M), receive M -> M after 0 -> timeout end.
+timeout
+% Attempt to stop the OS process
+4> exec:stop(I).
+ok
+% Wait for its completion
+5> f(M), receive M -> M after 1000 -> timeout end.                                          
 {'DOWN',26347,process,<0.403.0>,normal}
 '''
 
