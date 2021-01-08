@@ -315,7 +315,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
     ei::StringBuffer<128> err;
 
     // Optionally setup pseudoterminal
-    int fdm;
+    int fdm = 0;
 
     if (op.pty()) {
         if (getpty(fdm, err) < 0) {
