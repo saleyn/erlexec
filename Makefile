@@ -40,29 +40,29 @@ clean-docs:
 
 github-docs: VSN=$(shell git describe --always --tags --abbrev=1 | sed 's/^v//')
 github-docs:
+	make docs
+	make clean
 	@if git branch | grep -q gh-pages ; then \
 		git checkout gh-pages; \
 	else \
 		git checkout -b gh-pages; \
 	fi
 	rm -f rebar.lock
-	git checkout master -- src include
-	git checkout master -- Makefile
-	echo '{edoc_opts, [{overview, "src/overview.edoc"}, {def, {vsn, "$(VSN)"}}]}.' > rebar.config
-	make docs
 	mv doc/*.* .
-	make clean
-	rm -fr src c_src include Makefile erl_crash.dump priv rebar.* README* _build ebin doc
+	rm -fr src c_src include Makefile *.*dump priv rebar.* README* _build ebin doc
 	@FILES=`git st -uall --porcelain | sed -n '/^?? [A-Za-z0-9]/{s/?? //p}'`; \
 	for f in $$FILES ; do \
 		echo "Adding $$f"; git add $$f; \
 	done
+	# Commit & push changes to origin, switch back to master, and restore 'doc' directory
 	@sh -c "ret=0; set +e; \
 		if   git commit -a --amend -m 'Documentation updated'; \
 		then git push origin +gh-pages; echo 'Pushed gh-pages to origin'; \
 		else ret=1; git reset --hard; \
 		fi; \
-		set -e; git checkout master && echo 'Switched to master'; exit $$ret"
+		set -e; \
+    git checkout master && echo 'Switched to master' && mkdir doc && git --work-tree=doc checkout gh-pages -- .; \
+    exit $$ret"
 
 tar:
 	@rm -f $(TARBALL).tgz; \
