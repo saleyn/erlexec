@@ -22,8 +22,16 @@ Date:   2016-11-14
 #include <sys/capability.h>
 #endif
 
+enum class FdType {
+    COMMAND,
+    SIGCHILD,
+    CHILD_PROC
+};
+
 #if defined(USE_POLL) && USE_POLL > 0
-#include <sys/poll.h>
+#include "poll_handler.hpp"
+#else
+#include "select_handler.hpp"
 #endif
 
 #include <assert.h>
@@ -354,12 +362,8 @@ struct CmdInfo {
         stream_fd[STDERR_FILENO] = _stderr_fd;
     }
 
-    void include_stream_fd(int i, int& maxfd, fd_set* readfds, fd_set* writefds);
-    void process_stream_data(int i, fd_set* readfds, fd_set* writefds);
-#if defined(USE_POLL) && USE_POLL > 0
-    void include_stream_fd(std::vector<pollfd>& v);
-    void process_stream_data(std::vector<pollfd> const& v);
-#endif
+    void include_stream_fd(FdHandler &fdhandler);
+    void process_stream_data(FdHandler &fdhandler);
 };
 
 //-------------------------------------------------------------------------
