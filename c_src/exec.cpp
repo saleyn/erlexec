@@ -212,7 +212,7 @@ int main(int argc, char* argv[])
         double  wakeup = SLEEP_TIMEOUT_SEC;
         TimeVal now(TimeVal::NOW);
 
-        fdhandler.clear_fds();
+        fdhandler.clear();
         fdhandler.append_read_fd(eis.read_handle(), FdType::COMMAND);  // Erlang communication pipe
         fdhandler.append_read_fd(sigchld_pipe[0], FdType::SIGCHILD);   // pipe for delivering SIGCHLD signals
         // Set up all stdout/stderr input streams that we need to monitor and redirect to Erlang
@@ -662,7 +662,7 @@ int finalize()
 
             int cnt;
 
-            fdhandler.clear_fds();
+            fdhandler.clear();
             fdhandler.append_read_fd(sigchld_pipe[0], FdType::SIGCHILD, true);
             auto ts = deadline - timeout; 
             while ((cnt = fdhandler.wait_for_event(ts)) < 0 && errno == EINTR);
