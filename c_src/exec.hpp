@@ -405,7 +405,7 @@ inline int write_sigchld(pid_t child)
     return 0;
 }
 
-inline void gotsigchild(int signal, siginfo_t* si, void* context)
+inline void gotsigchild(int signal, siginfo_t* si, void* /*context*/)
 {
     // If someone used kill() to send SIGCHLD ignore the event
     if (si->si_code == SI_USER || signal != SIGCHLD)
