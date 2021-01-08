@@ -26,86 +26,79 @@ int ptsname_r(int fd, char* buf, size_t buflen) {
 //------------------------------------------------------------------------------
 // CmdInfo
 //------------------------------------------------------------------------------
-void CmdInfo::include_stream_fd(int i, int& maxfd, fd_set* readfds, fd_set* writefds)
+#if !defined(USE_POLL) || (USE_POLL == 0)
+void CmdInfo::include_stream_fd(FdHandler &fdhandler)
 {
-	bool ok;
-	fd_set* fds;
-
-	if (i == STDIN_FILENO) {
-		ok = stream_fd[i] >= 0 && stdin_wr_pos > 0;
-		if (ok)
-			DEBUG(debug > 2, "Pid %d adding stdin available notification (fd=%d, pos=%d)",
-				  cmd_pid, stream_fd[i], stdin_wr_pos);
-		fds = writefds;
-	} else {
-		ok = stream_fd[i] >= 0;
-		if (ok)
-			DEBUG(debug > 2, "Pid %d adding stdout checking (fd=%d)", cmd_pid, stream_fd[i]);
-		fds = readfds;
-	}
-
-	if (ok) {
-		FD_SET(stream_fd[i], fds);
-		if (stream_fd[i] > maxfd) maxfd = stream_fd[i];
-	}
+    for (int i=STDIN_FILENO; i <= STDERR_FILENO; i++) {
+        if (i == STDIN_FILENO) {
+            if (stream_fd[i] >= 0 && stdin_wr_pos > 0) {
+                DEBUG(debug > 2, "Pid %d adding stdin available notification (fd=%d, pos=%d)",
+                          cmd_pid, stream_fd[i], stdin_wr_pos);
+                fdhandler.append_write_fd(stream_fd[i]);
+            }
+        } else if (stream_fd[i] >= 0) {
+            DEBUG(debug > 2, "Pid %d adding stdout checking (fd=%d)", cmd_pid, stream_fd[i]);
+            fdhandler.append_read_fd(stream_fd[i]);
+        }
+    }
 }
 
-
-void CmdInfo::process_stream_data(int i, fd_set* readfds, fd_set* writefds)
+void CmdInfo::process_stream_data(FdHandler &fdhandler)
 {
-	int     fd  = stream_fd[i];
-	fd_set* fds = i == STDIN_FILENO ? writefds : readfds;
+    for (int i=STDIN_FILENO; i <= STDERR_FILENO; i++) {
+        int fd  = stream_fd[i];
 
-	if (fd < 0 || !FD_ISSET(fd, fds)) return;
+        if (fd < 0) continue;
 
-	if (i == STDIN_FILENO)
-		process_pid_input(*this);
-	else
-		process_pid_output(*this, i);
+        if ((i == STDIN_FILENO) && fdhandler.is_writable(fd)) {
+            process_pid_input(*this);
+        } else if ((i != STDIN_FILENO) && fdhandler.is_readable(FdType::CHILD_PROC, fd)) {
+            process_pid_output(*this, i);
+        }
+    }
 }
+#endif /* !defined(USE_POLL) */
 
 #if defined(USE_POLL) && USE_POLL > 0
-void CmdInfo::include_stream_fd(std::vector<pollfd>& v)
+void CmdInfo::include_stream_fd(FdHandler &fdhandler)
 {
-	poll_fd_idx[STDIN_FILENO]  = -1;
-	poll_fd_idx[STDOUT_FILENO] = -1;
-	poll_fd_idx[STDERR_FILENO] = -1;
-
-	if (stream_fd[STDIN_FILENO] >= 0 && stdin_wr_pos > 0) {
-		DEBUG(debug > 2, "Pid %d adding stdin available notification (fd=%d, pos=%d)",
-			  cmd_pid, stream_fd[STDIN_FILENO], stdin_wr_pos);
-		v.push_back(pollfd{stream_fd[STDIN_FILENO], POLLOUT, 0});
-		poll_fd_idx[STDIN_FILENO] = v.size()-1;
-	}
-	if (stream_fd[STDOUT_FILENO] >= 0) {
-		DEBUG(debug > 2, "Pid %d adding stdout checking (fd=%d)",
-			  cmd_pid, stream_fd[STDOUT_FILENO]);
-		v.push_back(pollfd{stream_fd[STDOUT_FILENO], POLLIN, 0});
-		poll_fd_idx[STDOUT_FILENO] = v.size()-1;
-	}
-	if (stream_fd[STDERR_FILENO] >= 0) {
-		DEBUG(debug > 2, "Pid %d adding stderr checking (fd=%d)",
-			  cmd_pid, stream_fd[STDERR_FILENO]);
-		v.push_back(pollfd{stream_fd[STDERR_FILENO], POLLIN, 0});
-		poll_fd_idx[STDERR_FILENO] = v.size()-1;
-	}
+    poll_fd_idx[STDIN_FILENO]  = -1;
+    poll_fd_idx[STDOUT_FILENO] = -1;
+    poll_fd_idx[STDERR_FILENO] = -1;
+    
+    if (stream_fd[STDIN_FILENO] >= 0 && stdin_wr_pos > 0) {
+        DEBUG(debug > 2, "Pid %d adding stdin available notification (fd=%d, pos=%d)",
+                  cmd_pid, stream_fd[STDIN_FILENO], stdin_wr_pos);
+        fdhandler.append_write_fd(stream_fd[STDIN_FILENO]);
+        poll_fd_idx[STDIN_FILENO] = fdhandler.size()-1;
+    }
+    if (stream_fd[STDOUT_FILENO] >= 0) {
+        DEBUG(debug > 2, "Pid %d adding stdout checking (fd=%d)",
+                  cmd_pid, stream_fd[STDOUT_FILENO]);
+        fdhandler.append_read_fd(stream_fd[STDOUT_FILENO]);
+        poll_fd_idx[STDOUT_FILENO] = fdhandler.size()-1;
+    }
+    if (stream_fd[STDERR_FILENO] >= 0) {
+        DEBUG(debug > 2, "Pid %d adding stderr checking (fd=%d)",
+                  cmd_pid, stream_fd[STDERR_FILENO]);
+        fdhandler.append_read_fd(stream_fd[STDERR_FILENO]);
+        poll_fd_idx[STDERR_FILENO] = fdhandler.size()-1;
+    }
 }
 
-void CmdInfo::process_stream_data(std::vector<pollfd> const& v)
+void CmdInfo::process_stream_data(FdHandler& fdhandler)
 {
-	for (int  i = STDIN_FILENO; i <= STDERR_FILENO; i++) {
-		int idx = poll_fd_idx[i];
-		if (idx < 0)
-			continue;
-		assert(idx < int(v.size()));
-		if (v[idx].revents & (i == STDIN_FILENO ? POLLOUT : POLLIN)) {
-			// Event signaled
-			if (i == STDIN_FILENO)
-				process_pid_input(*this);
-			else
-				process_pid_output(*this, i);
-		}
-	}
+    for (int  i = STDIN_FILENO; i <= STDERR_FILENO; i++) {
+        int idx = poll_fd_idx[i];
+        if (idx < 0)
+            continue;
+        assert(idx < int(fdhandler.size()));
+        if ((i == STDIN_FILENO) && fdhandler.is_writable(idx)) {
+            process_pid_input(*this);
+        } else if ((i != STDIN_FILENO) && fdhandler.is_readable(FdType::CHILD_PROC, idx)) {
+            process_pid_output(*this, i);
+        }
+    }
 }
 #endif
 
