@@ -269,7 +269,7 @@ void process_pid_output(CmdInfo& ci, int stream_id, int maxsize)
 }
 
 //------------------------------------------------------------------------------
-int getpty(int& fdmp, ei::StringBuffer<128>& err) {
+static int getpty(int& fdmp, ei::StringBuffer<128>& err) {
     int fdm;
     int rc;
 
@@ -741,7 +741,7 @@ void stop_child(pid_t pid, int transId, const TimeVal& now)
 }
 
 //------------------------------------------------------------------------------
-int send_std_error(int err, bool notify, int transId)
+static int send_std_error(int err, bool notify, int transId)
 {
     if (err == 0) {
         if (notify) send_ok(transId);
