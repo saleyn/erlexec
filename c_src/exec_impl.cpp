@@ -937,15 +937,15 @@ void check_child_exit(pid_t pid)
 }
 
 //------------------------------------------------------------------------------
-int send_pid_list(int transId, const MapChildrenT& children)
+int send_pid_list(int transId, const MapChildrenT& _children)
 {
     // Reply: {TransId, [OsPid::integer()]}
     eis.reset();
     eis.encodeTupleSize(2);
     eis.encode(transId);
-    eis.encodeListSize(children.size());
-    for(auto it=children.begin(), end=children.end(); it != end; ++it)
-        eis.encode(it->first);
+    eis.encodeListSize(_children.size());
+    for(const auto& it: _children)
+        eis.encode(it.first);
     eis.encodeListEnd();
     return eis.write();
 }
