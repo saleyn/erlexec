@@ -30,7 +30,7 @@ doc ebin:
 	mkdir -p $@
 
 test:
-	@$(REBAR) eunit
+	@OPTIMIZE=0 $(REBAR) eunit
 
 publish: docs clean
 	$(REBAR) hex cut

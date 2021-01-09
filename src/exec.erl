@@ -1307,8 +1307,28 @@ exec_test_() ->
         ]
     }.
 
-exec_run_many_test() ->
-    ?assertMatch({ok,[{io_ops,300},{success,300}]}, test_exec:run(300)).
+exec_run_many_test_() ->
+    Level = case os:getenv("PORT_DEBUG") of
+                false -> 0;
+                _     -> 1
+            end,
+    Delay = case os:getenv("PID_SLEEP_SEC") of
+                false  -> 1000;
+                Y      -> list_to_integer(Y)*1000
+            end,
+    N     = case os:getenv("RUN_COUNT") of
+                false  -> 900;
+                X      -> list_to_integer(X)
+            end,
+    M     = N*2,
+    {setup,
+        fun()    -> {ok, Pid} = exec:start([{debug, Level}]), Pid end,
+        fun(Pid) -> exit(Pid, kill) end,
+        [
+            {timeout, 200,
+                ?_assertMatch({ok,[{io_ops,M},{success,N}]}, test_exec:run(N, 60000, Delay))}
+        ]
+    }.
 
 test_root() ->
     ?assertMatch({error, "Cannot specify effective user"++_},

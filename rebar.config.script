@@ -46,18 +46,19 @@ X64 =
     _              -> ""
   end,
 
+Optimize =
+  fun(0) ->
+     io:format(standard_error, "Building exec-port without optimization\n", []),
+     " -O0 -g";
+  (I) when is_integer(I), I > 0 ->
+    " -O" ++ integer_to_list(I) ++ " -DNDEBUG"
+  end,
 Optim =
   case os:getenv("OPTIMIZE") of
-    false   -> " -O3 -DNDEBUG";
-    "true"  -> " -O3 -DNDEBUG";
-    "false" -> " -O0 -g";
-    Level   -> " -O" ++ Level ++
-                case list_to_integer(Level) of
-                  I when I > 0 ->
-                    " -DNDEBUG";
-                  _ ->
-                    " -g"
-                end
+    false   -> Optimize(3);
+    "true"  -> Optimize(3);
+    "false" -> Optimize(0);
+    Level   -> Optimize(list_to_integer(Level))
   end,
 
 CxxFlags = " -std=c++11" ++ UsePoll ++ Optim,
