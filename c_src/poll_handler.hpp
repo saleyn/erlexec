@@ -11,7 +11,7 @@ Date:   2020-01-06
 #include "ei++.hpp"
 
 struct PollHandler {
-    PollHandler() : command_index{-1}, sigchild_index{-1} {};
+    PollHandler() : command_index{-1}, sigchild_index{-1} {}
   
     void append_read_fd(int fd, FdType type = FdType::CHILD_PROC, bool error = false) {
         fds.push_back(pollfd{fd, (short) (error ? (POLLIN | POLLERR) : POLLIN), 0});

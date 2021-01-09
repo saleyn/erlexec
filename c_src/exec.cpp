@@ -75,7 +75,8 @@ bool  ei::pipe_valid      = true;
 int   ei::max_fds;
 int   ei::dev_null;
 int   ei::sigchld_pipe[2] = { -1, -1 }; // Pipe for delivering sig child details
-int   run_as_euid         = INT_MAX;
+
+static int run_as_euid    = INT_MAX;
 
 //-------------------------------------------------------------------------
 // Types & variables
@@ -99,7 +100,7 @@ int     finalize();
 // Local Functions
 //-------------------------------------------------------------------------
 
-void usage(char* progname) {
+static void usage(char* progname) {
     fprintf(stderr,
         "Usage:\n"
         "   %s [-n] [-root] [-alarm N] [-debug [Level]] [-user User]\n"
@@ -353,10 +354,8 @@ bool process_command(bool is_err)
                 return true;
             }
 
-            CmdInfo ci(true, po.kill_cmd(), realpid, po.success_exit_code(), po.kill_group(),
-                       po.dbg());
-            ci.kill_timeout = po.kill_timeout();
-            children[realpid] = ci;
+            children.emplace(realpid, CmdInfo(true, po.kill_cmd(), realpid, po.success_exit_code(),
+                                              po.kill_group(), po.dbg(), po.kill_timeout()));
 
             // Set nice priority for managed process if option is present
             std::string error;
@@ -382,16 +381,15 @@ bool process_command(bool is_err)
             if ((pid = start_child(po, err)) < 0)
                 send_error_str(transId, false, "Couldn't start pid: %s", err.c_str());
             else {
-                CmdInfo ci(po.cmd(), po.kill_cmd(), pid,
-                           getpgid(pid),
-                           po.success_exit_code(), false,
-                           po.stream_fd(STDIN_FILENO),
-                           po.stream_fd(STDOUT_FILENO),
-                           po.stream_fd(STDERR_FILENO),
-                           po.kill_timeout(),
-                           po.kill_group(),
-                           po.dbg());
-                children[pid] = ci;
+                children.emplace(pid, CmdInfo(po.cmd(), po.kill_cmd(), pid,
+                                              getpgid(pid),
+                                              po.success_exit_code(), false,
+                                              po.stream_fd(STDIN_FILENO),
+                                              po.stream_fd(STDOUT_FILENO),
+                                              po.stream_fd(STDERR_FILENO),
+                                              po.kill_timeout(),
+                                              po.kill_group(),
+                                              po.dbg()));
                 send_pid(transId, pid);
             }
             break;
