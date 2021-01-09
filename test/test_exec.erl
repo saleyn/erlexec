@@ -14,7 +14,6 @@
          terminate/2,
          code_change/3]).
 
--define(SERVER, ?MODULE).
 -define(SCRIPT, "/tmp/test_script.sh").
 
 -record(state, {
@@ -24,6 +23,7 @@
     active  = 0 :: integer(),
     success = 0 :: integer(),
     ios     = 0 :: integer(),
+    cmd         :: binary(),
     pids        :: sets:set()
 }).
 
@@ -41,11 +41,14 @@ run(Count, Timeout) ->
     run(Count, Timeout, 1000).
 
 run(Count, Timeout, DelayMS) when is_integer(Count), is_integer(Timeout), is_integer(DelayMS) ->
-    ok = application:ensure_started(erlexec),
-    {ok, Pid} = gen_server:start_link({local,?SERVER}, ?MODULE, [self(),Count,DelayMS], []),
+    %application:ensure_started(erlexec),
+    io:format(standard_error, "\n==> Test Concurrency: ~w\n", [Count]),
+    {ok, Pid} = gen_server:start_link({local, ?MODULE}, ?MODULE, [self(),Count,DelayMS], []),
     receive
-        {completed, Pid, IOs, Success} ->
-            {ok, [{io_ops, IOs}, {success, Success}]}
+        {completed, Pid, IOs, Success} when IOs =:= Success*2 ->
+            {ok, [{io_ops, IOs}, {success, Success}]};
+        {completed, Pid, IOs, Success} when IOs =:= Success*2 ->
+            {error, wrong_num_of_ios, [{io_ops, IOs}, {success, Success}]}
     after Timeout ->
         timeout
     end.
@@ -74,14 +77,11 @@ stats() ->
 init([Owner, Count, DelayMS]) ->
     process_flag(trap_exit, true),
     Delay = integer_to_binary(DelayMS),
-    ok = file:write_file(?SCRIPT,
-        <<"#!/bin/bash\n"
-          "echo \"This is a test script $$\"\n"
-          "sleep $[ ((($RANDOM % ", Delay/binary, ") + 1)/1000) ]\n"
-          "exit 12\n">>),
-    ok = file:change_mode(?SCRIPT, 8#755),
+    Cmd   = <<"echo \"Test stdout $$\"; echo \"Test stderr $$\" 1>&2; "
+              "sleep $[ ((($RANDOM % ", Delay/binary, ") + 1)/1000) ]; "
+              "exit 12\n">>,
     self() ! start_child,
-    {ok, #state{owner=Owner, delay=DelayMS, count=Count, pids = sets:new()}}.
+    {ok, #state{owner=Owner, delay=DelayMS, count=Count, cmd=Cmd, pids=sets:new()}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -123,15 +123,16 @@ handle_cast(Msg, State) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_info(start_child, #state{count=Count, active=Active, pids = Pids} = State0) ->
-    {ok, _Pid, OsPid} = exec:run(?SCRIPT, [stdout, stderr, monitor]),
+handle_info(start_child, #state{count=Count, active=Active, cmd=Cmd, pids=Pids} = State0) ->
+    {ok, _Pid, OsPid} = exec:run(Cmd, [stdout, stderr, monitor]),
     State = State0#state{count=Count-1, active=Active+1, pids = sets:add_element(OsPid, Pids)},
     State#state.count > 0 andalso
         erlang:send_after(10, self(), start_child),
     {noreply, State};
 
-handle_info({Channel, _OsPid, _Data}, State) when Channel == stdout;
-                                                  Channel == stderr ->
+handle_info({stdout, _OsPid, <<"Test stdout ", _Rest/binary>>}, State) ->
+    {noreply, State#state{ios = State#state.ios + 1}};
+handle_info({stderr, _OsPid, <<"Test stderr ", _Rest/binary>>}, State) ->
     {noreply, State#state{ios = State#state.ios + 1}};
 
 handle_info({'DOWN', OsPid, process, _Pid, {exit_status, ExitStatus}}, #state{pids = Pids, success=N} = State) ->
@@ -158,7 +159,6 @@ handle_info(_Msg, State) ->
     {noreply, State}.
 
 terminate(_Reason, _State) ->
-    file:delete(?SCRIPT),
     ok.
 
 code_change(_OldVsn, State, _Extra) ->
