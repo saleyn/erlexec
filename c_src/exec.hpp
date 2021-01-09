@@ -181,22 +181,22 @@ struct CmdOptions {
 private:
     ei::StringBuffer<256>   m_tmp;
     std::stringstream       m_err;
-    bool                    m_shell;
-    bool                    m_pty;
+    bool                    m_shell = true;
+    bool                    m_pty = false;
     std::string             m_executable;
     CmdArgsList             m_cmd;
     std::string             m_cd;
     std::string             m_kill_cmd;
-    int                     m_kill_timeout;
-    bool                    m_kill_group;
+    int                     m_kill_timeout = KILL_TIMEOUT_SEC;
+    bool                    m_kill_group = false;
     bool                    m_is_kill_cmd; // true if this represents a custom kill command
     MapEnv                  m_env;
-    const char**            m_cenv;
-    bool                    m_env_clear;
+    const char**            m_cenv = NULL;
+    bool                    m_env_clear = false;
     long                    m_nice;     // niceness level
     int                     m_group;    // used in setgid()
     int                     m_user;     // run as
-    int                     m_success_exit_code;
+    int                     m_success_exit_code = 0;
     std::string             m_std_stream[3];
     bool                    m_std_stream_append[3];
     int                     m_std_stream_fd[3];
@@ -213,31 +213,29 @@ private:
     }
 
 public:
-    CmdOptions(int def_user=INT_MAX)
-        : m_tmp(0, 256), m_shell(true), m_pty(false)
-        , m_kill_timeout(KILL_TIMEOUT_SEC)
-        , m_kill_group(false)
+    explicit CmdOptions(int def_user=INT_MAX)
+        : m_tmp(0, 256)
         , m_is_kill_cmd(false)
-        , m_cenv(NULL), m_env_clear(false)
         , m_nice(INT_MAX)
         , m_group(INT_MAX), m_user(def_user)
-        , m_success_exit_code(0)
     {
         init_streams();
     }
-    CmdOptions(const CmdArgsList& cmd, const char* cd = NULL, const MapEnv& env = MapEnv(),
-               int  user = INT_MAX, int nice = INT_MAX, int group = INT_MAX,
-               bool is_kill_cmd=false)
-        : m_shell(true), m_pty(false), m_cmd(cmd), m_cd(cd ? cd : "")
-        , m_kill_timeout(KILL_TIMEOUT_SEC)
-        , m_kill_group(false)
+    CmdOptions(const CmdArgsList& cmd, const char* cd, const MapEnv& env,
+               int user, int nice, int group, bool is_kill_cmd)
+        : m_cmd(cmd), m_cd(cd ? cd : "")
         , m_is_kill_cmd(is_kill_cmd)
         , m_env(env)
-        , m_cenv(NULL),   m_nice(INT_MAX)
+        , m_nice(nice)
         , m_group(group), m_user(user)
     {
         init_streams();
     }
+
+    // prevent copying
+    CmdOptions(const CmdOptions&) = delete;
+    CmdOptions& operator=(const CmdOptions&) = delete;
+
     ~CmdOptions() {
         if (m_cenv != (const char**)environ) delete [] m_cenv;
         m_cenv = NULL;
@@ -298,64 +296,53 @@ public:
 /// structure will contain its run-time information.
 //-------------------------------------------------------------------------
 struct CmdInfo {
-    CmdArgsList     cmd;            // Executed command
-    pid_t           cmd_pid;        // Pid of the custom kill command
-    pid_t           cmd_gid;        // Command's group ID
-    std::string     kill_cmd;       // Kill command to use (default: use SIGTERM)
-    kill_cmd_pid_t  kill_cmd_pid;   // Pid of the command that <pid> is supposed to kill
-    ei::TimeVal     deadline;       // Time when the <cmd_pid> is supposed to be killed using SIGTERM.
-    bool            sigterm;        // <true> if sigterm was issued.
-    bool            sigkill;        // <true> if sigkill was issued.
-    int             kill_timeout;   // Pid shutdown interval in sec before it's killed with SIGKILL
-    bool            kill_group;     // Indicates if at exit the whole group needs to be killed
-    int             success_code;   // Exit code to use on success
-    bool            managed;        // <true> if this pid is started externally, but managed by erlexec
-    int             stream_fd[3];   // Pipe fd getting   process's stdin/stdout/stderr
-    int             stdin_wr_pos;   // Offset of the unwritten portion of the head item of stdin_queue
-    int             dbg = 0;        // Debug flag
+    CmdArgsList     cmd;               // Executed command
+    pid_t           cmd_pid;           // Pid of the custom kill command
+    pid_t           cmd_gid;           // Command's group ID
+    std::string     kill_cmd;          // Kill command to use (default: use SIGTERM)
+    kill_cmd_pid_t  kill_cmd_pid = -1; // Pid of the command that <pid> is supposed to kill
+    ei::TimeVal     deadline;          // Time when the <cmd_pid> is supposed to be killed using SIGTERM.
+    bool            sigterm = false;   // <true> if sigterm was issued.
+    bool            sigkill = false;   // <true> if sigkill was issued.
+    int             kill_timeout;      // Pid shutdown interval in sec before it's killed with SIGKILL
+    bool            kill_group;        // Indicates if at exit the whole group needs to be killed
+    int             success_code;      // Exit code to use on success
+    bool            managed;           // <true> if this pid is started externally, but managed by erlexec
+    int             stream_fd[3];      // Pipe fd getting   process's stdin/stdout/stderr
+    int             stdin_wr_pos = 0;  // Offset of the unwritten portion of the head item of stdin_queue
+    int             dbg = 0;           // Debug flag
 #if defined(USE_POLL) && USE_POLL > 0
-    int             poll_fd_idx[3]; // Indexes to the pollfd structure in the poll array
+    int             poll_fd_idx[3] = {-1,-1,-1}; // Indexes to the pollfd structure in the poll array
 #endif
     std::list<std::string> stdin_queue;
 
-    CmdInfo() {
-        new (this) CmdInfo(CmdArgsList(), "", 0, INT_MAX, 0);
-    }
-    CmdInfo(const CmdInfo& ci) {
-        new (this) CmdInfo(ci.cmd, ci.kill_cmd.c_str(), ci.cmd_pid, ci.cmd_gid,
-                           ci.success_code, ci.managed,
-                           ci.stream_fd[STDIN_FILENO], ci.stream_fd[STDOUT_FILENO],
-                           ci.stream_fd[STDERR_FILENO], ci.kill_timeout, ci.kill_group);
-    }
-    CmdInfo(bool managed, const char* _kill_cmd, pid_t _cmd_pid, int _ok_code,
-            bool _kill_group = false, int _debug = 0) {
-        new (this) CmdInfo(cmd, _kill_cmd, _cmd_pid, getpgid(_cmd_pid), _ok_code, managed,
-                           REDIRECT_NULL, REDIRECT_NONE, REDIRECT_NONE, KILL_TIMEOUT_SEC,
-                           _kill_group, _debug);
-    }
+    // delete default constructor, copy-ctor and assignment operator
+    CmdInfo() = delete;
+    CmdInfo(const CmdInfo&) = delete;
+    CmdInfo& operator=(const CmdInfo&) = delete;
+
+    // enable default move constructor to be able to put it into a map via emplace
+    CmdInfo(CmdInfo&& ci) = default;
+
+    CmdInfo(bool _managed, const char* _kill_cmd, pid_t _cmd_pid, int _ok_code,
+            bool _kill_group, int _debug, int _kill_timeout)
+        : CmdInfo(cmd, _kill_cmd, _cmd_pid, getpgid(_cmd_pid), _ok_code, _managed,
+                  REDIRECT_NULL, REDIRECT_NONE, REDIRECT_NONE, _kill_timeout,
+                  _kill_group, _debug)
+    {}
+  
     CmdInfo(const CmdArgsList& _cmd, const char* _kill_cmd, pid_t _cmd_pid, pid_t _cmd_gid,
-            int  _success_code,
-            bool _managed      = false,
-            int  _stdin_fd     = REDIRECT_NULL,
-            int  _stdout_fd    = REDIRECT_NONE,
-            int  _stderr_fd    = REDIRECT_NONE,
-            int  _kill_timeout = KILL_TIMEOUT_SEC,
-            bool _kill_group   = false,
-            int  _debug        = 0)
+            int _success_code, bool _managed, int _stdin_fd, int _stdout_fd, int _stderr_fd,
+            int _kill_timeout, bool _kill_group, int _debug)
         : cmd(_cmd)
         , cmd_pid(_cmd_pid)
         , cmd_gid(_cmd_gid)
-        , kill_cmd(_kill_cmd), kill_cmd_pid(-1)
-        , sigterm(false), sigkill(false)
+        , kill_cmd(_kill_cmd)
         , kill_timeout(_kill_timeout)
         , kill_group(_kill_group)
         , success_code(_success_code)
         , managed(_managed)
-        , stdin_wr_pos(0)
         , dbg(_debug)
-        #if defined(USE_POLL) && USE_POLL > 0
-        , poll_fd_idx{-1,-1,-1}
-        #endif
     {
         stream_fd[STDIN_FILENO]  = _stdin_fd;
         stream_fd[STDOUT_FILENO] = _stdout_fd;
@@ -418,7 +405,7 @@ inline int write_sigchld(pid_t child)
     return 0;
 }
 
-inline void gotsigchild(int signal, siginfo_t* si, void* context)
+inline void gotsigchild(int signal, siginfo_t* si, void* /*context*/)
 {
     // If someone used kill() to send SIGCHLD ignore the event
     if (si->si_code == SI_USER || signal != SIGCHLD)
