@@ -269,7 +269,7 @@ void process_pid_output(CmdInfo& ci, int stream_id, int maxsize)
 }
 
 //------------------------------------------------------------------------------
-int getpty(int& fdmp, ei::StringBuffer<128>& err) {
+static int getpty(int& fdmp, ei::StringBuffer<128>& err) {
     int fdm;
     int rc;
 
@@ -315,7 +315,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
     ei::StringBuffer<128> err;
 
     // Optionally setup pseudoterminal
-    int fdm;
+    int fdm = 0;
 
     if (op.pty()) {
         if (getpty(fdm, err) < 0) {
@@ -741,7 +741,7 @@ void stop_child(pid_t pid, int transId, const TimeVal& now)
 }
 
 //------------------------------------------------------------------------------
-int send_std_error(int err, bool notify, int transId)
+static int send_std_error(int err, bool notify, int transId)
 {
     if (err == 0) {
         if (notify) send_ok(transId);
@@ -937,15 +937,15 @@ void check_child_exit(pid_t pid)
 }
 
 //------------------------------------------------------------------------------
-int send_pid_list(int transId, const MapChildrenT& children)
+int send_pid_list(int transId, const MapChildrenT& _children)
 {
     // Reply: {TransId, [OsPid::integer()]}
     eis.reset();
     eis.encodeTupleSize(2);
     eis.encode(transId);
-    eis.encodeListSize(children.size());
-    for(auto it=children.begin(), end=children.end(); it != end; ++it)
-        eis.encode(it->first);
+    eis.encodeListSize(_children.size());
+    for(const auto& it: _children)
+        eis.encode(it.first);
     eis.encodeListEnd();
     return eis.write();
 }
