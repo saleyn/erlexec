@@ -23,6 +23,7 @@
     active  = 0 :: integer(),
     success = 0 :: integer(),
     ios     = 0 :: integer(),
+    fderr   = 0 :: integer(),
     cmd         :: binary(),
     pids        :: sets:set()
 }).
@@ -45,10 +46,12 @@ run(Count, Timeout, DelayMS) when is_integer(Count), is_integer(Timeout), is_int
     io:format(standard_error, "\n==> Test Concurrency: ~w\n", [Count]),
     {ok, Pid} = gen_server:start_link({local, ?MODULE}, ?MODULE, [self(),Count,DelayMS], []),
     receive
-        {completed, Pid, IOs, Success} when IOs =:= Success*2 ->
+        {completed, Pid, IOs, Success, 0} when IOs =:= Success*2 ->
             {ok, [{io_ops, IOs}, {success, Success}]};
-        {completed, Pid, IOs, Success} when IOs =:= Success*2 ->
-            {error, wrong_num_of_ios, [{io_ops, IOs}, {success, Success}]}
+        {completed, Pid, IOs, Success, FdErr} when FdErr > 0 ->
+            {error, hit_limit_of_max_open_files, [{io_ops, IOs}, {success, Success}, {fd_err, FdErr}]};
+        {completed, Pid, IOs, Success, FdErr} ->
+            {error, wrong_num_of_ios, [{io_ops, IOs}, {success, Success}, {fd_err, FdErr}]}
     after Timeout ->
         timeout
     end.
@@ -123,12 +126,20 @@ handle_cast(Msg, State) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_info(start_child, #state{count=Count, active=Active, cmd=Cmd, pids=Pids} = State0) ->
-    {ok, _Pid, OsPid} = exec:run(Cmd, [stdout, stderr, monitor]),
-    State = State0#state{count=Count-1, active=Active+1, pids = sets:add_element(OsPid, Pids)},
+handle_info(start_child, #state{count=Count, active=Active, cmd=Cmd, fderr=Err, pids=Pids} = State0) ->
+    {I, State} =
+        case exec:run(Cmd, [stdout, stderr, monitor]) of
+            {ok, _Pid, OsPid} ->
+                {10, State0#state{count=Count-1, active=Active+1, pids = sets:add_element(OsPid, Pids)}};
+            {error, "Couldn't start pid: Failed to create a pipe for stdout: Too many open files"} ->
+                {0, State0#state{count=Count-1, fderr=Err+1}};
+            {error, "Couldn't start pid: Failed to create a pipe for stderr: Too many open files"} ->
+                {0, State0#state{count=Count-1, fderr=Err+1}}
+        end,
     State#state.count > 0 andalso
-        erlang:send_after(10, self(), start_child),
+        erlang:send_after(I, self(), start_child),
     {noreply, State};
+            
 
 handle_info({stdout, _OsPid, <<"Test stdout ", _Rest/binary>>}, State) ->
     {noreply, State#state{ios = State#state.ios + 1}};
@@ -139,12 +150,13 @@ handle_info({'DOWN', OsPid, process, _Pid, {exit_status, ExitStatus}}, #state{pi
     case sets:is_element(OsPid, Pids) of
         true ->
             Active   = State#state.active - 1,
+            FdErr    = State#state.fderr,
             Success  = case exec:status(ExitStatus) of {status, 12} -> N+1; _ -> N end,
             NewPids  = sets:del_element(OsPid, Pids),
             NewState = State#state{pids=NewPids, active=Active, success=Success},
             case {Active, State#state.count} of
                 {0, 0} ->
-                    State#state.owner ! {completed, self(), State#state.ios, Success},
+                    State#state.owner ! {completed, self(), State#state.ios, Success, FdErr},
                     {stop, normal, NewState};
                 _ ->
                     {noreply, NewState}
