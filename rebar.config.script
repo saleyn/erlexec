@@ -49,7 +49,7 @@ X64 =
 Optimize =
   fun(0) ->
      io:format(standard_error, "Building exec-port without optimization\n", []),
-     " -O0 -g";
+     " -O0";
   (I) when is_integer(I), I > 0 ->
     " -O" ++ integer_to_list(I) ++ " -DNDEBUG"
   end,
@@ -61,7 +61,7 @@ Optim =
     Level   -> Optimize(list_to_integer(Level))
   end,
 
-CxxFlags = " -std=c++11" ++ UsePoll ++ Optim,
+CxxFlags = " -g -std=c++11" ++ UsePoll ++ Optim,
 
 % Merge configuration options read from rebar.config with those dynamically set below
 maps:to_list(lists:foldl(

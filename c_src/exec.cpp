@@ -298,11 +298,12 @@ bool process_command(bool is_err)
               is_err ? "[was error] " : "",
               errno, errno==EAGAIN ? "EAGAIN" : strerror(errno));
 
+        /*
         // If we were using non-blocking reads, we'd also need to check
         // for EAGAIN, that is not an error.
         if (rc < 0 && err == EAGAIN)
             return true;
-
+        */
         terminated = (err != 0) || is_err;
         return false;
     }
