@@ -30,6 +30,9 @@ doc ebin:
 	mkdir -p $@
 
 test:
+	@$(REBAR) eunit
+
+test-debug:
 	@OPTIMIZE=0 $(REBAR) eunit
 
 publish: docs clean
