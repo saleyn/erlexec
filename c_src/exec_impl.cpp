@@ -1455,10 +1455,12 @@ int CmdOptions::init_cenv()
     // Copy environment of the caller process
     if (!m_env_clear)
         for (char **env_ptr = environ; *env_ptr; env_ptr++) {
-            std::string s(*env_ptr), key(s.substr(0, s.find_first_of('=')));
-            MapEnvIterator it = m_env.find(key);
+            std::string s(*env_ptr);
+            auto pos = s.find_first_of('=');
+            std::string key(s.substr(0, pos));
+            auto it = m_env.find(key);
             if (it == m_env.end())
-                m_env[key] = s;
+                m_env[key] = s.substr(pos+1);
         }
 
     if ((m_cenv = (const char**) new char* [m_env.size()+1]) == NULL) {
