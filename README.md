@@ -44,6 +44,11 @@ and is stable.
 
 See http://saleyn.github.com/erlexec for more information.
 
+## Donations ##
+If you find this project useful, please donate to:
+* Bitcoin: `12pt8TcoMWMkF6iY66VJQk95ntdN4pFihg`
+* Ethereum: `0x268295486F258037CF53E504fcC1E67eba014218`
+
 ## SUPPORTED OS's ##
 Linux, Solaris, FreeBSD, OpenBSD, MacOS X
 
