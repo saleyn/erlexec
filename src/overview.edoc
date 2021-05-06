@@ -136,8 +136,8 @@ ok
 === Running exec-port as another effective user ===
 
 In order to be able to use this feature the current user must either have `sudo'
-rights or the `exec-port' file must be owned by `root` and have the SUID bit set
-(use: `chown root:root exec-port; chmod 4555 exec-port`):
+rights or the `exec-port' file must be owned by `root' and have the SUID bit set
+(use: `chown root:root exec-port; chmod 4555 exec-port'):
 
 ```
 $ ll priv/x86_64-unknown-linux-gnu/exec-port
@@ -170,7 +170,7 @@ In order to be able to use this feature the current user must either have `sudo'
 rights or the `exec-port' file must have the SUID bit set, and the `exec-port' file
 must have the capabilities set as described in the "Build" section above.
 
-The port program will initially be started as `root', and then it will set the
+The port program will initially be started as `root', and then it will 
 switch the effective user to `{user, User}' and set process capabilities to
 `cap_setuid,cap_kill,cap_sys_nice'.  After that it'll allow to run child programs
 under effective users listed in the `{limit_users, Users}' option.
