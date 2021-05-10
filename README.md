@@ -42,7 +42,7 @@ when the emulator exits.
 The `erlexec` application has been in production use by Erlang and Elixir systems,
 and is stable.
 
-See http://saleyn.github.com/erlexec for more information.
+See http://saleyn.github.io/erlexec for more information.
 
 ## Donations ##
 If you find this project useful, please donate to:
