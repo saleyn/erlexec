@@ -11,3 +11,4 @@ ebin
 _build
 *.crashdump
 compile_commands.json
+build-aux
