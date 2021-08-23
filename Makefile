@@ -17,14 +17,18 @@ endif
 all:
 	@$(REBAR) compile
 
+-include build-aux/docs-addon.mk
+
+build-aux/docs-addon.mk:
+	@echo "Fetching build-aux/docs-addon.mk" && \
+		mkdir -p build-aux && \
+		curl -s -o build-aux/docs-addon.mk https://raw.githubusercontent.com/saleyn/util/master/build-aux/docs-addon.mk
+
 clean:
 	@$(REBAR) $@
 
 path:
 	@echo $(shell $(REBAR) $@)
-
-docs: doc ebin clean-docs
-	@$(REBAR) edoc skip_deps=true
 
 doc ebin:
 	mkdir -p $@
@@ -36,36 +40,7 @@ test-debug:
 	@OPTIMIZE=0 $(REBAR) eunit
 
 publish: docs clean
-	$(REBAR) hex cut
-
-clean-docs:
-	rm -f doc/*.{css,html,png} doc/edoc-info
-
-github-docs: VSN=$(shell git describe --always --tags --abbrev=1 | sed 's/^v//')
-github-docs:
-	make docs
-	make clean
-	@if git branch | grep -q gh-pages ; then \
-		git checkout gh-pages; \
-	else \
-		git checkout -b gh-pages; \
-	fi
-	rm -f rebar.lock
-	mv doc/*.* .
-	rm -fr src c_src include Makefile *.*dump priv rebar.* README* _build ebin doc
-	@FILES=`git st -uall --porcelain | sed -n '/^?? [A-Za-z0-9]/{s/?? //p}'`; \
-	for f in $$FILES ; do \
-		echo "Adding $$f"; git add $$f; \
-	done
-	# Commit & push changes to origin, switch back to master, and restore 'doc' directory
-	@sh -c "ret=0; set +e; \
-		if   git commit -a --amend -m 'Documentation updated'; \
-		then git push origin +gh-pages; echo 'Pushed gh-pages to origin'; \
-		else ret=1; git reset --hard; \
-		fi; \
-		set -e; \
-    git checkout master && echo 'Switched to master' && mkdir doc && git --work-tree=doc checkout gh-pages -- .; \
-    exit $$ret"
+	$(REBAR) hex $(if $(replace),publish --replace,cut)
 
 tar:
 	@rm -f $(TARBALL).tgz; \

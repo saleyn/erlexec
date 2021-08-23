@@ -637,10 +637,10 @@ signal_to_int(sigrtmax)   -> 64.
 
 %%-------------------------------------------------------------------------
 %% @private
-%% @spec () -> Default::exec_options()
 %% @doc Provide default value of a given option.
 %% @end
 %%-------------------------------------------------------------------------
+-spec default() -> [{atom(), term()}].
 default() ->
     [{debug, 0},        % Debug mode of the port program.
      {verbose, false},  % Verbose print of events on the Erlang side.
@@ -1088,12 +1088,12 @@ check_options(Options) when is_list(Options) ->
     end.
 
 %%----------------------------------------------------------------------
-%% @spec (Pid::pid(), Action, State::#state{}) ->
-%%          {ok, LastTok::integer(), LeftLinks::integer()}
 %% @doc Pid died or requested to unlink - remove linked Pid records and
 %% optionally kill all OsPids linked to the Pid.
 %% @end
 %%----------------------------------------------------------------------
+-spec do_unlink_ospid(Pid::pid(), term(), State::#state{}) ->
+        {ok, LastTok::integer(), LeftLinks::integer()}.
 do_unlink_ospid(Pid, _Reason, State) ->
     case ets:lookup(exec_mon, Pid) of
     [{_Pid, OsPid}] when is_integer(OsPid) ->
