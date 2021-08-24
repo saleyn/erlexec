@@ -98,11 +98,12 @@ maps:to_list(lists:foldl(
                 ]},
 
     {port_specs,[{filename:join(["priv", Mach, "exec-port"]), ["c_src/*.cpp"]}]},
-    {edoc_opts, [{overview,     "src/overview.edoc"},
-                 {title,        "The exec application"},
-                 {includes,     ["include"]},
-                 {def,          {vsn, Vsn}},
-                 {stylesheet_file, "src/edoc.css"},
-                 {app_default,  "http://www.erlang.org/doc/man"}]}
+    {edoc_opts, [{overview,        "build-aux/overview.edoc"},
+                 {title,           "OS Process Manager for Erlang VM"},
+                 {includes,        ["include"]},
+                 {def,             {vsn, Vsn}},
+                 {pretty_printer,  erl_pp},
+                 {stylesheet_file, "build-aux/edoc.css"},
+                 {app_default,     "http://www.erlang.org/doc/man"}]}
   ]
 )).
