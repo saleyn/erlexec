@@ -76,7 +76,7 @@ OS-specific libcap-dev installation instructions:
 * Fedora, CentOS: "yum install libcap-devel"
 * Ubuntu:         "apt-get install libcap-dev"
 
-```
+```bash
 $ git clone git@github.com:saleyn/erlexec.git
 $ make
 
@@ -87,7 +87,7 @@ $ OPTIMIZE=0 make
 By default port program's implementation uses `poll(2)` call for event
 demultiplexing. If you prefer to use `select(2)`, set the following environment
 variable:
-```
+```bash
 $ USE_POLL=0 make
 ```
 
@@ -99,27 +99,27 @@ Copyright (c) 2003 Serge Aleynikov
 
 ## Architecture
 ```
-  *-------------------------*
-  |   +----+ +----+ +----+  |
-  |   |Pid1| |Pid2| |PidN|  |   Erlang light-weight Pids associated
-  |   +----+ +----+ +----+  |   one-to-one with managed OsPids
-  |         \   |   /       |
-  |          \  |  /        |
-  |           \ | / (links) |
-  |         +------+        |
-  |         | exec |        |   Exec application running in Erlang VM
-  |         +------+        |
-  | Erlang VM   |           |
-  *-------------+-----------*
+  *---------------------------*
+  |   +----+ +----+ +----+    |
+  |   |Pid1| |Pid2| |PidN|    |   Erlang light-weight Pids associated
+  |   +----+ +----+ +----+    |   one-to-one with managed OsPids
+  |         \   |   /         |
+  |          \  |  /          |
+  |           \ | / (links)   |
+  |         +------+          |
+  |         | exec |          |   Exec application running in Erlang VM
+  |         +------+          |
+  | Erlang VM   |             |
+  *-------------+-------------*
                 |
           +-----------+
-          | exec-port |         Port program (separate OS process)
+          | exec-port |           Port program (separate OS process)
           +-----------+
            /    |    \
  (optional stdin/stdout/stderr pipes)
          /      |      \
     +------+ +------+ +------+
-    |OsPid1| |OsPid2| |OsPidN|  Managed Child OS processes
+    |OsPid1| |OsPid2| |OsPidN|    Managed Child OS processes
     +------+ +------+ +------+
 ```
 
@@ -127,14 +127,14 @@ Copyright (c) 2003 Serge Aleynikov
 
 See description of types in {@link exec:exec_options()}.
 
-The `exec-port' program requires the `SHELL' variable to be set. If you are
-running Erlang inside a docker container, you might need to ensure that `SHELL'
+The `exec-port` program requires the `SHELL` variable to be set. If you are
+running Erlang inside a docker container, you might need to ensure that `SHELL`
 is properly set prior to starting the emulator.
 
 ## Examples
 
 ### Starting/stopping an OS process
-```
+```erlang
 1> exec:start([]).                                      % Start the port program.
 {ok,<0.32.0>}
 2> {ok, _, I} = exec:run_link("sleep 1000", []).        % Run a shell command to sleep for 1000s.
@@ -145,7 +145,7 @@ ok                                                      % Note that this could a
 ```
 
 ### Clearing environment or unsetting an env variable of the child process
-```
+```erlang
 %% Clear environment with {env, [clear]} option:
 10> f(Bin), {ok, [{stdout, [Bin]}]} = exec:run("env", [sync, stdout, {env, [clear]}]), p(re:split(Bin, <<"\n">>)).
 [<<"PWD=/home/...">>,<<"SHLVL=0">>, <<"_=/usr/bin/env">>,<<>>]
@@ -161,21 +161,21 @@ ok
 
 ### Running exec-port as another effective user
 
-In order to be able to use this feature the current user must either have `sudo'
-rights or the `exec-port' file must be owned by `root' and have the SUID bit set
-(use: `chown root:root exec-port; chmod 4555 exec-port'):
+In order to be able to use this feature the current user must either have `sudo`
+rights or the `exec-port` file must be owned by `root` and have the SUID bit set
+(use: `chown root:root exec-port; chmod 4555 exec-port`):
 
-```
+```bash
 $ ll priv/x86_64-unknown-linux-gnu/exec-port
 -rwsr-xr-x 1 root root 777336 Dec  8 10:02 ./priv/x86_64-unknown-linux-gnu/exec-port
 ```
 
-If the effective user doesn't have rights to access the `exec-port'
-program in the real user's directory, then the `exec-port' can be copied to some
+If the effective user doesn't have rights to access the `exec-port`
+program in the real user's directory, then the `exec-port` can be copied to some
 shared location, which will be specified at startup using
-`{portexe, "/path/to/exec-port"}'.
+`{portexe, "/path/to/exec-port"}`.
 
-```
+```erlang
 $ cp $(find . -name exec-port) /tmp
 $ chmod 755 /tmp/exec-port
 
@@ -192,16 +192,16 @@ wheel      exec-port
 
 ### Allowing exec-port to run commands as other effective users
 
-In order to be able to use this feature the current user must either have `sudo'
-rights or the `exec-port' file must have the SUID bit set, and the `exec-port' file
+In order to be able to use this feature the current user must either have `sudo`
+rights or the `exec-port` file must have the SUID bit set, and the `exec-port` file
 must have the capabilities set as described in the "Build" section above.
 
-The port program will initially be started as `root', and then it will 
-switch the effective user to `{user, User}' and set process capabilities to
-`cap_setuid,cap_kill,cap_sys_nice'.  After that it'll allow to run child programs
-under effective users listed in the `{limit_users, Users}' option.
+The port program will initially be started as `root`, and then it will 
+switch the effective user to `{user, User}` and set process capabilities to
+`cap_setuid,cap_kill,cap_sys_nice`.  After that it'll allow to run child programs
+under effective users listed in the `{limit_users, Users}` option.
 
-```
+```erlang
 $ whoami
 serge
 
@@ -223,11 +223,11 @@ While running the port program as root is highly discouraged, since it opens a s
 hole that gives users an ability to damage the system, for those who might need such an
 option, here is how to get it done (PROCEED AT YOUR OWN RISK!!!).
 
-Note: in this case `exec' would use `sudo exec-port' to run it as `root' or the `exec-port'
-must have the SUID bit set (4555) and be owned by `root'.  The other (DANGEROUS and
-firmly DISCOURAGED!!!) alternative is to run `erl' as `root':
+Note: in this case `exec` would use `sudo exec-port` to run it as `root` or the `exec-port`
+must have the SUID bit set (4555) and be owned by `root`.  The other (DANGEROUS and
+firmly DISCOURAGED!!!) alternative is to run `erl` as `root`:
 
-```
+```erlang
 $ whoami
 serge
 
@@ -248,7 +248,7 @@ root       exec-port
 
 Note that killing a process can be accomplished by running kill(3) command
 in an external shell, or by executing exec:kill/2.
-```
+```erlang
 1> f(I), {ok, _, I} = exec:run_link("sleep 1000", []).
 {ok,<0.37.0>,2350}
 2> exec:kill(I, 15).
@@ -262,7 +262,7 @@ ok
 ```
 
 ### Using a custom success return code
-```
+```erlang
 1> exec:start_link([]).
 {ok,<0.35.0>}
 2> exec:run_link("sleep 1", [{success_exit_code, 0}, sync]).
@@ -272,7 +272,7 @@ ok
 ```
 
 ### Redirecting OS process stdout to a file
-```
+```erlang
 7> f(I), {ok, _, I} = exec:run_link("for i in 1 2 3; do echo \"Test$i\"; done",
     [{stdout, "/tmp/output"}]).
 8> io:format("~s", [binary_to_list(element(2, file:read_file("/tmp/output")))]),
@@ -284,7 +284,7 @@ ok
 ```
 
 ### Redirecting OS process stdout to screen, an Erlang process or a custom function
-```
+```erlang
 9> exec:run("echo Test", [{stdout, print}]).
 {ok,<0.119.0>,29651}
 Got stdout from 29651: <<"Test\n">>
@@ -306,7 +306,7 @@ ok
 ```
 
 ### Appending OS process stdout to a file
-```
+```erlang
 13> exec:run("for i in 1 2 3; do echo TEST$i; done",
         [{stdout, "/tmp/out", [append, {mode, 8#600}]}, sync]),
     file:read_file("/tmp/out").
@@ -318,7 +318,7 @@ ok
 ```
 
 ### Setting up a monitor for the OS process
-```
+```erlang
 > f(I), f(P), {ok, P, I} = exec:run("echo ok", [{stdout, self()}, monitor]).
 {ok,<0.263.0>,18950}
 16> flush().                                                                  
@@ -331,7 +331,7 @@ ok
 This command allows to instruct erlexec to begin monitoring given OS process
 and notify Erlang when the process exits. It is also able to send signals to
 the process and kill it.
-```
+```erlang
 % Start an externally managed OS process and retrieve its OS PID:
 17> spawn(fun() -> os:cmd("echo $$ > /tmp/pid; sleep 15") end).
 <0.330.0>  
@@ -352,7 +352,7 @@ ok
 ```
 
 ### Specifying a custom process shutdown delay in seconds
-```
+```erlang
 % Execute an OS process (script) that blocks SIGTERM with custom kill timeout, and monitor
 22> f(I), {ok, _, I} = exec:run("trap '' SIGTERM; sleep 30", [{kill_timeout, 3}, monitor]).
 {ok,<0.399.0>,26347}
@@ -365,7 +365,7 @@ ok
 ```
 
 ### Specifying a custom kill command for a process
-```
+```erlang
 % Execute an OS process (script) that blocks SIGTERM, and uses a custom kill command,
 % which kills it with a SIGINT. Add a monitor so that we can wait for process exit
 % notification. Note the use of the special environment variable "CHILD_PID" by the
@@ -386,7 +386,7 @@ ok
 ```
 
 ### Communicating with an OS process via STDIN
-```
+```erlang
 % Execute an OS process (script) that reads STDIN and echoes it back to Erlang
 25> f(I), {ok, _, I} = exec:run("read x; echo \"Got: $x\"", [stdin, stdout, monitor]).
 {ok,<0.427.0>,26431}
@@ -402,7 +402,7 @@ ok
 ```
 
 ### Communicating with an OS process via STDIN and sending end-of-file
-```
+```erlang
 2> Watcher = spawn(fun F() -> receive Msg -> io:format("Got: ~p\n", [Msg]), F() after 60000 -> ok end end).
 <0.112.0>
 3> f(Pid), f(OsPid), {ok, Pid, OsPid} = exec:run("tac", [stdin, {stdout, Watcher}, {stderr, Watcher}]).
@@ -419,7 +419,7 @@ Got: {stdout,26143,<<"baz\nbar\nfoo\n">>}
 ```
 
 ### Running OS commands synchronously
-```
+```erlang
 % Execute an shell script that blocks for 1 second and return its termination code
 29> exec:run("sleep 1; echo Test", [sync]).
 % By default all I/O is redirected to /dev/null, so no output is captured
@@ -444,7 +444,7 @@ Got: {stdout,26143,<<"baz\nbar\nfoo\n">>}
 ```
 
 ### Running OS commands with/without shell
-```
+```erlang
 % Execute a command by an OS shell interpreter
 34> exec:run("/bin/echo ok", [sync, stdout]).
 {ok, [{stdout, [<<"ok\n">>]}]}
@@ -459,7 +459,7 @@ Got: {stdout,26143,<<"baz\nbar\nfoo\n">>}
 ```
 
 ### Running OS commands with pseudo terminal (pty)
-```
+```erlang
 % Execute a command without a pty
 37> exec:run("echo hello", [sync, stdout]).
 {ok, [{stdout,[<<"hello\n">>]}]}
@@ -470,7 +470,7 @@ Got: {stdout,26143,<<"baz\nbar\nfoo\n">>}
 ```
  
 ### Kill a process group at process exit
-```
+```erlang
 % In the following scenario the process P0 will create a new process group
 % equal to the OS pid of that process (value = GID). The next two commands
 % are assigned to the same process group GID. As soon as the P0 process exits
