@@ -92,7 +92,9 @@ $ USE_POLL=0 make
 ```
 
 ## LICENSE ##
+
 The program is distributed under BSD license.
+
 Copyright (c) 2003 Serge Aleynikov
 
 ## Architecture
