@@ -61,8 +61,8 @@ See http://saleyn.github.io/erlexec
 
 ## BUILDING ##
 
-Make sure you have rebar (http://github.com/basho/rebar or
-http://github.com/basho/rebar3) installed locally and the rebar script
+Make sure you have [rebar](http://github.com/basho/rebar) or
+[rebar3](http://github.com/basho/rebar3) installed locally and the rebar script
 is in the path.
 
 If you are deploying the application on Linux and would like to
