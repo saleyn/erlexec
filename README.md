@@ -1,4 +1,4 @@
-# Erlexec - OS Process Manager for Erlang VM
+# Erlexec - OS Process Manager for the Erlang VM
 
 [![Build Status](https://travis-ci.org/saleyn/erlexec.svg?branch=master)](https://travis-ci.org/saleyn/erlexec)
 [![Hex.pm](https://img.shields.io/hexpm/v/erlexec.svg)](https://hex.pm/packages/erlexec)
