@@ -9,7 +9,7 @@
 
       <meta name="author" content="Serge Aleynikov">
 
-    <title>exec_app — erlexec v2.0.1</title>
+    <title>API Reference — erlexec v2.0.1</title>
     <link rel="stylesheet" href="dist/html-erlang-4XYKNH4U.css" />
 
     <script src="dist/handlebars.runtime-NWIB6V2M.js"></script>
@@ -22,7 +22,7 @@
 
 
   </head>
-  <body data-type="modules" class="page-module">
+  <body data-type="extras" class="page-extra">
     <script>
 
       try {
@@ -97,23 +97,59 @@ erlexec
 </button>
 
 
-    <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec_app.erl#L13" title="View Source" class="view-source" rel="help">
-      <i class="ri-code-s-slash-line" aria-hidden="true"></i>
-      <span class="sr-only">View Source</span>
-    </a>
-
-  <span translate="no">exec_app</span> 
-  <small class="app-vsn" translate="no">(erlexec v2.0.1)</small>
-
+  <span>API Reference <small class="app-vsn">erlexec v2.0.1</small></span>
 </h1>
 
 
-  <section id="moduledoc">
-This module implements application and supervisor behaviors of the <code>exec</code> application.
+  <section class="details-list">
+    <h2 id="modules" class="section-heading">
+  <a href="#modules" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i>
+  <p class="sr-only">modules</p>
+  </a>
+  Modules
+</h2>
+
+    <div class="summary">
+<div class="summary-row">
+  <div class="summary-signature">
+    <a href="exec.html" translate="no">exec</a>
+
+  </div>
+
+    <div class="summary-synopsis"><p>OS shell command runner. It communicates with a separate C++ port process <code>exec-port</code> spawned by this module, which is responsible for starting, killing, listing, terminating, and notifying of state changes.</p></div>
+
+</div>
+<div class="summary-row">
+  <div class="summary-signature">
+    <a href="exec_app.html" translate="no">exec_app</a>
+
+  </div>
+
+    <div class="summary-synopsis">This module implements application and supervisor behaviors of the <code>exec</code> application.</div>
+
+</div>
+
+    </div>
   </section>
 
 
+<div class="bottom-actions">
+  <div class="bottom-actions-item">
 
+  </div>
+  <div class="bottom-actions-item">
+
+      <a href="readme.html" class="bottom-actions-button" rel="next">
+        <span class="subheader">
+          Next Page →
+        </span>
+        <span class="title">
+Overview
+        </span>
+      </a>
+
+  </div>
+</div>
       <footer class="footer">
 
           <p>
@@ -122,8 +158,6 @@ This module implements application and supervisor behaviors of the <code>exec</c
             <span class="line">
               <a href="https://hex.pm/packages/erlexec/2.0.1" class="line footer-hex-package">Package</a>
               <a href="https://preview.hex.pm/preview/erlexec/2.0.1" class="line">Preview</a>
-
-                <a href="https://preview.hex.pm/preview/erlexec/2.0.1/show/src/exec_app.erl">(current file)</a>
 
             </span>
 

@@ -1,105 +1,551 @@
-<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
-<html>
-<head>
-<!-- HEAD -->
-  <link rel="stylesheet" type="text/css" href="stylesheet.css" title="EDoc">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.2.0/styles/github-dark-dimmed.min.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.2.0/highlight.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.2.0/languages/erlang.min.js"></script>
-  <script>hljs.highlightAll();</script>
-</head>
-<body>
-<a name="top"></a>
-<div class="navcontainer">
-  <div class="navbar">
-    <div class="dropdown">
-      <i class="fa fa-bars dropbtn"></i>
-      <div class="dropdown-content">
-<a class="mod" href="exec_app.html">exec_app</a>
-<a class="mod" href="exec.html">exec</a>
-      </div>
-    </div>
-    <a class="mod" href="index.html">Overview</a>
-    <!-- MODULE MENU BEGIN -->
-    <a class="mod" href="#top">Description</a>
-    <a class="mod" href="#types">Data Types</a>
-    <a class="mod" href="#index">Function Index</a>
-    <a class="mod" href="#functions">Function Details</a>
-    <!-- MODULE MENU END -->
-  </div>
-</div>
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="generator" content="ExDoc v0.29.0">
+    <meta name="project" content="erlexec v2.0.1">
+
+      <meta name="author" content="Serge Aleynikov">
+
+    <title>exec — erlexec v2.0.1</title>
+    <link rel="stylesheet" href="dist/html-erlang-4XYKNH4U.css" />
+
+    <script src="dist/handlebars.runtime-NWIB6V2M.js"></script>
+    <script src="dist/handlebars.templates-X7YVL3G2.js"></script>
+    <script src="dist/sidebar_items-C3382FBE.js"></script>
+
+      <script src="docs_config.js"></script>
+
+    <script async src="dist/html-XN2TSG4M.js"></script>
+
+
+  </head>
+  <body data-type="modules" class="page-module">
+    <script>
+
+      try {
+        var settings = JSON.parse(localStorage.getItem('ex_doc:settings') || '{}');
+
+        if (settings.theme === 'dark' ||
+           ((settings.theme === 'system' || settings.theme == null) &&
+             window.matchMedia('(prefers-color-scheme: dark)').matches)
+           ) {
+          document.body.classList.add('dark')
+        }
+      } catch (error) { }
+    </script>
+
 <div class="main">
-<a name="top"></a>
-<hr>
 
-<h1>Module exec</h1>
+<button class="sidebar-button sidebar-toggle" aria-label="toggle sidebar">
+  <i class="ri-menu-line ri-lg" title="Collapse/expand sidebar"></i>
+</button>
 
-<p><b>Version:</b> e090b069b079eba57f092143e279fb208131ecb7</p>
-<p><b>Behaviours:</b> <a href="gen_server.html"><tt>gen_server</tt></a>.</p>
-<p><b>Authors:</b> Serge Aleynikov (<a href="mailto:saleyn@gmail.com"><tt>saleyn@gmail.com</tt></a>).</p>
+<section class="sidebar">
+  <form class="sidebar-search" action="search.html">
+    <button type="submit" class="search-button" aria-label="Submit Search">
+      <i class="ri-search-2-line" aria-hidden="true" title="Submit search"></i>
+    </button>
+    <button type="button" tabindex="-1" class="search-close-button" aria-label="Cancel Search">
+      <i class="ri-close-line ri-lg" aria-hidden="true" title="Cancel search"></i>
+    </button>
+    <label class="search-label">
+      <p class="sr-only">Search</p>
+      <input name="q" type="text" class="search-input" placeholder="Search..." aria-label="Input your search terms" autocomplete="off" />
+    </label>
+  </form>
 
-<h2><a href="#top" name="description">Description</a></h2><p>OS shell command runner.
-        It communicates with a separate C++ port process <code>exec-port</code>        
-spawned by this module, which is responsible        
-for starting, killing, listing, terminating, and notifying of        
-state changes.</p>
-  
-        The port program serves as a middle-man between
-        the OS and the virtual machine to carry out OS-specific low-level
-        process control.  The Erlang/C++ protocol is described in the
-        <code>exec.cpp</code> file.  The <code>exec</code> application can execute tasks by
-        impersonating as a different effective user.  This impersonation
-        can be accomplished in one of the following two ways (assuming
-        that the emulator is not running as <code>root</code>:
-        <ul>
-        <li>Having the user account running the erlang emulator added to
-            the <code>/etc/sudoers</code> file, so that it can execute <code>exec-port</code>
-            task as <code>root</code>. (Preferred option)</li>
-        <li>Setting <code>root</code> ownership on <code>exec-port</code>, and setting the
-            SUID bit: <code>chown root:root exec-port; chmod 4755 exec-port</code>.
-            (This option is discouraged as it's less secure).</li>
-        </ul><p>
-        In either of these two cases, <code>exec:start_link/2</code> must be started
-        with options <code>[root, {user, User}, {limit_users, Users}]</code>,
-        so that <code>exec-port</code> process will not actually run as
-        root but will switch to the effective <code>User</code>, and set the kernel
-        capabilities so that it's able to start processes as other
-        effective users given in the <code>Users</code> list and adjust process        
-priorities.</p>
-  
-        <p>Though, in the initial design, <code>exec</code> prohibited such use, upon
-        user requests a feature was added (in order to support <code>docker</code>
-        deployment and CI testing) to be able to execute <code>exec-port</code> as
-        <code>root</code> without switching the effective user to anying other than
-        <code>root</code>. To accomplish this use the following options to start
-        <code>exec</code>: <code>[root, {user, "root"}, {limit_users, ["root"]}]</code>.</p>
-  
-        At exit the port program makes its best effort to perform
-        clean shutdown of all child OS processes.
-        Every started OS process is linked to a spawned light-weight
-        Erlang process returned by the run/2, run_link/2 command.
-        The application ensures that termination of spawned OsPid
-        leads to termination of the associated Erlang Pid, and vice
-        versa.
-  
-<h2><a href="#top" name="types">Data Types</a></h2>
+  <div class="autocomplete">
+    <div class="autocomplete-results">
+    </div>
+  </div>
 
-<h3 class="typedecl"><a name="type-cmd">cmd()</a></h3>
-<p><pre ><code class="language-erlang">cmd() = binary() | string() | [string()]</code></pre ></p>
+  <div class="sidebar-header">
+
+    <div class="sidebar-projectDetails">
+      <a href="readme.html" class="sidebar-projectName" translate="no">
+erlexec
+      </a>
+      <strong class="sidebar-projectVersion" translate="no">
+        v2.0.1
+      </strong>
+    </div>
+    <ul class="sidebar-listNav">
+      <li><a id="extras-list-link" href="#full-list">Pages</a></li>
+
+        <li><a id="modules-list-link" href="#full-list">Modules</a></li>
 
 
-<h3 class="typedecl"><a name="type-cmd_option">cmd_option()</a></h3>
-<p><pre ><code class="language-erlang">cmd_option() = 
+    </ul>
+  </div>
+
+  <div class="gradient"></div>
+  <ul id="full-list" class="sidebar-fullList"></ul>
+</section>
+
+<section class="content">
+  <output role="status" id="toast"></output>
+  <div class="content-outer">
+    <div id="content" class="content-inner">
+
+<h1>
+<button class="settings display-settings">
+  <i class="ri-settings-3-line"></i>
+  <span class="sr-only">Settings</span>
+</button>
+
+
+    <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L56" title="View Source" class="view-source" rel="help">
+      <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+      <span class="sr-only">View Source</span>
+    </a>
+
+  <span translate="no">exec</span> 
+  <small class="app-vsn" translate="no">(erlexec v2.0.1)</small>
+
+</h1>
+
+
+  <section id="moduledoc">
+<p>OS shell command runner. It communicates with a separate C++ port process <code>exec-port</code> spawned by this module, which is responsible for starting, killing, listing, terminating, and notifying of state changes.</p>The port program serves as a middle-man between the OS and the virtual machine to carry out OS-specific low-level process control. The Erlang/C++ protocol is described in the <code>exec.cpp</code> file. The <code>exec</code> application can execute tasks by impersonating as a different effective user. This impersonation can be accomplished in one of the following two ways (assuming that the emulator is not running as <code>root</code>:<ul><li>Having the user account running the erlang emulator added to the <code>/etc/sudoers</code> file, so that it can execute <code>exec-port</code> task as <code>root</code>. (Preferred option)</li><li>Setting <code>root</code> ownership on <code>exec-port</code>, and setting the SUID bit: <code>chown root:root exec-port; chmod 4755 exec-port</code>. (This option is discouraged as it's less secure).</li></ul><p>In either of these two cases, <code>exec:start_link/2</code> must be started with options <code>[root, {user, User}, {limit_users, Users}]</code>, so that <code>exec-port</code> process will not actually run as root but will switch to the effective <code>User</code>, and set the kernel capabilities so that it's able to start processes as other effective users given in the <code>Users</code> list and adjust process priorities.</p><p>Though, in the initial design, <code>exec</code> prohibited such use, upon user requests a feature was added (in order to support <code>docker</code> deployment and CI testing) to be able to execute <code>exec-port</code> as <code>root</code> without switching the effective user to anying other than <code>root</code>. To accomplish this use the following options to start <code>exec</code>: <code>[root, {user, &quot;root&quot;}, {limit_users, [&quot;root&quot;]}]</code>.</p>At exit the port program makes its best effort to perform clean shutdown of all child OS processes. Every started OS process is linked to a spawned light-weight Erlang process returned by the run/2, run_link/2 command. The application ensures that termination of spawned OsPid leads to termination of the associated Erlang Pid, and vice versa.
+  </section>
+
+
+  <section id="summary" class="details-list">
+    <h1 class="section-heading">
+      <a class="hover-link" href="#summary">
+        <i class="ri-link-m" aria-hidden="true"></i>
+        <span class="sr-only">Link to this section</span>
+      </a>
+      Summary
+    </h1>
+
+  <div class="summary-types summary">
+    <h2>
+      <a href="#types">Types</a>
+    </h2>
+
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#t:cmd/0" translate="no">cmd/0</a>
+
+        </div>
+
+          <div class="summary-synopsis"><p>Command to be executed. If specified as a string, the specified command will be executed through the shell. The current shell is obtained from environment variable <code>SHELL</code>. This can be useful if you are using Erlang primarily for the enhanced control flow it offers over most system shells and still want convenient access to other shell features such as shell pipes, filename wildcards, environment variable expansion, and expansion of <code>~</code> to a user's home directory. All command arguments must be properly escaped including whitespace and shell metacharacters.</p></div>
+
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#t:cmd_option/0" translate="no">cmd_option/0</a>
+
+        </div>
+
+          <div class="summary-synopsis">Command options:<dl><dt>monitor</dt><dd>Set up a monitor for the spawned process. The monitor is not a standard <code>erlang:montior/2</code> function call, but it's emulated by ensuring that the monitoring process receives notification in the form: <code>{'DOWN', OsPid::integer(), process, Pid::pid(), Reason}</code>. If the <code>Reason</code> is <code>normal</code>, then process exited with status <code>0</code>, otherwise there was an error. If the Reason is <code>{status, Status}</code> the returned <code>Status</code> can be decoded with <code>status/1</code> to determine the exit code of the process and if it was killed by signal.</dd><dt>sync</dt><dd>Block the caller until the OS command exits</dd><dt>{executable, Executable::string()}</dt><dd><p>Specifies a replacement program to execute. It is very seldom needed. When the port program executes a child process using <code>execve(3)</code> call, the call takes the following arguments: <code>(Executable, Args, Env)</code>. When <code>Cmd</code> argument passed to the <code>run/2</code> function is specified as the list of strings, the executable replaces the first parameter in the call, and the original args provided in the <code>Cmd</code> parameter are passed as as the second parameter. Most programs treat the program specified by args as the command name, which can then be different from the program actually executed. On Unix, the args name becomes the display name for the executable in utilities such as <code>ps</code>.</p></div>
+
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#t:cmd_options/0" translate="no">cmd_options/0</a>
+
+        </div>
+
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#t:exec_option/0" translate="no">exec_option/0</a>
+
+        </div>
+
+          <div class="summary-synopsis">Options passed to the exec process at startup. They can be specified in the <code>sys.config</code> file for the <code>erlexec</code> application to customize application startup.<dl><dt>debug</dt><dd>Same as {debug, 1}</dd><dt>{debug, Level}</dt><dd>Enable port-programs debug trace at <code>Level</code>.</dd><dt>verbose</dt><dd>Enable verbose prints of the Erlang process.</dd><dt>root | {root, Boolean}</dt><dd>Allow running child processes as root.</dd><dt>{args, Args}</dt><dd>Append <code>Args</code> to the port command.</dd><dt>{alarm, Secs}</dt><dd>Give <code>Secs</code> deadline for the port program to clean up child pids before exiting</dd><dt>{user, User}</dt><dd>When the port program was compiled with capability (Linux) support enabled, and is owned by root with a a suid bit set, this option must be specified so that upon startup the port program is running under the effective user different from root. This is a security measure that will also prevent the port program to execute root commands.</dd><dt>{limit_users, LimitUsers}</dt><dd>Limit execution of external commands to these set of users. This option is only valid when the port program is owned by root.</dd><dt>{portexe, Exe}</dt><dd>Provide an alternative location of the port program. This option is useful when this application is stored on NFS and the port program needs to be copied locally so that root suid bit can be set.</dd><dt>{env, Env}</dt><dd>Extend environment of the port program by using <code>Env</code> specification. <code>Env</code> should be a list of tuples <code>{Name, Val}</code>, where Name is the name of an environment variable, and Val is the value it is to have in the spawned port process. If Val is <code>false</code>, then the <code>Name</code> environment variable is unset.</dd></dl></div>
+
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#t:exec_options/0" translate="no">exec_options/0</a>
+
+        </div>
+
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#t:osgid/0" translate="no">osgid/0</a>
+
+        </div>
+
+          <div class="summary-synopsis">Representation of OS group ID.</div>
+
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#t:ospid/0" translate="no">ospid/0</a>
+
+        </div>
+
+          <div class="summary-synopsis">Representation of OS process ID.</div>
+
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#t:output_dev_opt/0" translate="no">output_dev_opt/0</a>
+
+        </div>
+
+          <div class="summary-synopsis">Output device option:<dl><dt>null</dt><dd>Suppress output.</dd><dt>close</dt><dd>Close file descriptor for writing.</dd><dt>print</dt><dd>A debugging convenience device that prints the output to the console shell</dd><dt>Filename</dt><dd>Save output to file by overwriting it.</dd><dt>pid()</dt><dd>Redirect output to this pid.</dd><dt>fun((Stream, OsPid, Data) -&gt; none())</dt><dd>Execute this callback on receiving output data</dd></dl></div>
+
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#t:output_file_opt/0" translate="no">output_file_opt/0</a>
+
+        </div>
+
+          <div class="summary-synopsis">Defines file opening attributes:<dl><dt>append</dt><dd>Open the file in <code>append</code> mode</dd><dt>{mode, Mode}</dt><dd>File creation access mode <b>specified in base 8</b> (e.g. 8#0644)</dd></dl></div>
+
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#t:pty_opt/0" translate="no">pty_opt/0</a>
+
+        </div>
+
+          <div class="summary-synopsis">Pty options, see:<ul><li><a href="https://man7.org/linux/man-pages/man3/termios.3.html" target="_top">https://man7.org/linux/man-pages/man3/termios.3.html</a></li><li><a href="https://datatracker.ietf.org/doc/html/rfc4254#section-8" target="_top">https://datatracker.ietf.org/doc/html/rfc4254#section-8</a></li></ul><dl><dt>{tty_char(), Byte}</dt><dd>A special character with value from 0 to 255</dd><dt>{tty_mode(), Enable}</dt><dd>Enable/disable a tty mode</dd><dt>{tty_speed(), Speed}</dt><dd>Specify input or output baud rate. Provided for completeness. Not useful for pseudo terminals.</dd></dl></div>
+
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#t:pty_opts/0" translate="no">pty_opts/0</a>
+
+        </div>
+
+          <div class="summary-synopsis">List of pty options.</div>
+
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#t:tty_char/0" translate="no">tty_char/0</a>
+
+        </div>
+
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#t:tty_mode/0" translate="no">tty_mode/0</a>
+
+        </div>
+
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#t:tty_speed/0" translate="no">tty_speed/0</a>
+
+        </div>
+
+      </div>
+
+  </div>
+
+  <div class="summary-functions summary">
+    <h2>
+      <a href="#functions">Functions</a>
+    </h2>
+
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#debug/1" translate="no">debug(Level)</a>
+
+        </div>
+
+          <div class="summary-synopsis">Set debug level of the port process.</div>
+
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#kill/2" translate="no">kill(Pid, Signal)</a>
+
+        </div>
+
+          <div class="summary-synopsis">Send a <code>Signal</code> to a child <code>Pid</code>, <code>OsPid</code> or an Erlang <code>Port</code>.</div>
+
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#manage/2" translate="no">manage(Port, Options)</a>
+
+        </div>
+
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#ospid/1" translate="no">ospid(Pid)</a>
+
+        </div>
+
+          <div class="summary-synopsis">Get <code>OsPid</code> of the given Erlang <code>Pid</code>. The <code>Pid</code> must be created previously by running the run/2 or run_link/2 commands.</div>
+
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#pid/1" translate="no">pid(OsPid)</a>
+
+        </div>
+
+          <div class="summary-synopsis">Get <code>Pid</code> of the given <code>OsPid</code>. The <code>OsPid</code> must be created previously by running the run/2 or run_link/2 commands.</div>
+
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#pty_opts/2" translate="no">pty_opts(OsPid, Opts)</a>
+
+        </div>
+
+          <div class="summary-synopsis"><p>Set the pty terminal options of the OS process identified by <code>OsPid</code>.</p></div>
+
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#run/2" translate="no">run(Exe, Options)</a>
+
+        </div>
+
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#run/3" translate="no">run(Exe, Options, Timeout)</a>
+
+        </div>
+
+          <div class="summary-synopsis">Run an external program. <code>OsPid</code> is the OS process identifier of the new process. If <code>sync</code> is specified in <code>Options</code> the return value is <code>{ok, Status}</code> where <code>Status</code> is OS process exit status. The <code>Status</code> can be decoded with <code>status/1</code> to determine the process's exit code and if it was killed by signal.</div>
+
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#run_link/2" translate="no">run_link(Exe, Options)</a>
+
+        </div>
+
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#run_link/3" translate="no">run_link(Exe, Options, Timeout)</a>
+
+        </div>
+
+          <div class="summary-synopsis"><p>Equivalent to run / 2.</p></div>
+
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#send/2" translate="no">send(OsPid, Data)</a>
+
+        </div>
+
+          <div class="summary-synopsis"><p>Send <code>Data</code> to stdin of the OS process identified by <code>OsPid</code>.</p></div>
+
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#setpgid/2" translate="no">setpgid(OsPid, Gid)</a>
+
+        </div>
+
+          <div class="summary-synopsis">Change group ID of a given <code>OsPid</code> to <code>Gid</code>.</div>
+
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#signal/1" translate="no">signal(Num)</a>
+
+        </div>
+
+          <div class="summary-synopsis">Convert a signal number to atom</div>
+
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#signal_to_int/1" translate="no">signal_to_int(_)</a>
+
+        </div>
+
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#start/0" translate="no">start()</a>
+
+        </div>
+
+          <div class="summary-synopsis"><p>Equivalent to start_link / 1.</p></div>
+
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#start/1" translate="no">start(Options)</a>
+
+        </div>
+
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#start_link/1" translate="no">start_link(Options)</a>
+
+        </div>
+
+          <div class="summary-synopsis">Supervised start an external program manager. Note that the port program requires <code>SHELL</code> environment variable to be set.</div>
+
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#status/1" translate="no">status(Status)</a>
+
+        </div>
+
+          <div class="summary-synopsis">Decode the program's exit_status. If the program exited by signal the function returns <code>{signal, Signal, Core}</code> where the <code>Signal</code> is the signal number or atom, and <code>Core</code> indicates if the core file was generated.</div>
+
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#stop/1" translate="no">stop(Pid)</a>
+
+        </div>
+
+          <div class="summary-synopsis">Terminate a managed <code>Pid</code>, <code>OsPid</code>, or <code>Port</code> process. The OS process is terminated gracefully. If it was given a <code>{kill, Cmd}</code> option at startup, that command is executed and a timer is started. If the program doesn't exit, then the default termination is performed. Default termination implies sending a <code>SIGTERM</code> command followed by <code>SIGKILL</code> in 5 seconds, if the program doesn't get killed.</div>
+
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#stop_and_wait/2" translate="no">stop_and_wait(Port, Timeout)</a>
+
+        </div>
+
+          <div class="summary-synopsis">Terminate a managed <code>Pid</code>, <code>OsPid</code>, or <code>Port</code> process, like <code>stop/1</code>, and wait for it to exit.</div>
+
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#which_children/0" translate="no">which_children()</a>
+
+        </div>
+
+          <div class="summary-synopsis">Get a list of children managed by port program.</div>
+
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#winsz/3" translate="no">winsz(OsPid, Rows, Cols)</a>
+
+        </div>
+
+          <div class="summary-synopsis"><p>Set the pty terminal <code>Rows</code> and <code>Cols</code> of the OS process identified by <code>OsPid</code>.</p></div>
+
+      </div>
+
+  </div>
+
+  </section>
+
+
+  <section id="types" class="details-list">
+    <h1 class="section-heading">
+      <a class="hover-link" href="#types">
+        <i class="ri-link-m" aria-hidden="true"></i>
+        <span class="sr-only">Link to this section</span>
+      </a>
+Types
+    </h1>
+    <div class="types-list">
+<section class="detail" id="t:cmd/0">
+
+  <div class="detail-header">
+    <a href="#t:cmd/0" class="detail-link" title="Link to this type">
+      <i class="ri-link-m" aria-hidden="true"></i>
+      <span class="sr-only">Link to this type</span>
+    </a>
+    <h1 class="signature" translate="no">cmd/0</h1>
+
+      <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L145" class="view-source" rel="help" title="View Source">
+       <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+       <span class="sr-only">View Source</span>
+     </a>
+
+
+  </div>
+
+  <section class="docstring">
+
+      <div class="specs">
+
+          <pre translate="no"><span class="attribute">-type</span> cmd() :: binary() | string() | [string()].</pre>
+
+      </div>
+
+<p>Command to be executed. If specified as a string, the specified command will be executed through the shell. The current shell is obtained from environment variable <code>SHELL</code>. This can be useful if you are using Erlang primarily for the enhanced control flow it offers over most system shells and still want convenient access to other shell features such as shell pipes, filename wildcards, environment variable expansion, and expansion of <code>~</code> to a user's home directory. All command arguments must be properly escaped including whitespace and shell metacharacters.</p><p>Any part of the command string can contain unicode characters.</p><ul><b>Warning:</b> Executing shell commands that incorporate unsanitized input from an untrusted source makes a program vulnerable to <a href="http://en.wikipedia.org/wiki/Shell_injection#Shell_injection" target="_top">shell injection</a>, a serious security flaw which can result in arbitrary command execution. For this reason, the use of <code>shell</code> is strongly discouraged in cases where the command string is constructed from external input:</ul><pre><code class="makeup erlang" translate="no"><span class="w">   </span><span class="mi">1</span><span class="o">&gt;</span><span class="w"> </span><span class="p" data-group-id="8564327586-1">{</span><span class="ss">ok</span><span class="p">,</span><span class="w"> </span><span class="n">Filename</span><span class="p" data-group-id="8564327586-1">}</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nc">io</span><span class="p">:</span><span class="nf">read</span><span class="p" data-group-id="8564327586-2">(</span><span class="s">&quot;Enter filename: &quot;</span><span class="p" data-group-id="8564327586-2">)</span><span class="p">.</span><span class="w">
+   </span><span class="n">Enter</span><span class="w"> </span><span class="nc">filename</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;non_existent; rm -rf / #&quot;</span><span class="p">.</span><span class="w">
+   </span><span class="p" data-group-id="8564327586-3">{</span><span class="ss">ok</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;non_existent; rm -rf / #&quot;</span><span class="p" data-group-id="8564327586-3">}</span><span class="w">
+   </span><span class="mi">2</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">exec</span><span class="p" data-group-id="8564327586-4">(</span><span class="n">Filename</span><span class="p">,</span><span class="w"> </span><span class="p" data-group-id="8564327586-5">[</span><span class="p" data-group-id="8564327586-5">]</span><span class="p" data-group-id="8564327586-4">)</span><span class="w"> </span><span class="c1">% Argh!!! This is not good!</span></code></pre>When command is given in the form of a list of strings, it is passed to <code>execve(3)</code> library call directly without involving the shell process, so the list of strings represents the program to be executed with arguments. In this case all shell-based features are disabled and there's no shell injection vulnerability.
+  </section>
+</section>
+<section class="detail" id="t:cmd_option/0">
+
+  <div class="detail-header">
+    <a href="#t:cmd_option/0" class="detail-link" title="Link to this type">
+      <i class="ri-link-m" aria-hidden="true"></i>
+      <span class="sr-only">Link to this type</span>
+    </a>
+    <h1 class="signature" translate="no">cmd_option/0</h1>
+
+      <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L186" class="view-source" rel="help" title="View Source">
+       <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+       <span class="sr-only">View Source</span>
+     </a>
+
+
+  </div>
+
+  <section class="docstring">
+
+      <div class="specs">
+
+          <pre translate="no"><span class="attribute">-type</span> cmd_option() ::
     monitor | sync | link |
     {executable, string() | binary()} |
     {cd, WorkDir :: string() | binary()} |
     {env,
-     [string() |
-      clear |
-      {Name :: string() | binary(),
-       Val :: string() | binary() | false},
-      ...]} |
+     [string() | clear | {Name :: string() | binary(), Val :: string() | binary() | false}, ...]} |
     {kill, KillCmd :: string() | binary()} |
     {kill_timeout, Sec :: non_neg_integer()} |
     kill_group |
@@ -110,19 +556,70 @@ priorities.</p>
     stdin |
     {stdin, null | close | string() | binary()} |
     stdout | stderr |
-    {stdout, stderr | <a href="#type-output_dev_opt">output_dev_opt()</a>} |
-    {stderr, stdout | <a href="#type-output_dev_opt">output_dev_opt()</a>} |
-    {stdout | stderr, string() | binary(), [<a href="#type-output_file_opt">output_file_opt()</a>]} |
-    pty | debug |
-    {debug, integer()}</code></pre ></p>
+    {stdout, stderr | <a href="#t:output_dev_opt/0">output_dev_opt</a>()} |
+    {stderr, stdout | <a href="#t:output_dev_opt/0">output_dev_opt</a>()} |
+    {stdout | stderr, string() | binary(), [<a href="#t:output_file_opt/0">output_file_opt</a>()]} |
+    {winsz, {Rows :: non_neg_integer(), Cols :: non_neg_integer()}} |
+    pty |
+    {pty, <a href="#t:pty_opts/0">pty_opts</a>()} |
+    pty_echo | debug |
+    {debug, integer()}.</pre>
+
+      </div>
+
+Command options:<dl><dt>monitor</dt><dd>Set up a monitor for the spawned process. The monitor is not a standard <code>erlang:montior/2</code> function call, but it's emulated by ensuring that the monitoring process receives notification in the form: <code>{'DOWN', OsPid::integer(), process, Pid::pid(), Reason}</code>. If the <code>Reason</code> is <code>normal</code>, then process exited with status <code>0</code>, otherwise there was an error. If the Reason is <code>{status, Status}</code> the returned <code>Status</code> can be decoded with <code>status/1</code> to determine the exit code of the process and if it was killed by signal.</dd><dt>sync</dt><dd>Block the caller until the OS command exits</dd><dt>{executable, Executable::string()}</dt><dd><p>Specifies a replacement program to execute. It is very seldom needed. When the port program executes a child process using <code>execve(3)</code> call, the call takes the following arguments: <code>(Executable, Args, Env)</code>. When <code>Cmd</code> argument passed to the <code>run/2</code> function is specified as the list of strings, the executable replaces the first parameter in the call, and the original args provided in the <code>Cmd</code> parameter are passed as as the second parameter. Most programs treat the program specified by args as the command name, which can then be different from the program actually executed. On Unix, the args name becomes the display name for the executable in utilities such as <code>ps</code>.</p>If <code>Cmd</code> argument passed to the <code>run/2</code> function is given as a string, on Unix the <code>Executable</code> specifies a replacement shell for the default <code>/bin/sh</code>.</dd><dt>{cd, WorkDir}</dt><dd>Working directory</dd><dt>{env, Env :: [{Name,Value}|string()|clear]}</dt><dd>List of &quot;VAR=VALUE&quot; environment variables or list of {Name, Value} tuples or strings (like &quot;NAME=VALUE&quot;) or <code>clear</code>. <code>clear</code> will clear environment of a spawned child OS process (so that it doesn't inherit parent's environment). If <code>Value</code> is <code>false</code> then the <code>Var</code> env variable is unset.</dd><dt>{kill, KillCmd}</dt><dd>This command will be used for killing the process. After a 5-sec timeout if the process is still alive, it'll be killed with SIGKILL. The kill command will have a <code>CHILD_PID</code> environment variable set to the pid of the process it is expected to kill. If the <code>kill</code> option is not specified, by default first the command is sent a <code>SIGTERM</code> signal, followed by <code>SIGKILL</code> after a default timeout.</dd><dt>{kill_timeout, Sec::integer()}</dt><dd>Number of seconds to wait after issuing a SIGTERM or executing the custom <code>kill</code> command (if specified) before killing the process with the <code>SIGKILL</code> signal</dd><dt>kill_group</dt><dd>At process exit kill the whole process group associated with this pid. The process group is obtained by the call to getpgid(3).</dd><dt>{group, GID}</dt><dd>Sets the effective group ID of the spawned process. The value 0 means to create a new group ID equal to the OS pid of the process.</dd><dt>{user, RunAsUser}</dt><dd>When exec-port was compiled with capability (Linux) support enabled and has a suid bit set, it's capable of running commands with a different RunAsUser effective user. Passing &quot;root&quot; value of <code>RunAsUser</code> is prohibited.</dd><dt>{success_exit_code, IntExitCode}</dt><dd>On success use <code>IntExitCode</code> return value instead of default 0.</dd><dt>{nice, Priority}</dt><dd>Set process priority between -20 and 20. Note that negative values can be specified only when <code>exec-port</code> is started with a root suid bit set.</dd><dt>stdin | {stdin, null | close | Filename}</dt><dd>Enable communication with an OS process via its <code>stdin</code>. The input to the process is sent by <code>exec:send(OsPid, Data)</code>. When specified as a tuple, <code>null</code> means redirection from <code>/dev/null</code>, <code>close</code> means to close <code>stdin</code> stream, and <code>Filename</code> means to take input from file.</dd><dt>stdout</dt><dd>Same as <code>{stdout, self()}</code>.</dd><dt>stderr</dt><dd>Same as <code>{stderr, self()}</code>.</dd><dt>{stdout, output_device()}</dt><dd>Redirect process's standard output stream</dd><dt>{stderr, output_device()}</dt><dd>Redirect process's standard error stream</dd><dt>{stdout | stderr, Filename::string(), [output_dev_opt()]}</dt><dd>Redirect process's stdout/stderr stream to file</dd><dt>{winsz, {Rows, Cols}}</dt><dd>Set the (psudo) terminal's dimensions of rows and columns</dd><dt>pty</dt><dd>Use pseudo terminal for the process's stdin, stdout and stderr</dd><dt>pty_echo</dt><dd>Allow the pty to run in echo mode, disabled by default</dd><dt>debug</dt><dd>Same as <code>{debug, 1}</code></dd><dt>{debug, Level::integer()}</dt><dd>Enable debug printing in port program for this command</dd></dl>
+  </section>
+</section>
+<section class="detail" id="t:cmd_options/0">
+
+  <div class="detail-header">
+    <a href="#t:cmd_options/0" class="detail-link" title="Link to this type">
+      <i class="ri-link-m" aria-hidden="true"></i>
+      <span class="sr-only">Link to this type</span>
+    </a>
+    <h1 class="signature" translate="no">cmd_options/0</h1>
+
+      <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L185" class="view-source" rel="help" title="View Source">
+       <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+       <span class="sr-only">View Source</span>
+     </a>
 
 
-<h3 class="typedecl"><a name="type-cmd_options">cmd_options()</a></h3>
-<p><pre ><code class="language-erlang">cmd_options() = [<a href="#type-cmd_option">cmd_option()</a>]</code></pre ></p>
+  </div>
+
+  <section class="docstring">
+
+      <div class="specs">
+
+          <pre translate="no"><span class="attribute">-type</span> cmd_options() :: [<a href="#t:cmd_option/0">cmd_option</a>()].</pre>
+
+      </div>
 
 
-<h3 class="typedecl"><a name="type-exec_option">exec_option()</a></h3>
-<p><pre ><code class="language-erlang">exec_option() = 
+  </section>
+</section>
+<section class="detail" id="t:exec_option/0">
+
+  <div class="detail-header">
+    <a href="#t:exec_option/0" class="detail-link" title="Link to this type">
+      <i class="ri-link-m" aria-hidden="true"></i>
+      <span class="sr-only">Link to this type</span>
+    </a>
+    <h1 class="signature" translate="no">exec_option/0</h1>
+
+      <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L97" class="view-source" rel="help" title="View Source">
+       <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+       <span class="sr-only">View Source</span>
+     </a>
+
+
+  </div>
+
+  <section class="docstring">
+
+      <div class="specs">
+
+          <pre translate="no"><span class="attribute">-type</span> exec_option() ::
     debug |
     {debug, integer()} |
     root |
@@ -133,242 +630,948 @@ priorities.</p>
     {user, string() | binary()} |
     {limit_users, [string() | binary(), ...]} |
     {portexe, string() | binary()} |
-    {env,
-     [{string() | binary(), string() | binary() | false}, ...]}</code></pre ></p>
+    {env, [{string() | binary(), string() | binary() | false}, ...]}.</pre>
+
+      </div>
+
+Options passed to the exec process at startup. They can be specified in the <code>sys.config</code> file for the <code>erlexec</code> application to customize application startup.<dl><dt>debug</dt><dd>Same as {debug, 1}</dd><dt>{debug, Level}</dt><dd>Enable port-programs debug trace at <code>Level</code>.</dd><dt>verbose</dt><dd>Enable verbose prints of the Erlang process.</dd><dt>root | {root, Boolean}</dt><dd>Allow running child processes as root.</dd><dt>{args, Args}</dt><dd>Append <code>Args</code> to the port command.</dd><dt>{alarm, Secs}</dt><dd>Give <code>Secs</code> deadline for the port program to clean up child pids before exiting</dd><dt>{user, User}</dt><dd>When the port program was compiled with capability (Linux) support enabled, and is owned by root with a a suid bit set, this option must be specified so that upon startup the port program is running under the effective user different from root. This is a security measure that will also prevent the port program to execute root commands.</dd><dt>{limit_users, LimitUsers}</dt><dd>Limit execution of external commands to these set of users. This option is only valid when the port program is owned by root.</dd><dt>{portexe, Exe}</dt><dd>Provide an alternative location of the port program. This option is useful when this application is stored on NFS and the port program needs to be copied locally so that root suid bit can be set.</dd><dt>{env, Env}</dt><dd>Extend environment of the port program by using <code>Env</code> specification. <code>Env</code> should be a list of tuples <code>{Name, Val}</code>, where Name is the name of an environment variable, and Val is the value it is to have in the spawned port process. If Val is <code>false</code>, then the <code>Name</code> environment variable is unset.</dd></dl>
+  </section>
+</section>
+<section class="detail" id="t:exec_options/0">
+
+  <div class="detail-header">
+    <a href="#t:exec_options/0" class="detail-link" title="Link to this type">
+      <i class="ri-link-m" aria-hidden="true"></i>
+      <span class="sr-only">Link to this type</span>
+    </a>
+    <h1 class="signature" translate="no">exec_options/0</h1>
+
+      <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L96" class="view-source" rel="help" title="View Source">
+       <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+       <span class="sr-only">View Source</span>
+     </a>
 
 
-<h3 class="typedecl"><a name="type-exec_options">exec_options()</a></h3>
-<p><pre ><code class="language-erlang">exec_options() = [<a href="#type-exec_option">exec_option()</a>]</code></pre ></p>
+  </div>
+
+  <section class="docstring">
+
+      <div class="specs">
+
+          <pre translate="no"><span class="attribute">-type</span> exec_options() :: [<a href="#t:exec_option/0">exec_option</a>()].</pre>
+
+      </div>
 
 
-<h3 class="typedecl"><a name="type-osgid">osgid()</a></h3>
-<p><pre ><code class="language-erlang">osgid() = integer()</code></pre ></p>
-<p>  Representation of OS group ID.</p>
+  </section>
+</section>
+<section class="detail" id="t:osgid/0">
 
-<h3 class="typedecl"><a name="type-ospid">ospid()</a></h3>
-<p><pre ><code class="language-erlang">ospid() = integer()</code></pre ></p>
-<p>  Representation of OS process ID.</p>
+  <div class="detail-header">
+    <a href="#t:osgid/0" class="detail-link" title="Link to this type">
+      <i class="ri-link-m" aria-hidden="true"></i>
+      <span class="sr-only">Link to this type</span>
+    </a>
+    <h1 class="signature" translate="no">osgid/0</h1>
 
-<h3 class="typedecl"><a name="type-output_dev_opt">output_dev_opt()</a></h3>
-<p><pre ><code class="language-erlang">output_dev_opt() = 
+      <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L332" class="view-source" rel="help" title="View Source">
+       <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+       <span class="sr-only">View Source</span>
+     </a>
+
+
+  </div>
+
+  <section class="docstring">
+
+      <div class="specs">
+
+          <pre translate="no"><span class="attribute">-type</span> osgid() :: integer().</pre>
+
+      </div>
+
+Representation of OS group ID.
+  </section>
+</section>
+<section class="detail" id="t:ospid/0">
+
+  <div class="detail-header">
+    <a href="#t:ospid/0" class="detail-link" title="Link to this type">
+      <i class="ri-link-m" aria-hidden="true"></i>
+      <span class="sr-only">Link to this type</span>
+    </a>
+    <h1 class="signature" translate="no">ospid/0</h1>
+
+      <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L330" class="view-source" rel="help" title="View Source">
+       <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+       <span class="sr-only">View Source</span>
+     </a>
+
+
+  </div>
+
+  <section class="docstring">
+
+      <div class="specs">
+
+          <pre translate="no"><span class="attribute">-type</span> ospid() :: integer().</pre>
+
+      </div>
+
+Representation of OS process ID.
+  </section>
+</section>
+<section class="detail" id="t:output_dev_opt/0">
+
+  <div class="detail-header">
+    <a href="#t:output_dev_opt/0" class="detail-link" title="Link to this type">
+      <i class="ri-link-m" aria-hidden="true"></i>
+      <span class="sr-only">Link to this type</span>
+    </a>
+    <h1 class="signature" translate="no">output_dev_opt/0</h1>
+
+      <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L305" class="view-source" rel="help" title="View Source">
+       <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+       <span class="sr-only">View Source</span>
+     </a>
+
+
+  </div>
+
+  <section class="docstring">
+
+      <div class="specs">
+
+          <pre translate="no"><span class="attribute">-type</span> output_dev_opt() ::
     null | close | print |
     string() |
     pid() |
-    fun((stdout | stderr, integer(), binary()) -&gt; none())</code></pre ></p>
+    fun((stdout | stderr, integer(), binary()) -> none()).</pre>
+
+      </div>
+
+Output device option:<dl><dt>null</dt><dd>Suppress output.</dd><dt>close</dt><dd>Close file descriptor for writing.</dd><dt>print</dt><dd>A debugging convenience device that prints the output to the console shell</dd><dt>Filename</dt><dd>Save output to file by overwriting it.</dd><dt>pid()</dt><dd>Redirect output to this pid.</dd><dt>fun((Stream, OsPid, Data) -&gt; none())</dt><dd>Execute this callback on receiving output data</dd></dl>
+  </section>
+</section>
+<section class="detail" id="t:output_file_opt/0">
+
+  <div class="detail-header">
+    <a href="#t:output_file_opt/0" class="detail-link" title="Link to this type">
+      <i class="ri-link-m" aria-hidden="true"></i>
+      <span class="sr-only">Link to this type</span>
+    </a>
+    <h1 class="signature" translate="no">output_file_opt/0</h1>
+
+      <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L321" class="view-source" rel="help" title="View Source">
+       <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+       <span class="sr-only">View Source</span>
+     </a>
 
 
-<h3 class="typedecl"><a name="type-output_file_opt">output_file_opt()</a></h3>
-<p><pre ><code class="language-erlang">output_file_opt() = append | {mode, Mode :: integer()}</code></pre ></p>
+  </div>
+
+  <section class="docstring">
+
+      <div class="specs">
+
+          <pre translate="no"><span class="attribute">-type</span> output_file_opt() :: append | {mode, Mode :: integer()}.</pre>
+
+      </div>
+
+Defines file opening attributes:<dl><dt>append</dt><dd>Open the file in <code>append</code> mode</dd><dt>{mode, Mode}</dt><dd>File creation access mode <b>specified in base 8</b> (e.g. 8#0644)</dd></dl>
+  </section>
+</section>
+<section class="detail" id="t:pty_opt/0">
+
+  <div class="detail-header">
+    <a href="#t:pty_opt/0" class="detail-link" title="Link to this type">
+      <i class="ri-link-m" aria-hidden="true"></i>
+      <span class="sr-only">Link to this type</span>
+    </a>
+    <h1 class="signature" translate="no">pty_opt/0</h1>
+
+      <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L347" class="view-source" rel="help" title="View Source">
+       <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+       <span class="sr-only">View Source</span>
+     </a>
 
 
-<h2><a href="#top" name="index">Function Index</a></h2>
-<table class="tab" width="100%" class="tab" summary="function index"><tr class="tab"><td class="tab"><a href="#debug-1">debug/1</a></td><td class="tab">Set debug level of the port process.</td></tr>
-<tr class="tab"><td class="tab"><a href="#kill-2">kill/2</a></td><td class="tab">Send a <code>Signal</code> to a child <code>Pid</code>, <code>OsPid</code> or an Erlang <code>Port</code>.</td></tr>
-<tr class="tab"><td class="tab"><a href="#manage-2">manage/2</a></td><td class="tab"></td></tr>
-<tr class="tab"><td class="tab"><a href="#ospid-1">ospid/1</a></td><td class="tab">Get <code>OsPid</code> of the given Erlang <code>Pid</code>.</td></tr>
-<tr class="tab"><td class="tab"><a href="#pid-1">pid/1</a></td><td class="tab">Get <code>Pid</code> of the given <code>OsPid</code>.</td></tr>
-<tr class="tab"><td class="tab"><a href="#run-2">run/2</a></td><td class="tab"></td></tr>
-<tr class="tab"><td class="tab"><a href="#run-3">run/3</a></td><td class="tab">Run an external program.</td></tr>
-<tr class="tab"><td class="tab"><a href="#run_link-2">run_link/2</a></td><td class="tab"></td></tr>
-<tr class="tab"><td class="tab"><a href="#run_link-3">run_link/3</a></td><td class="tab">Run an external program and link to the OsPid.</td></tr>
-<tr class="tab"><td class="tab"><a href="#send-2">send/2</a></td><td class="tab">Send <code>Data</code> to stdin of the OS process identified by <code>OsPid</code>.</td></tr>
-<tr class="tab"><td class="tab"><a href="#setpgid-2">setpgid/2</a></td><td class="tab">Change group ID of a given <code>OsPid</code> to <code>Gid</code>.</td></tr>
-<tr class="tab"><td class="tab"><a href="#signal-1">signal/1</a></td><td class="tab">Convert a signal number to atom.</td></tr>
-<tr class="tab"><td class="tab"><a href="#signal_to_int-1">signal_to_int/1</a></td><td class="tab"></td></tr>
-<tr class="tab"><td class="tab"><a href="#start-0">start/0</a></td><td class="tab">Start of an external program manager without supervision.</td></tr>
-<tr class="tab"><td class="tab"><a href="#start-1">start/1</a></td><td class="tab"></td></tr>
-<tr class="tab"><td class="tab"><a href="#start_link-1">start_link/1</a></td><td class="tab">Supervised start an external program manager.</td></tr>
-<tr class="tab"><td class="tab"><a href="#status-1">status/1</a></td><td class="tab">Decode the program's exit_status.</td></tr>
-<tr class="tab"><td class="tab"><a href="#stop-1">stop/1</a></td><td class="tab">Terminate a managed <code>Pid</code>, <code>OsPid</code>, or <code>Port</code> process.</td></tr>
-<tr class="tab"><td class="tab"><a href="#stop_and_wait-2">stop_and_wait/2</a></td><td class="tab">Terminate a managed <code>Pid</code>, <code>OsPid</code>, or <code>Port</code> process, like
-       <code>stop/1</code>, and wait for it to exit.</td></tr>
-<tr class="tab"><td class="tab"><a href="#which_children-0">which_children/0</a></td><td class="tab">Get a list of children managed by port program.</td></tr>
-<tr class="tab"><td class="tab"><a href="#winsz-3">winsz/3</a></td><td class="tab">Set the pty terminal <code>Rows</code> and <code>Cols</code> of the OS process identified by <code>OsPid</code>.</td></tr>
-</table>
+  </div>
 
-<h2><a href="#top" name="functions">Function Details</a></h2>
+  <section class="docstring">
 
-<h3 class="function"><a href="#index"><i class="arrow up"></i></a><a  class="function" name="debug-1">debug/1</a></h3>
-<div class="spec">
-<p><pre ><code class="language-erlang">debug(Level :: integer()) -&gt;
-         {ok, OldLevel :: integer()} | {error, timeout}</code></pre ></p>
-<p> </p>
-</div><p>Set debug level of the port process.</p>
+      <div class="specs">
 
-<h3 class="function"><a href="#index"><i class="arrow up"></i></a><a  class="function" name="kill-2">kill/2</a></h3>
-<div class="spec">
-<p><pre ><code class="language-erlang">kill(Pid :: pid() | <a href="#type-ospid">ospid()</a>, Signal :: atom() | integer()) -&gt;
-        ok | {error, any()}</code></pre ></p>
-<p> </p>
-</div><p>Send a <code>Signal</code> to a child <code>Pid</code>, <code>OsPid</code> or an Erlang <code>Port</code>.</p>
+          <pre translate="no"><span class="attribute">-type</span> pty_opt() ::
+    {<a href="#t:tty_char/0">tty_char</a>(), byte()} | {<a href="#t:tty_mode/0">tty_mode</a>(), boolean() | 0 | 1} | {<a href="#t:tty_speed/0">tty_speed</a>(), non_neg_integer()}.</pre>
 
-<h3 class="function"><a href="#index"><i class="arrow up"></i></a><a  class="function" name="manage-2">manage/2</a></h3>
-<div class="spec">
-<p><tt>manage(Port, Options) -&gt; any()</tt></p>
-<p> </p>
-</div>
+      </div>
 
-<h3 class="function"><a href="#index"><i class="arrow up"></i></a><a  class="function" name="ospid-1">ospid/1</a></h3>
-<div class="spec">
-<p><pre ><code class="language-erlang">ospid(Pid :: pid()) -&gt; <a href="#type-ospid">ospid()</a> | {error, Reason :: any()}</code></pre ></p>
-<p> </p>
-</div><p>Get <code>OsPid</code> of the given Erlang <code>Pid</code>.  The <code>Pid</code> must be created
-       previously by running the run/2 or run_link/2 commands.</p>
+Pty options, see:<ul><li><a href="https://man7.org/linux/man-pages/man3/termios.3.html" target="_top">https://man7.org/linux/man-pages/man3/termios.3.html</a></li><li><a href="https://datatracker.ietf.org/doc/html/rfc4254#section-8" target="_top">https://datatracker.ietf.org/doc/html/rfc4254#section-8</a></li></ul><dl><dt>{tty_char(), Byte}</dt><dd>A special character with value from 0 to 255</dd><dt>{tty_mode(), Enable}</dt><dd>Enable/disable a tty mode</dd><dt>{tty_speed(), Speed}</dt><dd>Specify input or output baud rate. Provided for completeness. Not useful for pseudo terminals.</dd></dl>
+  </section>
+</section>
+<section class="detail" id="t:pty_opts/0">
 
-<h3 class="function"><a href="#index"><i class="arrow up"></i></a><a  class="function" name="pid-1">pid/1</a></h3>
-<div class="spec">
-<p><pre ><code class="language-erlang">pid(OsPid :: <a href="#type-ospid">ospid()</a>) -&gt; pid() | undefined | {error, timeout}</code></pre ></p>
-<p> </p>
-</div><p>Get <code>Pid</code> of the given <code>OsPid</code>.  The <code>OsPid</code> must be created
-       previously by running the run/2 or run_link/2 commands.</p>
+  <div class="detail-header">
+    <a href="#t:pty_opts/0" class="detail-link" title="Link to this type">
+      <i class="ri-link-m" aria-hidden="true"></i>
+      <span class="sr-only">Link to this type</span>
+    </a>
+    <h1 class="signature" translate="no">pty_opts/0</h1>
 
-<h3 class="function"><a href="#index"><i class="arrow up"></i></a><a  class="function" name="run-2">run/2</a></h3>
-<div class="spec">
-<p><tt>run(Exe, Options) -&gt; any()</tt></p>
-<p> </p>
-</div>
+      <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L365" class="view-source" rel="help" title="View Source">
+       <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+       <span class="sr-only">View Source</span>
+     </a>
 
-<h3 class="function"><a href="#index"><i class="arrow up"></i></a><a  class="function" name="run-3">run/3</a></h3>
-<div class="spec">
-<p><pre ><code class="language-erlang">run(Exe :: <a href="#type-cmd">cmd()</a>, Options :: <a href="#type-cmd_options">cmd_options()</a>, Timeout :: integer()) -&gt;
-       {ok, pid(), <a href="#type-ospid">ospid()</a>} |
-       {ok, [{stdout | stderr, [binary()]}]} |
-       {error, any()}</code></pre ></p>
-<p> </p>
-</div><p>Run an external program. <code>OsPid</code> is the OS process identifier of
-       the new process. If <code>sync</code> is specified in <code>Options</code> the return
-       value is <code>{ok, Status}</code> where <code>Status</code> is OS process exit status.
-       The <code>Status</code> can be decoded with <code>status/1</code> to determine the
-       process's exit code and if it was killed by signal.</p>
 
-<h3 class="function"><a href="#index"><i class="arrow up"></i></a><a  class="function" name="run_link-2">run_link/2</a></h3>
-<div class="spec">
-<p><tt>run_link(Exe, Options) -&gt; any()</tt></p>
-<p> </p>
-</div>
+  </div>
 
-<h3 class="function"><a href="#index"><i class="arrow up"></i></a><a  class="function" name="run_link-3">run_link/3</a></h3>
-<div class="spec">
-<p><pre ><code class="language-erlang">run_link(Exe :: <a href="#type-cmd">cmd()</a>,
-         Options :: <a href="#type-cmd_options">cmd_options()</a>,
-         Timeout :: integer()) -&gt;
-            {ok, pid(), <a href="#type-ospid">ospid()</a>} |
-            {ok, [{stdout | stderr, [binary()]}]} |
-            {error, any()}</code></pre ></p>
-<p> </p>
-</div><p>Equivalent to <tt>run / 2</tt>.</p>
-<p>Run an external program and link to the OsPid. If OsPid exits,
-       the calling process will be killed or if it's trapping exits,
-       it'll get {'EXIT', OsPid, Status} message.  If the calling process
-       dies the OsPid will be killed.
-       The <code>Status</code> can be decoded with <code>status/1</code> to determine the
-       process's exit code and if it was killed by signal.</p>
+  <section class="docstring">
 
-<h3 class="function"><a href="#index"><i class="arrow up"></i></a><a  class="function" name="send-2">send/2</a></h3>
-<div class="spec">
-<p><pre ><code class="language-erlang">send(OsPid :: <a href="#type-ospid">ospid()</a> | pid(), Data :: binary() | eof) -&gt; ok</code></pre ></p>
-<p> </p>
-</div><p><p>Send <code>Data</code> to stdin of the OS process identified by <code>OsPid</code>.</p>
- 
-  Sending eof instead of binary Data causes close of stdin of the
-  corresponding process. Data sent to closed stdin is ignored.
- </p>
+      <div class="specs">
 
-<h3 class="function"><a href="#index"><i class="arrow up"></i></a><a  class="function" name="setpgid-2">setpgid/2</a></h3>
-<div class="spec">
-<p><pre ><code class="language-erlang">setpgid(OsPid :: <a href="#type-ospid">ospid()</a>, Gid :: <a href="#type-osgid">osgid()</a>) -&gt; ok | {error, any()}</code></pre ></p>
-<p> </p>
-</div><p>Change group ID of a given <code>OsPid</code> to <code>Gid</code>.</p>
+          <pre translate="no"><span class="attribute">-type</span> pty_opts() :: [<a href="#t:pty_opt/0">pty_opt</a>()].</pre>
 
-<h3 class="function"><a href="#index"><i class="arrow up"></i></a><a  class="function" name="signal-1">signal/1</a></h3>
-<div class="spec">
-<p><pre ><code class="language-erlang">signal(Num :: integer()) -&gt; atom() | integer()</code></pre ></p>
-<p> </p>
-</div><p>Convert a signal number to atom</p>
+      </div>
 
-<h3 class="function"><a href="#index"><i class="arrow up"></i></a><a  class="function" name="signal_to_int-1">signal_to_int/1</a></h3>
-<div class="spec">
-<p><tt>signal_to_int(X1) -&gt; any()</tt></p>
-<p> </p>
-</div>
+List of pty options.
+  </section>
+</section>
+<section class="detail" id="t:tty_char/0">
 
-<h3 class="function"><a href="#index"><i class="arrow up"></i></a><a  class="function" name="start-0">start/0</a></h3>
-<div class="spec">
-<p><pre ><code class="language-erlang">start() -&gt; {ok, pid()} | {error, any()}</code></pre ></p>
-<p> </p>
-</div><p>Equivalent to <tt>start_link / 1</tt>.</p>
-<p>Start of an external program manager without supervision.
-       Note that the port program requires <code>SHELL</code> environment variable to
-       be set.</p>
+  <div class="detail-header">
+    <a href="#t:tty_char/0" class="detail-link" title="Link to this type">
+      <i class="ri-link-m" aria-hidden="true"></i>
+      <span class="sr-only">Link to this type</span>
+    </a>
+    <h1 class="signature" translate="no">tty_char/0</h1>
 
-<h3 class="function"><a href="#index"><i class="arrow up"></i></a><a  class="function" name="start-1">start/1</a></h3>
-<div class="spec">
-<p><pre ><code class="language-erlang">start(Options :: <a href="#type-exec_options">exec_options()</a>) -&gt; {ok, pid()} | {error, any()}</code></pre ></p>
-<p> </p>
-</div>
+      <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L336" class="view-source" rel="help" title="View Source">
+       <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+       <span class="sr-only">View Source</span>
+     </a>
 
-<h3 class="function"><a href="#index"><i class="arrow up"></i></a><a  class="function" name="start_link-1">start_link/1</a></h3>
-<div class="spec">
-<p><pre ><code class="language-erlang">start_link(Options :: <a href="#type-exec_options">exec_options()</a>) -&gt;
-              {ok, pid()} | {error, any()}</code></pre ></p>
-<p> </p>
-</div><p>Supervised start an external program manager.
-       Note that the port program requires <code>SHELL</code> environment variable to
-       be set.</p>
 
-<h3 class="function"><a href="#index"><i class="arrow up"></i></a><a  class="function" name="status-1">status/1</a></h3>
-<div class="spec">
-<p><pre ><code class="language-erlang">status(Status :: integer()) -&gt;
+  </div>
+
+  <section class="docstring">
+
+      <div class="specs">
+
+          <pre translate="no"><span class="attribute">-type</span> tty_char() ::
+    vintr | vquit | verase | vkill | veof | veol | veol2 | vstart | vstop | vsusp | vdsusp |
+    vreprint | vwerase | vlnext | vflush | vswtch | vstatus | vdiscard.</pre>
+
+      </div>
+
+
+  </section>
+</section>
+<section class="detail" id="t:tty_mode/0">
+
+  <div class="detail-header">
+    <a href="#t:tty_mode/0" class="detail-link" title="Link to this type">
+      <i class="ri-link-m" aria-hidden="true"></i>
+      <span class="sr-only">Link to this type</span>
+    </a>
+    <h1 class="signature" translate="no">tty_mode/0</h1>
+
+      <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L340" class="view-source" rel="help" title="View Source">
+       <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+       <span class="sr-only">View Source</span>
+     </a>
+
+
+  </div>
+
+  <section class="docstring">
+
+      <div class="specs">
+
+          <pre translate="no"><span class="attribute">-type</span> tty_mode() ::
+    ignpar | parmrk | inpck | istrip | inlcr | igncr | icrnl | xcase | iuclc | ixon | ixany |
+    ixoff | imaxbel | iutf8 | isig | icanon | echo | echoe | echok | echonl | noflsh | tostop |
+    iexten | echoctl | echoke | pendin | opost | olcuc | onlcr | ocrnl | onocr | onlret | cs7 |
+    cs8 | parenb | parodd.</pre>
+
+      </div>
+
+
+  </section>
+</section>
+<section class="detail" id="t:tty_speed/0">
+
+  <div class="detail-header">
+    <a href="#t:tty_speed/0" class="detail-link" title="Link to this type">
+      <i class="ri-link-m" aria-hidden="true"></i>
+      <span class="sr-only">Link to this type</span>
+    </a>
+    <h1 class="signature" translate="no">tty_speed/0</h1>
+
+      <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L346" class="view-source" rel="help" title="View Source">
+       <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+       <span class="sr-only">View Source</span>
+     </a>
+
+
+  </div>
+
+  <section class="docstring">
+
+      <div class="specs">
+
+          <pre translate="no"><span class="attribute">-type</span> tty_speed() :: tty_op_ispeed | tty_op_ospeed.</pre>
+
+      </div>
+
+
+  </section>
+</section>
+
+    </div>
+  </section>
+
+  <section id="functions" class="details-list">
+    <h1 class="section-heading">
+      <a class="hover-link" href="#functions">
+        <i class="ri-link-m" aria-hidden="true"></i>
+        <span class="sr-only">Link to this section</span>
+      </a>
+Functions
+    </h1>
+    <div class="functions-list">
+<section class="detail" id="debug/1">
+
+  <div class="detail-header">
+    <a href="#debug/1" class="detail-link" title="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+      <span class="sr-only">Link to this function</span>
+    </a>
+    <h1 class="signature" translate="no">debug(Level)</h1>
+
+      <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L598" class="view-source" rel="help" title="View Source">
+       <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+       <span class="sr-only">View Source</span>
+     </a>
+
+
+  </div>
+
+  <section class="docstring">
+
+      <div class="specs">
+
+          <pre translate="no"><span class="attribute">-spec</span> debug(Level :: integer()) -> {ok, OldLevel :: integer()} | {error, timeout}.</pre>
+
+      </div>
+
+Set debug level of the port process.
+  </section>
+</section>
+<section class="detail" id="kill/2">
+
+  <div class="detail-header">
+    <a href="#kill/2" class="detail-link" title="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+      <span class="sr-only">Link to this function</span>
+    </a>
+    <h1 class="signature" translate="no">kill(Pid, Signal)</h1>
+
+      <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L464" class="view-source" rel="help" title="View Source">
+       <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+       <span class="sr-only">View Source</span>
+     </a>
+
+
+  </div>
+
+  <section class="docstring">
+
+      <div class="specs">
+
+          <pre translate="no"><span class="attribute">-spec</span> kill(pid() | <a href="#t:ospid/0">ospid</a>(), atom() | integer()) -> ok | {error, any()}.</pre>
+
+      </div>
+
+Send a <code>Signal</code> to a child <code>Pid</code>, <code>OsPid</code> or an Erlang <code>Port</code>.
+  </section>
+</section>
+<section class="detail" id="manage/2">
+
+  <div class="detail-header">
+    <a href="#manage/2" class="detail-link" title="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+      <span class="sr-only">Link to this function</span>
+    </a>
+    <h1 class="signature" translate="no">manage(Port, Options)</h1>
+
+      <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L448" class="view-source" rel="help" title="View Source">
+       <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+       <span class="sr-only">View Source</span>
+     </a>
+
+
+  </div>
+
+  <section class="docstring">
+
+
+  </section>
+</section>
+<section class="detail" id="ospid/1">
+
+  <div class="detail-header">
+    <a href="#ospid/1" class="detail-link" title="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+      <span class="sr-only">Link to this function</span>
+    </a>
+    <h1 class="signature" translate="no">ospid(Pid)</h1>
+
+      <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L534" class="view-source" rel="help" title="View Source">
+       <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+       <span class="sr-only">View Source</span>
+     </a>
+
+
+  </div>
+
+  <section class="docstring">
+
+      <div class="specs">
+
+          <pre translate="no"><span class="attribute">-spec</span> ospid(pid()) -> <a href="#t:ospid/0">ospid</a>() | {error, Reason :: any()}.</pre>
+
+      </div>
+
+Get <code>OsPid</code> of the given Erlang <code>Pid</code>. The <code>Pid</code> must be created previously by running the run/2 or run_link/2 commands.
+  </section>
+</section>
+<section class="detail" id="pid/1">
+
+  <div class="detail-header">
+    <a href="#pid/1" class="detail-link" title="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+      <span class="sr-only">Link to this function</span>
+    </a>
+    <h1 class="signature" translate="no">pid(OsPid)</h1>
+
+      <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L549" class="view-source" rel="help" title="View Source">
+       <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+       <span class="sr-only">View Source</span>
+     </a>
+
+
+  </div>
+
+  <section class="docstring">
+
+      <div class="specs">
+
+          <pre translate="no"><span class="attribute">-spec</span> pid(OsPid :: <a href="#t:ospid/0">ospid</a>()) -> pid() | undefined | {error, timeout}.</pre>
+
+      </div>
+
+Get <code>Pid</code> of the given <code>OsPid</code>. The <code>OsPid</code> must be created previously by running the run/2 or run_link/2 commands.
+  </section>
+</section>
+<section class="detail" id="pty_opts/2">
+
+  <div class="detail-header">
+    <a href="#pty_opts/2" class="detail-link" title="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+      <span class="sr-only">Link to this function</span>
+    </a>
+    <h1 class="signature" translate="no">pty_opts(OsPid, Opts)</h1>
+
+      <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L588" class="view-source" rel="help" title="View Source">
+       <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+       <span class="sr-only">View Source</span>
+     </a>
+
+
+  </div>
+
+  <section class="docstring">
+
+      <div class="specs">
+
+          <pre translate="no"><span class="attribute">-spec</span> pty_opts(OsPid :: <a href="#t:ospid/0">ospid</a>() | pid(), <a href="#t:pty_opts/0">pty_opts</a>()) -> ok | {error, Reason :: any()}.</pre>
+
+      </div>
+
+<p>Set the pty terminal options of the OS process identified by <code>OsPid</code>.</p>The process must have been created with the <code>pty</code> option.
+  </section>
+</section>
+<section class="detail" id="run/2">
+
+  <div class="detail-header">
+    <a href="#run/2" class="detail-link" title="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+      <span class="sr-only">Link to this function</span>
+    </a>
+    <h1 class="signature" translate="no">run(Exe, Options)</h1>
+
+      <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L414" class="view-source" rel="help" title="View Source">
+       <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+       <span class="sr-only">View Source</span>
+     </a>
+
+
+  </div>
+
+  <section class="docstring">
+
+
+  </section>
+</section>
+<section class="detail" id="run/3">
+
+  <div class="detail-header">
+    <a href="#run/3" class="detail-link" title="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+      <span class="sr-only">Link to this function</span>
+    </a>
+    <h1 class="signature" translate="no">run(Exe, Options, Timeout)</h1>
+
+      <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L411" class="view-source" rel="help" title="View Source">
+       <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+       <span class="sr-only">View Source</span>
+     </a>
+
+
+  </div>
+
+  <section class="docstring">
+
+      <div class="specs">
+
+          <pre translate="no"><span class="attribute">-spec</span> run(<a href="#t:cmd/0">cmd</a>(), <a href="#t:cmd_options/0">cmd_options</a>(), integer()) ->
+       {ok, pid(), <a href="#t:ospid/0">ospid</a>()} | {ok, [{stdout | stderr, [binary()]}]} | {error, any()}.</pre>
+
+      </div>
+
+Run an external program. <code>OsPid</code> is the OS process identifier of the new process. If <code>sync</code> is specified in <code>Options</code> the return value is <code>{ok, Status}</code> where <code>Status</code> is OS process exit status. The <code>Status</code> can be decoded with <code>status/1</code> to determine the process's exit code and if it was killed by signal.
+  </section>
+</section>
+<section class="detail" id="run_link/2">
+
+  <div class="detail-header">
+    <a href="#run_link/2" class="detail-link" title="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+      <span class="sr-only">Link to this function</span>
+    </a>
+    <h1 class="signature" translate="no">run_link(Exe, Options)</h1>
+
+      <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L432" class="view-source" rel="help" title="View Source">
+       <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+       <span class="sr-only">View Source</span>
+     </a>
+
+
+  </div>
+
+  <section class="docstring">
+
+
+  </section>
+</section>
+<section class="detail" id="run_link/3">
+
+  <div class="detail-header">
+    <a href="#run_link/3" class="detail-link" title="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+      <span class="sr-only">Link to this function</span>
+    </a>
+    <h1 class="signature" translate="no">run_link(Exe, Options, Timeout)</h1>
+
+      <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L429" class="view-source" rel="help" title="View Source">
+       <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+       <span class="sr-only">View Source</span>
+     </a>
+
+
+  </div>
+
+  <section class="docstring">
+
+      <div class="specs">
+
+          <pre translate="no"><span class="attribute">-spec</span> run_link(<a href="#t:cmd/0">cmd</a>(), <a href="#t:cmd_options/0">cmd_options</a>(), integer()) ->
+            {ok, pid(), <a href="#t:ospid/0">ospid</a>()} | {ok, [{stdout | stderr, [binary()]}]} | {error, any()}.</pre>
+
+      </div>
+
+<p>Equivalent to run / 2.</p>Run an external program and link to the OsPid. If OsPid exits, the calling process will be killed or if it's trapping exits, it'll get {'EXIT', OsPid, Status} message. If the calling process dies the OsPid will be killed. The <code>Status</code> can be decoded with <code>status/1</code> to determine the process's exit code and if it was killed by signal.
+  </section>
+</section>
+<section class="detail" id="send/2">
+
+  <div class="detail-header">
+    <a href="#send/2" class="detail-link" title="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+      <span class="sr-only">Link to this function</span>
+    </a>
+    <h1 class="signature" translate="no">send(OsPid, Data)</h1>
+
+      <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L561" class="view-source" rel="help" title="View Source">
+       <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+       <span class="sr-only">View Source</span>
+     </a>
+
+
+  </div>
+
+  <section class="docstring">
+
+      <div class="specs">
+
+          <pre translate="no"><span class="attribute">-spec</span> send(OsPid :: <a href="#t:ospid/0">ospid</a>() | pid(), binary() | eof) -> ok.</pre>
+
+      </div>
+
+<p>Send <code>Data</code> to stdin of the OS process identified by <code>OsPid</code>.</p>Sending eof instead of binary Data causes close of stdin of the corresponding process. Data sent to closed stdin is ignored.
+  </section>
+</section>
+<section class="detail" id="setpgid/2">
+
+  <div class="detail-header">
+    <a href="#setpgid/2" class="detail-link" title="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+      <span class="sr-only">Link to this function</span>
+    </a>
+    <h1 class="signature" translate="no">setpgid(OsPid, Gid)</h1>
+
+      <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L478" class="view-source" rel="help" title="View Source">
+       <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+       <span class="sr-only">View Source</span>
+     </a>
+
+
+  </div>
+
+  <section class="docstring">
+
+      <div class="specs">
+
+          <pre translate="no"><span class="attribute">-spec</span> setpgid(<a href="#t:ospid/0">ospid</a>(), <a href="#t:osgid/0">osgid</a>()) -> ok | {error, any()}.</pre>
+
+      </div>
+
+Change group ID of a given <code>OsPid</code> to <code>Gid</code>.
+  </section>
+</section>
+<section class="detail" id="signal/1">
+
+  <div class="detail-header">
+    <a href="#signal/1" class="detail-link" title="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+      <span class="sr-only">Link to this function</span>
+    </a>
+    <h1 class="signature" translate="no">signal(Num)</h1>
+
+      <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L628" class="view-source" rel="help" title="View Source">
+       <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+       <span class="sr-only">View Source</span>
+     </a>
+
+
+  </div>
+
+  <section class="docstring">
+
+      <div class="specs">
+
+          <pre translate="no"><span class="attribute">-spec</span> signal(integer()) -> atom() | integer().</pre>
+
+      </div>
+
+Convert a signal number to atom
+  </section>
+</section>
+<section class="detail" id="signal_to_int/1">
+
+  <div class="detail-header">
+    <a href="#signal_to_int/1" class="detail-link" title="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+      <span class="sr-only">Link to this function</span>
+    </a>
+    <h1 class="signature" translate="no">signal_to_int(_)</h1>
+
+      <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L661" class="view-source" rel="help" title="View Source">
+       <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+       <span class="sr-only">View Source</span>
+     </a>
+
+
+  </div>
+
+  <section class="docstring">
+
+
+  </section>
+</section>
+<section class="detail" id="start/0">
+
+  <div class="detail-header">
+    <a href="#start/0" class="detail-link" title="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+      <span class="sr-only">Link to this function</span>
+    </a>
+    <h1 class="signature" translate="no">start()</h1>
+
+      <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L389" class="view-source" rel="help" title="View Source">
+       <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+       <span class="sr-only">View Source</span>
+     </a>
+
+
+  </div>
+
+  <section class="docstring">
+
+      <div class="specs">
+
+          <pre translate="no"><span class="attribute">-spec</span> start() -> {ok, pid()} | {error, any()}.</pre>
+
+      </div>
+
+<p>Equivalent to start_link / 1.</p>Start of an external program manager without supervision. Note that the port program requires <code>SHELL</code> environment variable to be set.
+  </section>
+</section>
+<section class="detail" id="start/1">
+
+  <div class="detail-header">
+    <a href="#start/1" class="detail-link" title="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+      <span class="sr-only">Link to this function</span>
+    </a>
+    <h1 class="signature" translate="no">start(Options)</h1>
+
+      <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L393" class="view-source" rel="help" title="View Source">
+       <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+       <span class="sr-only">View Source</span>
+     </a>
+
+
+  </div>
+
+  <section class="docstring">
+
+      <div class="specs">
+
+          <pre translate="no"><span class="attribute">-spec</span> start(<a href="#t:exec_options/0">exec_options</a>()) -> {ok, pid()} | {error, any()}.</pre>
+
+      </div>
+
+
+  </section>
+</section>
+<section class="detail" id="start_link/1">
+
+  <div class="detail-header">
+    <a href="#start_link/1" class="detail-link" title="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+      <span class="sr-only">Link to this function</span>
+    </a>
+    <h1 class="signature" translate="no">start_link(Options)</h1>
+
+      <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L377" class="view-source" rel="help" title="View Source">
+       <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+       <span class="sr-only">View Source</span>
+     </a>
+
+
+  </div>
+
+  <section class="docstring">
+
+      <div class="specs">
+
+          <pre translate="no"><span class="attribute">-spec</span> start_link(<a href="#t:exec_options/0">exec_options</a>()) -> {ok, pid()} | {error, any()}.</pre>
+
+      </div>
+
+Supervised start an external program manager. Note that the port program requires <code>SHELL</code> environment variable to be set.
+  </section>
+</section>
+<section class="detail" id="status/1">
+
+  <div class="detail-header">
+    <a href="#status/1" class="detail-link" title="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+      <span class="sr-only">Link to this function</span>
+    </a>
+    <h1 class="signature" translate="no">status(Status)</h1>
+
+      <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L611" class="view-source" rel="help" title="View Source">
+       <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+       <span class="sr-only">View Source</span>
+     </a>
+
+
+  </div>
+
+  <section class="docstring">
+
+      <div class="specs">
+
+          <pre translate="no"><span class="attribute">-spec</span> status(integer()) ->
           {status, ExitStatus :: integer()} |
-          {signal,
-           Singnal :: integer() | atom(),
-           Core :: boolean()}</code></pre ></p>
-<p> </p>
-</div><p>Decode the program's exit_status.  If the program exited by signal
-       the function returns <code>{signal, Signal, Core}</code> where the <code>Signal</code>
-       is the signal number or atom, and <code>Core</code> indicates if the core file
-       was generated.</p>
+          {signal, Signal :: integer() | atom(), Core :: boolean()}.</pre>
 
-<h3 class="function"><a href="#index"><i class="arrow up"></i></a><a  class="function" name="stop-1">stop/1</a></h3>
-<div class="spec">
-<p><pre ><code class="language-erlang">stop(Pid :: pid() | <a href="#type-ospid">ospid()</a> | port()) -&gt; ok | {error, any()}</code></pre ></p>
-<p> </p>
-</div><p>Terminate a managed <code>Pid</code>, <code>OsPid</code>, or <code>Port</code> process. The OS process is
-       terminated gracefully.  If it was given a <code>{kill, Cmd}</code> option at
-       startup, that command is executed and a timer is started.  If
-       the program doesn't exit, then the default termination is
-       performed.  Default termination implies sending a <code>SIGTERM</code> command
-       followed by <code>SIGKILL</code> in 5 seconds, if the program doesn't get
-       killed.</p>
+      </div>
 
-<h3 class="function"><a href="#index"><i class="arrow up"></i></a><a  class="function" name="stop_and_wait-2">stop_and_wait/2</a></h3>
-<div class="spec">
-<p><pre ><code class="language-erlang">stop_and_wait(Port :: pid() | <a href="#type-ospid">ospid()</a> | port(),
-              Timeout :: integer()) -&gt;
-                 term() | {error, any()}</code></pre ></p>
-<p> </p>
-</div><p>Terminate a managed <code>Pid</code>, <code>OsPid</code>, or <code>Port</code> process, like
-       <code>stop/1</code>, and wait for it to exit.</p>
+Decode the program's exit_status. If the program exited by signal the function returns <code>{signal, Signal, Core}</code> where the <code>Signal</code> is the signal number or atom, and <code>Core</code> indicates if the core file was generated.
+  </section>
+</section>
+<section class="detail" id="stop/1">
 
-<h3 class="function"><a href="#index"><i class="arrow up"></i></a><a  class="function" name="which_children-0">which_children/0</a></h3>
-<div class="spec">
-<p><pre ><code class="language-erlang">which_children() -&gt; [<a href="#type-ospid">ospid()</a>, ...]</code></pre ></p>
-<p> </p>
-</div><p>Get a list of children managed by port program.</p>
+  <div class="detail-header">
+    <a href="#stop/1" class="detail-link" title="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+      <span class="sr-only">Link to this function</span>
+    </a>
+    <h1 class="signature" translate="no">stop(Pid)</h1>
 
-<h3 class="function"><a href="#index"><i class="arrow up"></i></a><a  class="function" name="winsz-3">winsz/3</a></h3>
-<div class="spec">
-<p><pre ><code class="language-erlang">winsz(OsPid :: <a href="#type-ospid">ospid()</a> | pid(),
-      Rows :: integer(),
-      Cols :: integer()) -&gt;
-         ok</code></pre ></p>
-<p> </p>
-</div><p><p>Set the pty terminal <code>Rows</code> and <code>Cols</code> of the OS process identified by <code>OsPid</code>.</p>
- 
-  The process must have been created with the <code>pty</code> option.
- </p>
-<hr>
+      <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L492" class="view-source" rel="help" title="View Source">
+       <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+       <span class="sr-only">View Source</span>
+     </a>
 
+
+  </div>
+
+  <section class="docstring">
+
+      <div class="specs">
+
+          <pre translate="no"><span class="attribute">-spec</span> stop(pid() | <a href="#t:ospid/0">ospid</a>() | port()) -> ok | {error, any()}.</pre>
+
+      </div>
+
+Terminate a managed <code>Pid</code>, <code>OsPid</code>, or <code>Port</code> process. The OS process is terminated gracefully. If it was given a <code>{kill, Cmd}</code> option at startup, that command is executed and a timer is started. If the program doesn't exit, then the default termination is performed. Default termination implies sending a <code>SIGTERM</code> command followed by <code>SIGKILL</code> in 5 seconds, if the program doesn't get killed.
+  </section>
+</section>
+<section class="detail" id="stop_and_wait/2">
+
+  <div class="detail-header">
+    <a href="#stop_and_wait/2" class="detail-link" title="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+      <span class="sr-only">Link to this function</span>
+    </a>
+    <h1 class="signature" translate="no">stop_and_wait(Port, Timeout)</h1>
+
+      <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L505" class="view-source" rel="help" title="View Source">
+       <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+       <span class="sr-only">View Source</span>
+     </a>
+
+
+  </div>
+
+  <section class="docstring">
+
+      <div class="specs">
+
+          <pre translate="no"><span class="attribute">-spec</span> stop_and_wait(pid() | <a href="#t:ospid/0">ospid</a>() | port(), integer()) -> term() | {error, any()}.</pre>
+
+      </div>
+
+Terminate a managed <code>Pid</code>, <code>OsPid</code>, or <code>Port</code> process, like <code>stop/1</code>, and wait for it to exit.
+  </section>
+</section>
+<section class="detail" id="which_children/0">
+
+  <div class="detail-header">
+    <a href="#which_children/0" class="detail-link" title="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+      <span class="sr-only">Link to this function</span>
+    </a>
+    <h1 class="signature" translate="no">which_children()</h1>
+
+      <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L456" class="view-source" rel="help" title="View Source">
+       <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+       <span class="sr-only">View Source</span>
+     </a>
+
+
+  </div>
+
+  <section class="docstring">
+
+      <div class="specs">
+
+          <pre translate="no"><span class="attribute">-spec</span> which_children() -> [<a href="#t:ospid/0">ospid</a>(), ...].</pre>
+
+      </div>
+
+Get a list of children managed by port program.
+  </section>
+</section>
+<section class="detail" id="winsz/3">
+
+  <div class="detail-header">
+    <a href="#winsz/3" class="detail-link" title="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+      <span class="sr-only">Link to this function</span>
+    </a>
+    <h1 class="signature" translate="no">winsz(OsPid, Rows, Cols)</h1>
+
+      <a href="https://github.com/saleyn/erlexec/blob/v2.0.1/src/exec.erl#L574" class="view-source" rel="help" title="View Source">
+       <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+       <span class="sr-only">View Source</span>
+     </a>
+
+
+  </div>
+
+  <section class="docstring">
+
+      <div class="specs">
+
+          <pre translate="no"><span class="attribute">-spec</span> winsz(OsPid :: <a href="#t:ospid/0">ospid</a>() | pid(), integer(), integer()) -> ok | {error, Reason :: any()}.</pre>
+
+      </div>
+
+<p>Set the pty terminal <code>Rows</code> and <code>Cols</code> of the OS process identified by <code>OsPid</code>.</p>The process must have been created with the <code>pty</code> option.
+  </section>
+</section>
+
+    </div>
+  </section>
+
+      <footer class="footer">
+
+          <p>
+            On Hex.pm:
+
+            <span class="line">
+              <a href="https://hex.pm/packages/erlexec/2.0.1" class="line footer-hex-package">Package</a>
+              <a href="https://preview.hex.pm/preview/erlexec/2.0.1" class="line">Preview</a>
+
+                <a href="https://preview.hex.pm/preview/erlexec/2.0.1/show/src/exec.erl">(current file)</a>
+
+            </span>
+
+            <button class="a-main line footer-button display-quick-switch">
+              Search
+            </button>
+          </p>
+
+        <p>
+          Built using
+          <a href="https://github.com/elixir-lang/ex_doc" title="ExDoc" target="_blank" rel="help noopener" translate="no">ExDoc</a> (v0.29.0) for the
+
+            <a href="https://erlang.org" title="Erlang" target="_blank" translate="no">Erlang programming language</a>
+
+        </p>
+      </footer>
+    </div>
+  </div>
+</section>
 </div>
-</body>
+
+
+  </body>
 </html>

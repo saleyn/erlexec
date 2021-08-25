@@ -33,7 +33,6 @@ pre {
   background-color: var(--color-bg-tertiary);
   background-color: #161b22;
   border-radius: 6px;
-  font-size: 85%;
   line-height: 1.5em;
   overflow: auto;
   padding: 0px;
@@ -43,7 +42,6 @@ pre {
 }
 
 p {
-  font-size: 16px;
   line-height: 1.5em;
   /*margin: 0 0 1.5em 0;*/
   display: block;
@@ -81,17 +79,9 @@ table {
 }
 
 code, pre, tt {
-  font-family: ui-monospace,SFMono-Regular,SF Mono,Menlo,Consolas,Liberation Mono,monospace;
-  font-size: 12px;
+  font-family: ui-monospace,Courier,"Courier New",monospace;
   border-radius: 6px;
 }
-
-/*
-blockquote, details, ul, dl, ol, p, pre {
-  margin-bottom: 15px;
-  margin-top: 0;
-}
-*/
 
 .class-for-16px {
   line-height: 1.5em; /* 24px */
@@ -115,18 +105,11 @@ p tt {
 }
 
 tt, code, pre {
-  /*line-height: 24px */
-  /*margin: 0 1em 24px; */
-  /*padding: 0 1em;*/
   background: #2d3238;
 }
 
 .navbar img, hr {
   display: none;
-}
-
-.navbar, table th, h1, h2.indextitle {
-  /*background-color: #85C2FF;*/
 }
 
 table.frame {
@@ -294,7 +277,6 @@ i {
   text-align: center;
   padding: 14px 16px;
   text-decoration: none;
-  font-size: 17px;
 }
 
 .navbar a:link,
@@ -361,4 +343,13 @@ i {
 
 .dropdown:hover .dropdown-content {display:block; } 
 
-
+::-webkit-scrollbar {
+    background-color: #232423;
+    color: #b5ab99;
+}
+::-webkit-scrollbar-corner {
+    background-color: #1a1b1a;
+}
+::-webkit-scrollbar-thumb {
+    background-color: #4b4d4b;
+}
