@@ -9,4 +9,4 @@
               {env,[]},
               {maintainers,["Serge Aleynikov"]},
               {licenses,["BSD"]},
-              {links,[{"Github","https://github.com/saleyn/erlexec"}]}]}.
+              {links,[{"GitHub","https://github.com/saleyn/erlexec"}]}]}.

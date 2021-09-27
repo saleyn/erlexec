@@ -52,7 +52,7 @@ sudo setcap cap_setuid,cap_kill,cap_sys_nice+eip _build/default/lib/erlexec/priv
 <li>Provide custom termination command for killing a process or relying
     on default SIGTERM/SIGKILL behavior.  Specifying custom timeout
     for SIGKILL after the termination command or SIGTERM was executed.</li>
-<li>Terminate all processing beloging to a process group</li>
+<li>Terminate all processing belonging to a process group</li>
 <li>Link Erlang processes to OS processes (via intermediate
     Erlang Pids that are linked to an associated OS process).</li>
 <li>Monitor the termination of OS processes.</li>
