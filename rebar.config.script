@@ -1,7 +1,7 @@
 %% vim:ts=2:sw=2:et
 %% For cross building using erlang:system_info() does not work as rebar runs
 %% using the build hosts Erlang runtime.
-%% If CXX envrionment variable is defined we are most likely running in a cross environment.
+%% If CXX environment variable is defined we are most likely running in a cross environment.
 {CXX,Target,Sysroot} =
   case os:getenv("CXX") of
     false    ->
