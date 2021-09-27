@@ -28,7 +28,7 @@ The following features are supported:
 * Link an Erlang processes to OS processes (via intermediate Erlang Pids that are linked
   to an associated OS process).
 * Monitor termination of OS processes.
-* Terminate all processes beloging to an OS process group.
+* Terminate all processes belonging to an OS process group.
 * Kill processes belonging to an OS process group at process exit.
 * Communicate with an OS process via its STDIN.
 * Redirect STDOUT and STDERR of an OS process to a file, erlang process, or a custom function.
