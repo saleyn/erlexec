@@ -146,7 +146,7 @@
 -export_type([cmd/0]).
 %% Command to be executed. If specified as a string, the specified command
 %% will be executed through the shell. The current shell is obtained
-%% from environtment variable `SHELL'. This can be useful if you
+%% from environment variable `SHELL'. This can be useful if you
 %% are using Erlang primarily for the enhanced control flow it
 %% offers over most system shells and still want convenient
 %% access to other shell features such as shell pipes, filename
@@ -218,12 +218,12 @@
 %%     </dd>
 %% <dt>sync</dt><dd>Block the caller until the OS command exits</dd>
 %% <dt>{executable, Executable::string()}</dt>
-%%     <dd>Specifies a replacement program to execute. It is very seldomly
+%%     <dd>Specifies a replacement program to execute. It is very seldom
 %%         needed. When the port program executes a child process using
 %%         `execve(3)' call, the call takes the following arguments:
 %%         `(Executable, Args, Env)'. When `Cmd' argument passed to the
 %%         `run/2' function is specified as the list of strings,
-%%         the executable replaces the first paramter in the call, and
+%%         the executable replaces the first parameter in the call, and
 %%         the original args provided in the `Cmd' parameter are passed as
 %%         as the second parameter. Most programs treat the program
 %%         specified by args as the command name, which can then be different
@@ -250,7 +250,7 @@
 %%         by default first the command is sent a `SIGTERM' signal,
 %%         followed by `SIGKILL' after a default timeout.</dd>
 %% <dt>{kill_timeout, Sec::integer()}</dt>
-%%     <dd>Number of seconds to wait after issueing a SIGTERM or
+%%     <dd>Number of seconds to wait after issuing a SIGTERM or
 %%         executing the custom `kill' command (if specified) before
 %%         killing the process with the `SIGKILL' signal</dd>
 %% <dt>kill_group</dt>
@@ -552,7 +552,7 @@ debug(Level) when is_integer(Level), Level >= 0, Level =< 10 ->
 %%-------------------------------------------------------------------------
 -spec status(integer()) ->
         {status, ExitStatus :: integer()} |
-        {signal, Singnal :: integer() | atom(), Core :: boolean()}.
+        {signal, Signal :: integer() | atom(), Core :: boolean()}.
 status(Status) when is_integer(Status) ->
     TermSignal = Status band 16#7F,
     IfSignaled = ((TermSignal + 1) bsr 1) > 0,
@@ -970,7 +970,7 @@ ospid_init(Pid, OsPid, LinkType, Sync, Parent, PidOpts, Debug) ->
     % The caller pid that requested to run the OsPid command & link to it.
     LinkType =:= link andalso link(Pid),
     % We need to emulate a monitor by sending the 'DOWN' message to the
-    % caller's Pid if it requested to monitor or it's a syncronous call:
+    % caller's Pid if it requested to monitor or it's a synchronous call:
     IsMon  = LinkType =:= monitor orelse Sync =:= true,
     ospid_loop({Pid, OsPid, Parent, StdOut, StdErr, IsMon, Debug}).
 
