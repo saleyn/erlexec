@@ -516,7 +516,7 @@ void initialize(int userid, bool use_alt_fds, bool is_root, bool requested_root)
 {
     // In root mode, we are running exec-port as another effective
     // user `userid`, and the spawned child processes to be the
-    // effective user `userid` by default, unless overriden in the
+    // effective user `userid` by default, unless overridden in the
     // `{user, User}` option by the executed command (in which case
     // only users from the `{limit_users, Users}` list are permitted
     // to be effective users.
@@ -585,7 +585,7 @@ void initialize(int userid, bool use_alt_fds, bool is_root, bool requested_root)
             cap_free(cur);
         }
         #else
-        DEBUG(debug, "exec: capability feature is not implemented for this plaform!");
+        DEBUG(debug, "exec: capability feature is not implemented for this platform!");
         #endif
 
     }
