@@ -194,12 +194,14 @@ int main(int argc, char* argv[])
     initialize(userid, use_alt_fds, is_root, requested_root);
 
     // Set up a pipe to deliver SIGCHLD details to pselect() and setup SIGCHLD handler
-    if (pipe(sigchld_pipe) < 0) {
+    if (pipe2(sigchld_pipe, O_CLOEXEC) < 0) {
         DEBUG(true, "Cannot create pipe: %s", strerror(errno));
         exit(3);
     }
     set_nonblock_flag(self_pid, sigchld_pipe[0], true);
     set_nonblock_flag(self_pid, sigchld_pipe[1], true);
+
+    //DEBUG(true, "SIGCHILD will be delivered on pipe fds: %d -> %d", sigchld_pipe[1], sigchld_pipe[0]);
 
     sact.sa_handler   = NULL;
     sact.sa_sigaction = gotsigchild;
@@ -597,7 +599,7 @@ void initialize(int userid, bool use_alt_fds, bool is_root, bool requested_root)
     #endif
     if (max_fds < 1024) max_fds = 1024;
 
-    dev_null = open(CS_DEV_NULL, O_RDWR);
+    dev_null = open(CS_DEV_NULL, O_RDWR | O_CLOEXEC);
 
     if (dev_null < 0) {
         DEBUG(true, "exec: cannot open %s: %s", CS_DEV_NULL, strerror(errno));
@@ -613,6 +615,10 @@ void initialize(int userid, bool use_alt_fds, bool is_root, bool requested_root)
         //eis.close_handles(); // Close stdin, stdout
         eis.set_handles(3, 4);
     }
+
+    // Close fd's on fork, as they are not needed by child processes
+    set_cloexec_flag(eis.read_handle(),  true);
+    set_cloexec_flag(eis.write_handle(), true);
 }
 
 int finalize()
