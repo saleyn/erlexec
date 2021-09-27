@@ -487,8 +487,9 @@ pid_t start_child(CmdOptions& op, std::string& error)
         if (stream_fd[STDERR_FILENO][WR] == REDIRECT_STDOUT)
             dup2(STDOUT_FILENO, STDERR_FILENO);
 
-        for(int i=STDERR_FILENO+1; i < max_fds; i++)
-            close(i);
+        // Note: we don't need to close fds inherited from parent
+        // because they were open with O_CLOEXEC or FD_CLOEXEC and 
+        // will be automatically closed in the execve(2) call below
 
         if (op.pty()) {
             struct termios ios;
@@ -1023,10 +1024,26 @@ int send_ospid_output(int pid, const char* type, const char* data, int len)
 }
 
 //------------------------------------------------------------------------------
+bool set_cloexec_flag(int fd, bool value)
+{
+  int oldflags = fcntl(fd, F_GETFD, 0);
+  // If reading the flags failed, return error indication now
+  if (oldflags < 0)
+    return oldflags;
+  // Set just the flag we want to set
+  oldflags = value ? (oldflags |  FD_CLOEXEC)
+                   : (oldflags & ~FD_CLOEXEC);
+  // Store modified flag word in the descriptor
+  auto res = fcntl(fd, F_SETFD, oldflags) != -1;
+  DEBUG(debug && !res, "Failed to %s FD_CLOEXEC on fd=%d", value ? "set":"clear", fd);
+  return res;
+}
+
+//------------------------------------------------------------------------------
 int open_file(const char* file, FileOpenFlag flag, const char* stream,
               ei::StringBuffer<128>& err, int mode)
 {
-    int flags = O_RDWR | (flag == READ ? 0 : O_CREAT) | int(flag);
+    int flags = O_RDWR | (flag == READ ? 0 : O_CREAT) | int(flag) | O_CLOEXEC;
     int fd    = open(file, flags, mode);
     if (fd < 0) {
         err.write("Failed to redirect %s to file: %s", stream, strerror(errno));
@@ -1042,7 +1059,7 @@ int open_file(const char* file, FileOpenFlag flag, const char* stream,
 //------------------------------------------------------------------------------
 int open_pipe(int fds[2], const char* stream, ei::StringBuffer<128>& err)
 {
-    if (pipe(fds) < 0) {
+    if (pipe2(fds, O_CLOEXEC) < 0) {
         err.write("Failed to create a pipe for %s: %s", stream, strerror(errno));
         return -1;
     }
