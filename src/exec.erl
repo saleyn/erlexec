@@ -752,7 +752,7 @@ init([Options]) ->
         Port = erlang:open_port({spawn, Exe}, PortOpts),
         receive
             {Port, {exit_status, Status}} ->
-                {stop, {port_existed_with_status, Status}}
+                {stop, {port_exited_with_status, Status}}
         after 350 ->
             Tab = ets:new(exec_mon, [protected,named_table]),
             {ok, #state{port=Port, limit_users=Users, debug=Debug, registry=Tab, root=Root}}
