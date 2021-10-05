@@ -139,7 +139,7 @@
 %%         name of an environment variable, and Val is the value it is to have
 %%         in the spawned port process. If Val is `false', then the `Name'
 %%         environment variable is unset.</dd>
-%% </dl>.
+%% </dl>
 -export_type([exec_option/0, exec_options/0]).
 
 -type cmd() :: binary() | string() | [string()].
