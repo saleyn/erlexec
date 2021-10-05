@@ -105,7 +105,6 @@
     | {limit_users, [string()|binary(), ...]}
     | {portexe, string()|binary()}
     | {env, [{string()|binary(), string()|binary()|false}, ...]}.
--export_type([exec_option/0, exec_options/0]).
 %% Options passed to the exec process at startup. They can be specified in the
 %% `sys.config' file for the `erlexec' application to customize application
 %% startup.
@@ -141,9 +140,9 @@
 %%         in the spawned port process. If Val is `false', then the `Name'
 %%         environment variable is unset.</dd>
 %% </dl>.
+-export_type([exec_option/0, exec_options/0]).
 
 -type cmd() :: binary() | string() | [string()].
--export_type([cmd/0]).
 %% Command to be executed. If specified as a string, the specified command
 %% will be executed through the shell. The current shell is obtained
 %% from environment variable `SHELL'. This can be useful if you
@@ -154,6 +153,8 @@
 %% `~' to a user's home directory.  All command arguments must
 %% be properly escaped including whitespace and shell
 %% metacharacters.
+%%
+%% Any part of the command string can contain unicode characters.
 %%
 %% <ul>
 %% <b><u>Warning:</u></b> Executing shell commands that
@@ -179,6 +180,7 @@
 %% represents the program to be executed with arguments.
 %% In this case all shell-based features are disabled
 %% and there's no shell injection vulnerability.
+-export_type([cmd/0]).
 
 -type cmd_options() :: [cmd_option()].
 -type cmd_option()  ::
@@ -202,7 +204,6 @@
     | {stdout | stderr, string()|binary(), [output_file_opt()]}
     | pty
     | debug | {debug, integer()}.
--export_type([cmd_option/0, cmd_options/0]).
 %% Command options:
 %% <dl>
 %% <dt>monitor</dt>
@@ -293,10 +294,10 @@
 %% <dt>{debug, Level::integer()}</dt>
 %%     <dd>Enable debug printing in port program for this command</dd>
 %% </dl>
+-export_type([cmd_option/0, cmd_options/0]).
 
 -type output_dev_opt() :: null | close | print | string() | pid()
     | fun((stdout | stderr, integer(), binary()) -> none()).
--export_type([output_dev_opt/0]).
 %% Output device option:
 %% <dl>
 %% <dt>null</dt><dd>Suppress output.</dd>
@@ -309,15 +310,16 @@
 %% <dt>fun((Stream, OsPid, Data) -> none())</dt>
 %%     <dd>Execute this callback on receiving output data</dd>
 %% </dl>
+-export_type([output_dev_opt/0]).
 
 -type output_file_opt() :: append | {mode, Mode::integer()}.
--export_type([output_file_opt/0]).
 %% Defines file opening attributes:
 %% <dl>
 %% <dt>append</dt><dd>Open the file in `append' mode</dd>
 %% <dt>{mode, Mode}</dt>
 %%      <dd>File creation access mode <b>specified in base 8</b> (e.g. 8#0644)</dd>
 %% </dl>
+-export_type([output_file_opt/0]).
 
 -type ospid() :: integer().
 %% Representation of OS process ID.
