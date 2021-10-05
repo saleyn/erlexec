@@ -79,16 +79,16 @@ maps:to_list(lists:foldl(
                  {"darwin",  "CXXFLAGS", "$CXXFLAGS -DHAVE_SETREUID" ++ CxxFlags},
                  {"darwin",  "LDFLAGS",  "$LDFLAGS" ++ X64},
 
-                 {"freebsd",   "CXXFLAGS", "$CXXFLAGS -DHAVE_SETRESUID" ++ CxxFlags ++ X64},
+                 {"freebsd",   "CXXFLAGS", "$CXXFLAGS -DHAVE_SETRESUID -DHAVE_PIPE2" ++ CxxFlags ++ X64},
                  {"freebsd",   "LDFLAGS",  "$LDFLAGS" ++ X64},
 
-                 {"openbsd",   "CXXFLAGS", "$CXXFLAGS -DHAVE_SETRESUID" ++ CxxFlags ++ X64},
+                 {"openbsd",   "CXXFLAGS", "$CXXFLAGS -DHAVE_SETRESUID -DHAVE_PIPE2" ++ CxxFlags ++ X64},
                  {"openbsd",   "LDFLAGS",  "$LDFLAGS" ++ X64},
 
-                 {"dragonfly",   "CXXFLAGS", "$CXXFLAGS -DHAVE_SETRESUID" ++ CxxFlags ++ X64},
+                 {"dragonfly",   "CXXFLAGS", "$CXXFLAGS -DHAVE_SETRESUID -DHAVE_PIPE2" ++ CxxFlags ++ X64},
                  {"dragonfly",   "LDFLAGS",  "$LDFLAGS" ++ X64},
 
-                 {"linux",   "CXXFLAGS", "$CXXFLAGS -DHAVE_SETRESUID" ++ LinCXX ++ CxxFlags ++ X64},
+                 {"linux",   "CXXFLAGS", "$CXXFLAGS -DHAVE_SETRESUID -DHAVE_PIPE2" ++ LinCXX ++ CxxFlags ++ X64},
                  {"linux",   "LDFLAGS",  "$LDFLAGS" ++ LinLD},
 
                  {"CC",  CXX},
