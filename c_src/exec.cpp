@@ -194,13 +194,25 @@ int main(int argc, char* argv[])
     initialize(userid, use_alt_fds, is_root, requested_root);
 
     // Set up a pipe to deliver SIGCHLD details to pselect() and setup SIGCHLD handler
-    if (pipe2(sigchld_pipe, O_CLOEXEC) < 0) {
+#ifdef HAVE_PIPE2
+    auto res = pipe2(sigchld_pipe, O_CLOEXEC);
+#else
+    auto res = pipe(sigchld_pipe);
+#endif
+
+    if (res < 0) {
         DEBUG(true, "Cannot create pipe: %s", strerror(errno));
         exit(3);
     }
     set_nonblock_flag(self_pid, sigchld_pipe[0], true);
     set_nonblock_flag(self_pid, sigchld_pipe[1], true);
 
+#ifndef HAVE_PIPE2
+    if (!set_cloexec_flag(sigchld_pipe, true)) {
+        DEBUG(true, "Cannot set CLOEXEC flag on pipe: %s", strerror(errno));
+        exit(3);
+    }
+#endif
     //DEBUG(true, "SIGCHILD will be delivered on pipe fds: %d -> %d", sigchld_pipe[1], sigchld_pipe[0]);
 
     sact.sa_handler   = NULL;

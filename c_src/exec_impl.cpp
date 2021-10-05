@@ -1059,7 +1059,12 @@ int open_file(const char* file, FileOpenFlag flag, const char* stream,
 //------------------------------------------------------------------------------
 int open_pipe(int fds[2], const char* stream, ei::StringBuffer<128>& err)
 {
-    if (pipe2(fds, O_CLOEXEC) < 0) {
+#ifdef HAVE_PIPE2
+    auto res = pipe2(fds, O_CLOEXEC);
+#else
+    auto res = pipe(fds);
+#endif
+    if (res < 0) {
         err.write("Failed to create a pipe for %s: %s", stream, strerror(errno));
         return -1;
     }
@@ -1071,6 +1076,12 @@ int open_pipe(int fds[2], const char* stream, ei::StringBuffer<128>& err)
     }
     DEBUG(debug, "  Redirecting [%s -> pipe:{r=%d,w=%d}]", stream, fds[0], fds[1]);
 
+#ifndef HAVE_PIPE2
+    if (!set_cloexec_flag(fds[0], true) || !set_cloexec_flag(fds[1], true)) {
+        err.write("Failed to set CLOEXEC on pipe fds for %s: %s", stream, strerror(errno));
+        return -1;
+    }
+#endif
     return 0;
 }
 
