@@ -208,7 +208,7 @@ int main(int argc, char* argv[])
     set_nonblock_flag(self_pid, sigchld_pipe[1], true);
 
 #ifndef HAVE_PIPE2
-    if (!set_cloexec_flag(sigchld_pipe, true)) {
+    if (!set_cloexec_flag(sigchld_pipe[0], true) || !set_cloexec_flag(sigchld_pipe[1], true)) {
         DEBUG(true, "Cannot set CLOEXEC flag on pipe: %s", strerror(errno));
         exit(3);
     }
