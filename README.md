@@ -63,7 +63,7 @@ See http://saleyn.github.io/erlexec
 
 ### Erlang: import as a dependency ###
 
-`rebar.config`:
+- Add dependency in `rebar.config`:
 ```
 {deps,
  [% ...
@@ -92,7 +92,7 @@ defp deps do
 end
 ```
 
-### Build from source ##
+## BUILDING FROM SOURCE ##
 
 Make sure you have [rebar](http://github.com/basho/rebar) or
 [rebar3](http://github.com/basho/rebar3) installed locally and the rebar script
