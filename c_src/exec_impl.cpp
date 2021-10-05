@@ -1126,7 +1126,7 @@ int set_nonblock_flag(pid_t pid, int fd, bool value)
 }
 
 //------------------------------------------------------------------------------
-int CmdOptions::ei_decode(bool getCmd)
+int CmdOptions::ei_decode(bool getcmd)
 {
     // {Cmd::string()|binary()|[string()|binary()], [Option]}
     //      Option = {env, Strings::[string()]} | {cd, Dir::string()|binary()}
@@ -1141,7 +1141,7 @@ int CmdOptions::ei_decode(bool getCmd)
 
     m_nice = INT_MAX;
 
-    if (getCmd) {
+    if (getcmd) {
         std::string s;
 
         if (eis.decodeStringOrBinary(s) == 0) {

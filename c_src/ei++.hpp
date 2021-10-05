@@ -520,7 +520,7 @@ namespace ei {
             if (tp == etNil) {
                 s.clear();
                 return 0;
-            } else if (tp == etString) {
+            } else if (tp == etString || tp == etList) {
                 return s.resize(size+1) && ei_decode_string(&m_rbuf, &m_rIdx, s.c_str())==0
                      ? 0 : -1;
             }

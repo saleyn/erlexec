@@ -286,7 +286,8 @@ public:
         m_std_stream[i].clear();
     }
 
-    int ei_decode(bool getCmd = false);
+    // @param getcmd  - when managing existing PID, pass "false", otherwise "true"
+    int ei_decode(bool getcmd);
     int init_cenv();
 };
 
