@@ -356,7 +356,7 @@ bool process_command(bool is_err)
             pid_t      realpid;
             int        ret;
 
-            if (arity != 3 || (eis.decodeInt(pid)) < 0 || po.ei_decode() < 0 || pid <= 0) {
+            if (arity != 3 || (eis.decodeInt(pid)) < 0 || po.ei_decode(false) < 0 || pid <= 0) {
                 send_error_str(transId, true, "badarg");
                 return true;
             }

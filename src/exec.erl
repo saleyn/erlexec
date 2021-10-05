@@ -1119,7 +1119,20 @@ get_transaction(Q, I, OldQ) ->
 
 is_port_command({{run, Cmd, Options}, Link, Sync}, Pid, State) ->
     {PortOpts, Other} = check_cmd_options(Options, Pid, State, [], []),
-    {ok, {run, Cmd, PortOpts}, Link, Sync, Other};
+    %% If Cmd is a printable string, handle it as a unicode binary string.
+    %% Otherwise if it is a list of strings, convert them to list of unicode binaries.
+    Exe = case io_lib:printable_list(Cmd) of
+          true  -> unicode:characters_to_binary(Cmd);
+          false ->
+              F = fun(I) when is_binary(I) -> I;
+                     (I) when is_list(I)   -> unicode:characters_to_binary(I)
+                  end,
+              case is_list(Cmd) of
+              true  -> [F(I) || I <- Cmd];
+              false -> Cmd
+              end
+          end,
+    {ok, {run, Exe, PortOpts}, Link, Sync, Other};
 is_port_command({list} = T, _Pid, _State) ->
     {ok, T, undefined, undefined, []};
 is_port_command({stop, OsPid}=T, _Pid, _State) when is_integer(OsPid) ->
@@ -1450,7 +1463,22 @@ test_executable() ->
     ?assertMatch(
         {ok, [{stdout,[<<"XYZ\n">>]}]},
         exec:run(["/bin/echoXXXX abc", "XYZ"],
-                 [sync, {executable, "/bin/echo"}, stdout, stderr])).
+                 [sync, {executable, "/bin/echo"}, stdout, stderr])),
+    
+    % Cmd given as a unicode string
+    File = "/tmp/тест-эрл",
+    try
+        ok = file:write_file(File, "#!/bin/bash\necho ok\n"),
+        ok = file:change_mode(File, 8#755),
+        ?assertMatch(
+           {ok, [{stdout,[<<"ok\n">>]}]},
+           exec:run(File, [sync, stdout, stderr])),
+        ?assertMatch(
+           {ok, [{stdout,[<<"ok\n">>]}]},
+           exec:run(["/bin/bash", "-c", File], [sync, stdout, stderr]))
+    after
+        ok = file:delete(File)
+    end.
 
 test_redirect() ->
     ?assertMatch({ok,[{stderr,[<<"TEST1\n">>]}]},
