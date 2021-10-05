@@ -59,7 +59,40 @@ Linux, Solaris, FreeBSD, OpenBSD, MacOS X
 
 See http://saleyn.github.io/erlexec
 
-## BUILDING ##
+## USAGE ##
+
+### Erlang: import as a dependency ###
+
+`rebar.config`:
+```
+{deps,
+ [% ...
+  {erlexec, "~> 1.0"}
+  ]}.
+```
+
+- Include in your `*.app.src`:
+```
+{applications,
+   [kernel,
+    stdlib,
+    % ...
+    erlexec
+   ]}
+```
+
+### Elixir: import as a dependency ###
+
+```
+defp deps do
+  [
+    # ...
+    {:erlexec, "~> 1.0"}
+  ]
+end
+```
+
+### Build from source ##
 
 Make sure you have [rebar](http://github.com/basho/rebar) or
 [rebar3](http://github.com/basho/rebar3) installed locally and the rebar script
