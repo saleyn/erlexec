@@ -18,6 +18,7 @@ The following features are supported:
 
 * Start/stop OS commands and get their OS process IDs, and termination reason
   (exit code, signal number, core dump status).
+* Support OS commands with unicode characters.
 * Manage/monitor externally started OS processes.
 * Execute OS processes synchronously and asynchronously.
 * Set OS command's working directory, environment, process group, effective user, process priority.
@@ -168,13 +169,20 @@ is properly set prior to starting the emulator.
 
 ### Starting/stopping an OS process
 ```erlang
-1> exec:start([]).                                      % Start the port program.
+1> exec:start().                                        % Start the port program.
 {ok,<0.32.0>}
 2> {ok, _, I} = exec:run_link("sleep 1000", []).        % Run a shell command to sleep for 1000s.
 {ok,<0.34.0>,23584}
 3> exec:stop(I).                                        % Kill the shell command.
 ok                                                      % Note that this could also be accomplished
                                                         % by doing exec:stop(pid(0,34,0)).
+```
+In Elixir:
+```elixir
+iex(1)> :exec.start
+{:ok, #PID<0.112.0>}
+iex(2)> :exec.run("echo ok", [:sync, :stdout])
+{:ok, [stdout: ["ok\n"]]}
 ```
 
 ### Clearing environment or unsetting an env variable of the child process
