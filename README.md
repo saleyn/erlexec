@@ -65,7 +65,7 @@ See http://saleyn.github.io/erlexec
 ### Erlang: import as a dependency ###
 
 - Add dependency in `rebar.config`:
-```
+```erlang
 {deps,
  [% ...
   {erlexec, "~> 1.0"}
@@ -73,7 +73,7 @@ See http://saleyn.github.io/erlexec
 ```
 
 - Include in your `*.app.src`:
-```
+```erlang
 {applications,
    [kernel,
     stdlib,
@@ -84,7 +84,7 @@ See http://saleyn.github.io/erlexec
 
 ### Elixir: import as a dependency ###
 
-```
+```elixir
 defp deps do
   [
     # ...
