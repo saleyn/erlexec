@@ -20,7 +20,9 @@ matrix:
           packages: ['g++-9']
       otp_release:
         - 22.0
-        - 23.0          
+        - 23.0
+        - 24.0
+        - 24.2
       env: COMPILER=g++-9
   #- osx       # MacOS builds are not available on Travis
 
