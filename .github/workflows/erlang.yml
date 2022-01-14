@@ -1,0 +1,30 @@
+name: build
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+
+  build:
+
+    runs-on: ubuntu-latest
+    name: OTP ${{matrix.otp}}
+
+    container:
+      image: erlang:${{matrix.otp}}
+
+    strategy:
+      matrix:
+        otp: ["24.1", "24.2"]
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: OTP Version
+      run:  erl -eval '{ok, Version} = file:read_file(filename:join([code:root_dir(), "releases", erlang:system_info(otp_release), "OTP_VERSION"])), io:fwrite(Version), halt().' -noshell
+    - name: User Name
+      run:  whoami
+    - name: Compile
+      run:  make
