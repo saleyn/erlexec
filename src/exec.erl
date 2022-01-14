@@ -1300,7 +1300,16 @@ temp_file() ->
 
 exec_test_() ->
     {setup,
-        fun()    -> {ok, Pid} = exec:start([{debug, 0}]), Pid end,
+        fun() ->
+            Opts =
+                case os:getenv("TEST_USER") of
+                    false -> [];
+                    User  -> [root, {limit_users, [User]}, {user, User}]
+                end,
+            {ok, Pid} = exec:start([{debug, 0}] ++ Opts),
+            Pid
+        end,
+
         fun(Pid) -> exit(Pid, kill) end,
         [
             ?tt(test_root()),
@@ -1346,14 +1355,19 @@ exec_run_many_test_() ->
     }.
 
 test_root() ->
-    ?assertMatch({error, "Cannot specify effective user"++_},
-                 exec:start([{user, "xxxx"}, {limit_users, [yyyy]}])),
-    ?assertMatch({error, "Cannot restrict users"++_},
-                 exec:start([{limit_users, [yyyy]}])),
-    ?assertMatch({error, "Not allowed to run without restricting effective users"++_},
-                 exec:start([root, {user, "xxxx"}])),
-    ?assertMatch({error, "Not allowed to run without proviting effective user "++_},
-                 exec:start([root, {limit_users, [yyyy]}])).
+    case os:getenv("NO_ROOT_TESTS") of
+        false ->
+            ?assertMatch({error, "Cannot specify effective user"++_},
+                         exec:start([{user, "xxxx"}, {limit_users, [yyyy]}])),
+            ?assertMatch({error, "Cannot restrict users"++_},
+                         exec:start([{limit_users, [yyyy]}])),
+            ?assertMatch({error, "Not allowed to run without restricting effective users"++_},
+                         exec:start([root, {user, "xxxx"}])),
+            ?assertMatch({error, "Not allowed to run without proviting effective user "++_},
+                         exec:start([root, {limit_users, [yyyy]}]));
+        _ ->
+            ok
+    end.
 
 test_monitor() ->
     {ok, P, _} = exec:run("echo ok", [{stdout, null}, monitor]),
