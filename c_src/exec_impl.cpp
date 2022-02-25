@@ -208,9 +208,11 @@ bool process_pid_input(CmdInfo& ci)
 
         while ((n = write(fd, p, len)) < 0 && errno == EINTR);
 
+        auto err = errno;
+      
         if (n < 0)
             DEBUG(debug, "Error writing %d bytes to stdin (fd=%d) of pid %d: %s",
-                len, fd, ci.cmd_pid, strerror(errno));
+                len, fd, ci.cmd_pid, strerror(err));
         else
             DEBUG(debug, "Wrote %d/%d bytes to stdin (fd=%d) of pid %d",
                 n, len, fd, ci.cmd_pid);
@@ -218,7 +220,7 @@ bool process_pid_input(CmdInfo& ci)
         if (n > 0 && n < len) {
             ci.stdin_wr_pos += n;
             return false;
-        } else if (n < 0 && errno == EAGAIN) {
+        } else if (n < 0 && err == EAGAIN) {
             break;
         } else if (n <= 0) {
             close_stdin(ci);
