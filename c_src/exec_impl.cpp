@@ -66,7 +66,7 @@ void CmdInfo::include_stream_fd(FdHandler &fdhandler)
     poll_fd_idx[STDOUT_FILENO] = -1;
     poll_fd_idx[STDERR_FILENO] = -1;
     
-    if (stream_fd[STDIN_FILENO] >= 0 && stdin_wr_pos > 0) {
+    if (stream_fd[STDIN_FILENO] >= 0 && (stdin_wr_pos > 0 || !stdin_queue.empty())) {
         DEBUG(debug > 2, "Pid %d adding stdin available notification (fd=%d, pos=%d)",
                   cmd_pid, stream_fd[STDIN_FILENO], stdin_wr_pos);
         fdhandler.append_write_fd(stream_fd[STDIN_FILENO]);
