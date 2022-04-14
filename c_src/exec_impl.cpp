@@ -30,16 +30,13 @@ int ptsname_r(int fd, char* buf, size_t buflen) {
 void CmdInfo::include_stream_fd(FdHandler &fdhandler)
 {
     for (int i=STDIN_FILENO; i <= STDERR_FILENO; i++) {
-        if (i == STDIN_FILENO) {
-            if (stream_fd[i] >= 0 && stdin_wr_pos > 0) {
-                DEBUG(debug > 2, "Pid %d adding stdin available notification (fd=%d, pos=%d)",
-                          cmd_pid, stream_fd[i], stdin_wr_pos);
-                fdhandler.append_write_fd(stream_fd[i]);
-            }
-        } else if (stream_fd[i] >= 0) {
-            DEBUG(debug > 2, "Pid %d adding stdout checking (fd=%d)", cmd_pid, stream_fd[i]);
-            fdhandler.append_read_fd(stream_fd[i]);
-        }
+        if (stream_fd[i] < 0 || (i == STDIN_FILENO && stdin_wr_pos <= 0 && stdin_queue.empty()))
+            continue;
+
+        DEBUG(debug > 2, "Pid %d adding %s available notification (fd=%d, pos=%d)",
+              cmd_pid, stream_name(i), stream_fd[i], i==STDIN_FILENO ? stdin_wr_pos : -1);
+
+        fdhandler.append_write_fd(stream_fd[i]);
     }
 }
 
@@ -62,27 +59,17 @@ void CmdInfo::process_stream_data(FdHandler &fdhandler)
 #if defined(USE_POLL) && USE_POLL > 0
 void CmdInfo::include_stream_fd(FdHandler &fdhandler)
 {
-    poll_fd_idx[STDIN_FILENO]  = -1;
-    poll_fd_idx[STDOUT_FILENO] = -1;
-    poll_fd_idx[STDERR_FILENO] = -1;
-    
-    if (stream_fd[STDIN_FILENO] >= 0 && (stdin_wr_pos > 0 || !stdin_queue.empty())) {
-        DEBUG(debug > 2, "Pid %d adding stdin available notification (fd=%d, pos=%d)",
-                  cmd_pid, stream_fd[STDIN_FILENO], stdin_wr_pos);
-        fdhandler.append_write_fd(stream_fd[STDIN_FILENO]);
-        poll_fd_idx[STDIN_FILENO] = fdhandler.size()-1;
-    }
-    if (stream_fd[STDOUT_FILENO] >= 0) {
-        DEBUG(debug > 2, "Pid %d adding stdout checking (fd=%d)",
-                  cmd_pid, stream_fd[STDOUT_FILENO]);
-        fdhandler.append_read_fd(stream_fd[STDOUT_FILENO]);
-        poll_fd_idx[STDOUT_FILENO] = fdhandler.size()-1;
-    }
-    if (stream_fd[STDERR_FILENO] >= 0) {
-        DEBUG(debug > 2, "Pid %d adding stderr checking (fd=%d)",
-                  cmd_pid, stream_fd[STDERR_FILENO]);
-        fdhandler.append_read_fd(stream_fd[STDERR_FILENO]);
-        poll_fd_idx[STDERR_FILENO] = fdhandler.size()-1;
+    for (int i=STDIN_FILENO; i <= STDERR_FILENO; i++) {
+        poll_fd_idx[i] = -1;
+
+        if (stream_fd[i] < 0 || (i == STDIN_FILENO && stdin_wr_pos <= 0 && stdin_queue.empty()))
+            continue;
+
+        DEBUG(debug > 2, "Pid %d adding %s available notification (fd=%d, pos=%d)",
+              cmd_pid, stream_name(i), stream_fd[i], i==STDIN_FILENO ? stdin_wr_pos : -1);
+
+        fdhandler.append_write_fd(stream_fd[i]);
+        poll_fd_idx[i] = fdhandler.size()-1;
     }
 }
 
