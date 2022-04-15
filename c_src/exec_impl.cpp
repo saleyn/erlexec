@@ -23,25 +23,12 @@ int ptsname_r(int fd, char* buf, size_t buflen) {
 }
 #endif
 
-template <typename T>
-using io_handler = void (FdHandler::*)(int);
-
 //------------------------------------------------------------------------------
 // CmdInfo
 //------------------------------------------------------------------------------
 #if !defined(USE_POLL) || (USE_POLL == 0)
 void CmdInfo::include_stream_fd(FdHandler &fdhandler)
 {
-    static_assert(STDIN_FILENO  == 0);
-    static_assert(STDOUT_FILENO == 1);
-    static_assert(STDERR_FILENO == 2);
-
-    static io_handler io_handlers[STDERR_FILENO-STDIN_FILENO+1] = {
-        io_handler<FdHandler>(&FdHandler::append_write_fd),
-        io_handler<FdHandler>(&FdHandler::append_read_fd),
-        io_handler<FdHandler>(&FdHandler::append_read_fd),
-    };
-
     for (int i=STDIN_FILENO; i <= STDERR_FILENO; i++) {
         if (stream_fd[i] < 0 || (i == STDIN_FILENO && stdin_wr_pos <= 0 && stdin_queue.empty()))
             continue;
@@ -49,7 +36,10 @@ void CmdInfo::include_stream_fd(FdHandler &fdhandler)
         DEBUG(debug > 2, "Pid %d adding %s available notification (fd=%d, pos=%d)",
               cmd_pid, stream_name(i), stream_fd[i], i==STDIN_FILENO ? stdin_wr_pos : -1);
 
-        (fdhandler.*(io_handlers[i]))(stream_fd[i]);
+        if (i==STDIN_FILENO)
+            fdhandler.append_write_fd(stream_fd[i]);
+        else
+            fdhandler.append_read_fd(stream_fd[i]);
     }
 }
 
@@ -81,7 +71,11 @@ void CmdInfo::include_stream_fd(FdHandler &fdhandler)
         DEBUG(debug > 2, "Pid %d adding %s available notification (fd=%d, pos=%d)",
               cmd_pid, stream_name(i), stream_fd[i], i==STDIN_FILENO ? stdin_wr_pos : -1);
 
-        fdhandler.append_write_fd(stream_fd[i]);
+        if (i==STDIN_FILENO)
+            fdhandler.append_write_fd(stream_fd[i]);
+        else
+            fdhandler.append_read_fd(stream_fd[i]);
+
         poll_fd_idx[i] = fdhandler.size()-1;
     }
 }
