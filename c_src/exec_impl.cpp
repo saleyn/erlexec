@@ -488,13 +488,15 @@ pid_t start_child(CmdOptions& op, std::string& error)
         // will be automatically closed in the execve(2) call below
 
         if (op.pty()) {
-            struct termios ios;
-            tcgetattr(STDIN_FILENO, &ios);
-            // Disable the ECHO mode
-            ios.c_lflag &= ~(ECHO | ECHONL | ECHOE | ECHOK);
-            // We don't check if it succeeded because if the STDIN is not a terminal
-            // it won't be able to disable the ECHO anyway.
-            tcsetattr(STDIN_FILENO, TCSANOW, &ios);
+            if (!op.pty_echo()) {
+                struct termios ios;
+                tcgetattr(STDIN_FILENO, &ios);
+                // Disable the ECHO mode
+                ios.c_lflag &= ~(ECHO | ECHONL | ECHOE | ECHOK);
+                // We don't check if it succeeded because if the STDIN is not a terminal
+                // it won't be able to disable the ECHO anyway.
+                tcsetattr(STDIN_FILENO, TCSANOW, &ios);
+            }
 
             // Make the current process a new session leader
             setsid();
@@ -1172,14 +1174,14 @@ int CmdOptions::ei_decode(bool getcmd)
         PTY,        SUCCESS_EXIT_CODE, CD,     ENV,
         EXECUTABLE, KILL,              KILL_TIMEOUT,
         KILL_GROUP, NICE,              USER,    GROUP,
-        DEBUG_OPT
+        DEBUG_OPT,  PTY_ECHO
     } opt;
     const char* opts[] = {
         "stdin",      "stdout",            "stderr",
         "pty",        "success_exit_code", "cd", "env",
         "executable", "kill",              "kill_timeout",
         "kill_group", "nice",              "user",  "group",
-        "debug"
+        "debug",      "pty_echo"
     };
 
     bool seen_opt[sizeof(opts) / sizeof(char*)] = {false};
@@ -1351,6 +1353,10 @@ int CmdOptions::ei_decode(bool getcmd)
 
             case PTY:
                 m_pty = true;
+                break;
+
+            case PTY_ECHO:
+                m_pty_echo = true;
                 break;
 
             case SUCCESS_EXIT_CODE:
