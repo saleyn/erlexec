@@ -183,6 +183,7 @@ private:
     std::stringstream       m_err;
     bool                    m_shell = true;
     bool                    m_pty = false;
+    bool                    m_pty_echo = false;
     std::string             m_executable;
     CmdArgsList             m_cmd;
     std::string             m_cd;
@@ -246,6 +247,7 @@ public:
     const CmdArgsList&  cmd()           const { return m_cmd; }
     bool                shell()         const { return m_shell; }
     bool                pty()           const { return m_pty; }
+    bool                pty_echo()      const { return m_pty_echo; }
     const char*   cd()                  const { return m_cd.c_str(); }
     MapEnv const& mapenv()              const { return m_env; }
     char* const*  env()                 const { return (char* const*)m_cenv; }
