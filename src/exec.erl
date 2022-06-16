@@ -1069,7 +1069,7 @@ check_options(Options) when is_list(Options) ->
     {SUID,NeedSudo} = is_suid_and_root_owner(Exe),
     if Root, (User==undefined orelse User=="" orelse User == <<"">>) ->
         % Asked to enable root, but User is not set
-        {error, "Not allowed to run without proviting effective user {user,User}!"};
+        {error, "Not allowed to run without providing effective user {user,User}!"};
     Root, Users==[] ->
         % Asked to enable root, have SUID
         {error, "Not allowed to run without restricting effective users {limit_users,Users}!"};
@@ -1363,7 +1363,7 @@ test_root() ->
                          exec:start([{limit_users, [yyyy]}])),
             ?assertMatch({error, "Not allowed to run without restricting effective users"++_},
                          exec:start([root, {user, "xxxx"}])),
-            ?assertMatch({error, "Not allowed to run without proviting effective user "++_},
+            ?assertMatch({error, "Not allowed to run without providing effective user "++_},
                          exec:start([root, {limit_users, [yyyy]}]));
         _ ->
             ok
