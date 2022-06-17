@@ -203,6 +203,7 @@
     | {stderr, stdout | output_dev_opt()}
     | {stdout | stderr, string()|binary(), [output_file_opt()]}
     | pty
+    | pty_echo
     | debug | {debug, integer()}.
 %% Command options:
 %% <dl>
@@ -289,6 +290,8 @@
 %%     <dd>Redirect process's stdout/stderr stream to file</dd>
 %% <dt>pty</dt>
 %%     <dd>Use pseudo terminal for the process's stdin, stdout and stderr</dd>
+%% <dt>pty_echo</dt>
+%%     <dd>Allow the pty to run in echo mode, disabled by default</dd>
 %% <dt>debug</dt>
 %%     <dd>Same as `{debug, 1}'</dd>
 %% <dt>{debug, Level::integer()}</dt>
@@ -1069,7 +1072,7 @@ check_options(Options) when is_list(Options) ->
     {SUID,NeedSudo} = is_suid_and_root_owner(Exe),
     if Root, (User==undefined orelse User=="" orelse User == <<"">>) ->
         % Asked to enable root, but User is not set
-        {error, "Not allowed to run without proviting effective user {user,User}!"};
+        {error, "Not allowed to run without providing effective user {user,User}!"};
     Root, Users==[] ->
         % Asked to enable root, have SUID
         {error, "Not allowed to run without restricting effective users {limit_users,Users}!"};
@@ -1123,7 +1126,7 @@ is_port_command({{run, Cmd, Options}, Link, Sync}, Pid, State) ->
     {PortOpts, Other} = check_cmd_options(Options, Pid, State, [], []),
     %% If Cmd is a printable string, handle it as a unicode binary string.
     %% Otherwise if it is a list of strings, convert them to list of unicode binaries.
-    Exe = case io_lib:printable_list(Cmd) of
+    Exe = case io_lib:printable_unicode_list(Cmd) of
           true  -> unicode:characters_to_binary(Cmd);
           false ->
               F = fun(I) when is_binary(I) -> I;
@@ -1220,6 +1223,8 @@ check_cmd_options([{success_exit_code, I}=H|T], Pid, State, PortOpts, OtherOpts)
 check_cmd_options([H|T], Pid, State, PortOpts, OtherOpts) when H=:=stdin; H=:=stdout; H=:=stderr ->
     check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
 check_cmd_options([H|T], Pid, State, PortOpts, OtherOpts) when H=:=pty ->
+    check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
+check_cmd_options([H|T], Pid, State, PortOpts, OtherOpts) when H=:=pty_echo ->
     check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
 check_cmd_options([{stdin, I}=H|T], Pid, State, PortOpts, OtherOpts)
         when I=:=null; I=:=close; is_list(I); is_binary(I) ->
@@ -1327,7 +1332,8 @@ exec_test_() ->
             ?tt(test_env()),
             ?tt(test_kill_timeout()),
             ?tt(test_setpgid()),
-            ?tt(test_pty())
+            ?tt(test_pty()),
+            ?tt(test_pty_echo())
         ]
     }.
 
@@ -1363,7 +1369,7 @@ test_root() ->
                          exec:start([{limit_users, [yyyy]}])),
             ?assertMatch({error, "Not allowed to run without restricting effective users"++_},
                          exec:start([root, {user, "xxxx"}])),
-            ?assertMatch({error, "Not allowed to run without proviting effective user "++_},
+            ?assertMatch({error, "Not allowed to run without providing effective user "++_},
                          exec:start([root, {limit_users, [yyyy]}]));
         _ ->
             ok
@@ -1552,4 +1558,35 @@ test_pty() ->
     exec:send(I, <<"exit\n">>),
     ?receiveMatch({'DOWN', _, process, P, normal}, 1000).
 
+test_pty_echo() ->
+    % disable bash prompt using PS1
+    {ok, P, I} = exec:run("PS1=\"\" /bin/bash --norc -i", [
+        stdin,
+        stdout,
+        {stderr, stdout},
+        pty,
+        pty_echo,
+        monitor,
+        % we set TERM to dumb to prevent strange
+        % bracketed paste mode characters from being inserted
+        % in echo responses
+        {env, [{<<"TERM">>, <<"dumb">>}]}
+    ]),
+    % get the whole output
+    Accumulate = fun F(Acc) ->
+        receive
+        {stdout, I, Data} ->
+            F([Data|Acc]);
+        {'DOWN', _, process, P, normal} ->
+            {ok, lists:reverse(Acc)}
+        end
+    end,
+    exec:send(I, <<"echo ok\n">>),
+    exec:send(I, <<"exit\n">>),
+    {ok, Res} = Accumulate([]),
+    C = iolist_to_binary(Res),
+    % sometimes the binary has extra stuff in the beginning, e.g.
+    % <<"echo ok\r\nexit\r\necho ok\r\nok\r\nexit\r\nexit\r\n">>
+    % I'm not sure why...
+    ?assert(binary:match(C, <<"echo ok\r\nok\r\nexit\r\nexit\r\n">>) =/= nomatch).
 -endif.
