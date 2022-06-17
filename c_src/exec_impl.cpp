@@ -492,6 +492,8 @@ pid_t start_child(CmdOptions& op, std::string& error)
                 struct termios ios;
                 tcgetattr(STDIN_FILENO, &ios);
                 // Disable the ECHO mode
+                // For the list of all modes see RFC4254:
+                // https://datatracker.ietf.org/doc/html/rfc4254#section-8
                 ios.c_lflag &= ~(ECHO | ECHONL | ECHOE | ECHOK);
                 // We don't check if it succeeded because if the STDIN is not a terminal
                 // it won't be able to disable the ECHO anyway.
