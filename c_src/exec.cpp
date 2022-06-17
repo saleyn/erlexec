@@ -39,7 +39,8 @@
               stdin  | {stdin, null | close | File::string()} |
               stdout | {stdout, Device::string()} |
               stderr | {stderr, Device::string()} |
-              pty    | {success_exit_code, N::integer()}
+              pty    | {success_exit_code, N::integer()} |
+              pty_echo
 
     Device  = close | null | stderr | stdout | File::string() | {append, File::string()}
 
