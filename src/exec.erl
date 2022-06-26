@@ -62,7 +62,7 @@
 -export([
     start/0, start/1, start_link/1, run/2, run/3,
     run_link/2, run_link/3,
-    manage/2, send/2, winsz/3,
+    manage/2, send/2, winsz/3, pty_opts/2,
     which_children/0, kill/2,       setpgid/2, stop/1, stop_and_wait/2,
     ospid/1, pid/1,   status/1,     signal/1,  signal_to_int/1, debug/1
 ]).
@@ -533,12 +533,25 @@ send(OsPid, Data)
 %%
 %% @end
 %%-------------------------------------------------------------------------
--spec winsz(OsPid :: ospid() | pid(), integer(), integer()) -> ok.
+-spec winsz(OsPid :: ospid() | pid(), integer(), integer()) -> ok | {error, Reason::any()}.
 winsz(OsPid, Rows, Cols)
   when (is_integer(OsPid) orelse is_pid(OsPid)),
        is_integer(Rows),
        is_integer(Cols) ->
     gen_server:call(?MODULE, {port, {winsz, OsPid, Rows, Cols}}).
+
+%%-------------------------------------------------------------------------
+%% @doc Set the pty terminal options of the OS process identified by `OsPid'.
+%%
+%% The process must have been created with the `pty' option.
+%%
+%% @end
+%%-------------------------------------------------------------------------
+-spec pty_opts(OsPid :: ospid() | pid(), list()) -> ok | {error, Reason::any()}.
+pty_opts(OsPid, Opts)
+  when (is_integer(OsPid) orelse is_pid(OsPid)),
+       is_list(Opts) ->
+    gen_server:call(?MODULE, {port, {pty_opts, OsPid, Opts}}).
 
 %%-------------------------------------------------------------------------
 %% @doc Set debug level of the port process.
@@ -1162,12 +1175,21 @@ is_port_command({send, OsPid, Data}, _Pid, _State)
 is_port_command({winsz, Pid, Rows, Cols}, _Pid, _State)
   when is_pid(Pid), is_integer(Rows), is_integer(Cols) ->
     case ets:lookup(exec_mon, Pid) of
-    [{Pid, OsPid}]  -> {ok, {winsz, OsPid, Rows, Cols}};
+    [{Pid, OsPid}]  -> {ok, {winsz, OsPid, Rows, Cols}, undefined, undefined, []};
     []              -> throw({error, no_process})
     end;
 is_port_command({winsz, OsPid, Rows, Cols}, _Pid, _State)
   when is_integer(OsPid), is_integer(Rows), is_integer(Cols) ->
-    {ok, {winsz, OsPid, Rows, Cols}};
+    {ok, {winsz, OsPid, Rows, Cols}, undefined, undefined, []};
+is_port_command({pty_opts, Pid, Opts}, _Pid, _State)
+  when is_pid(Pid), is_list(Opts) ->
+    case ets:lookup(exec_mon, Pid) of
+    [{Pid, OsPid}]  -> {ok, {pty_opts, OsPid, Opts}, undefined, undefined, []};
+    []              -> throw({error, no_process})
+    end;
+is_port_command({pty_opts, OsPid, Opts}, _Pid, _State)
+  when is_integer(OsPid), is_list(Opts) ->
+    {ok, {pty_opts, OsPid, Opts}, undefined, undefined, []};
 is_port_command({kill, OsPid, Sig}=T, _Pid, _State) when is_integer(OsPid),is_integer(Sig) ->
     {ok, T, undefined, undefined, []};
 is_port_command({setpgid, OsPid, Gid}=T, _Pid, _State) when is_integer(OsPid),is_integer(Gid) ->
@@ -1342,7 +1364,8 @@ exec_test_() ->
             ?tt(test_setpgid()),
             ?tt(test_pty()),
             ?tt(test_pty_echo()),
-            ?tt(test_pty_opts())
+            ?tt(test_pty_opts()),
+            ?tt(test_dynamic_pty_opts())
         ]
     }.
 
@@ -1555,12 +1578,13 @@ test_pty() ->
     ?assert(case exec:run("tty", [stdin, stdout, pty, sync]) of
         {ok,[{stdout,[<<"/dev/pts/", _/binary>>|_]}]} ->
             true;
+        % on macos, the pty has the format /dev/ttysXXX
         {ok,[{stdout,[<<"/dev/ttys", _/binary>>|_]}]} ->
             true;
         _ -> false
     end),
     {ok, P, I} = exec:run("/bin/bash --norc -i", [stdin, stdout, pty, monitor]),
-    exec:send(I, <<"echo ok\n">>),
+    ok = exec:send(I, <<"echo ok\n">>),
     receive
     {stdout, I, <<"echo ok\r\n">>} ->
         ?receiveMatch({stdout, I, <<"ok\r\n">>}, 1000);
@@ -1569,23 +1593,24 @@ test_pty() ->
     after 1000 ->
         ?assertMatch({stdout, I, <<"ok\r\n">>}, timeout)
     end,
-    exec:send(I, <<"exit\n">>),
+    ok = exec:send(I, <<"exit\n">>),
     ?receiveMatch({'DOWN', _, process, P, normal}, 1000).
 
 test_pty_echo() ->
     % without echo
-    {ok, _, I} = exec:run(["/bin/cat"], [
+    {ok, _, I} = exec:run("echo started && cat", [
         stdin,
         stdout,
         {stderr, stdout},
         pty,
         monitor
     ]),
-    exec:send(I, <<"test\n">>),
-    ?receiveMatch({stdout, I, <<"test\r\n">>}, 1000),
-    exec:kill(I, 9),
+    ?receiveMatch({stdout, I, <<"started\r\n">>}, 5000),
+    ok = exec:send(I, <<"test\n">>),
+    ?receiveMatch({stdout, I, <<"test\r\n">>}, 5000),
+    ok = exec:kill(I, 9),
     % with echo
-    {ok, _, I2} = exec:run(["/bin/cat"], [
+    {ok, _, I2} = exec:run("echo started && cat", [
         stdin,
         stdout,
         {stderr, stdout},
@@ -1593,9 +1618,10 @@ test_pty_echo() ->
         pty_echo,
         monitor
     ]),
-    exec:send(I2, <<"test\n">>),
-    ?receiveMatch({stdout, I2, <<"test\r\n">>}, 1000),
-    ?receiveMatch({stdout, I2, <<"test\r\n">>}, 1000).
+    ?receiveMatch({stdout, I2, <<"started\r\n">>}, 5000),
+    ok = exec:send(I2, <<"test\n">>),
+    ?receiveMatch({stdout, I2, <<"test\r\n">>}, 5000),
+    ?receiveMatch({stdout, I2, <<"test\r\n">>}, 5000).
 
 test_pty_opts() ->
     ?assertMatch({error,[{exit_status,256},{stdout,[<<"not a tty\n">>]}]},
@@ -1608,47 +1634,75 @@ test_pty_opts() ->
         _ -> false
     end),
     % without echo
-    {ok, P, I} = exec:run(["/bin/cat"], [
+    {ok, P, I} = exec:run("echo started && cat", [
         stdin,
         stdout,
         {stderr, stdout},
         {pty, [{echo, 0}]},
         monitor
     ]),
-    exec:send(I, <<"test\n">>),
-    ?receiveMatch({stdout, I, <<"test\r\n">>}, 1000),
-    exec:kill(I, 9),
-    ?receiveMatch({'DOWN', I, process, P, {exit_status, 9}}, 1000),
+    ?receiveMatch({stdout, I, <<"started\r\n">>}, 5000),
+    ok = exec:send(I, <<"test\n">>),
+    ?receiveMatch({stdout, I, <<"test\r\n">>}, 5000),
+    ok = exec:kill(I, 9),
+    ?receiveMatch({'DOWN', I, process, P, {exit_status, 9}}, 5000),
     % with echo
-    {ok, P2, I2} = exec:run(["/bin/cat"], [
+    {ok, P2, I2} = exec:run("echo started && cat", [
         stdin,
         stdout,
         {stderr, stdout},
         {pty, [{echo, 1}]},
         monitor
     ]),
-    exec:send(I2, <<"test\n">>),
-    ?receiveMatch({stdout, I2, <<"test\r\n">>}, 1000),
-    ?receiveMatch({stdout, I2, <<"test\r\n">>}, 1000),
+    ?receiveMatch({stdout, I2, <<"started\r\n">>}, 5000),
+    ok = exec:send(I2, <<"test\n">>),
+    ?receiveMatch({stdout, I2, <<"test\r\n">>}, 5000),
+    ?receiveMatch({stdout, I2, <<"test\r\n">>}, 5000),
     % send ^C
-    exec:send(I2, <<3>>),
-    ?receiveMatch({stdout, I2, <<94, 67>>}, 1000),
-    ?receiveMatch({'DOWN', I2, process, P2, {exit_status, 2}}, 1000),
+    ok = exec:send(I2, <<3>>),
+    ?receiveMatch({stdout, I2, <<"^C">>}, 1000),
+    ?receiveMatch({'DOWN', I2, process, P2, {exit_status, 2}}, 5000),
     % vintr test
-    {ok, P3, I3} = exec:run(["/bin/cat"], [
+    {ok, P3, I3} = exec:run("echo started && cat", [
         stdin,
         stdout,
         {stderr, stdout},
         {pty, [{echo, 1}, {vintr, 2}]},
         monitor
     ]),
-    exec:send(I3, <<"test">>),
-    ?receiveMatch({stdout, I3, <<"test">>}, 1000),
+    ?receiveMatch({stdout, I3, <<"started\r\n">>}, 5000),
+    ok = exec:send(I3, <<"test">>),
+    ?receiveMatch({stdout, I3, <<"test">>}, 5000),
     % send ^C (3), should not interrupt
-    exec:send(I3, <<3>>),
-    ?receiveMatch({stdout, I3, <<94, 67>>}, 1000),
+    ok = exec:send(I3, <<3>>),
+    ?receiveMatch({stdout, I3, <<"^C">>}, 5000),
     % send ^B (2), should interrupt
-    exec:send(I3, <<2>>),
-    ?receiveMatch({stdout, I3, <<94, 66>>}, 1000),
-    ?receiveMatch({'DOWN', I3, process, P3, {exit_status, 2}}, 1000).
+    ok = exec:send(I3, <<2>>),
+    ?receiveMatch({stdout, I3, <<"^B">>}, 5000),
+    ?receiveMatch({'DOWN', I3, process, P3, {exit_status, 2}}, 5000).
+
+test_dynamic_pty_opts() ->
+    % without echo
+    {ok, P, I} = exec:run("echo started && cat", [
+        stdin,
+        stdout,
+        {stderr, stdout},
+        pty,
+        monitor
+    ]),
+    ?receiveMatch({stdout, I, <<"started\r\n">>}, 5000),
+    ok = exec:send(I, <<"test\n">>),
+    ?receiveMatch({stdout, I, <<"test\r\n">>}, 5000),
+    ok = exec:send(I, <<2>>),
+    ok = exec:send(I, <<"\n">>),
+    ?receiveMatch({stdout, I, <<2, 13, 10>>}, 5000),
+    % change echo to 1, interrupt to ^B
+    ok = exec:pty_opts(I, [{echo, 1}, {vintr, 2}]),
+    ok = exec:send(I, <<"test\n">>),
+    ?receiveMatch({stdout, I, <<"test\r\n">>}, 5000),
+    ?receiveMatch({stdout, I, <<"test\r\n">>}, 5000),
+    % send ^B
+    ok = exec:send(I, <<2>>),
+    ?receiveMatch({stdout, I, <<"^B">>}, 5000),
+    ?receiveMatch({'DOWN', I, process, P, {exit_status, 2}}, 5000).
 -endif.

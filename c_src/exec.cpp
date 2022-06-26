@@ -334,8 +334,8 @@ bool process_command(bool is_err)
         return false;
     }
 
-    enum CmdTypeT        {  MANAGE,  RUN,  STOP,  KILL,  LIST,  SHUTDOWN,  STDIN,  DEBUG, WINSZ  } cmd;
-    const char* cmds[] = { "manage","run","stop","kill","list","shutdown","stdin","debug","winsz" };
+    enum CmdTypeT        {  MANAGE,  RUN,  STOP,  KILL,  LIST,  SHUTDOWN,  STDIN,  DEBUG, WINSZ, PTYOPTS  } cmd;
+    const char* cmds[] = { "manage","run","stop","kill","list","shutdown","stdin","debug","winsz","pty_opts" };
 
     /* Determine the command */
     if ((int)(cmd = (CmdTypeT) eis.decodeAtomIndex(cmds, command)) < 0) {
@@ -461,7 +461,64 @@ bool process_command(bool is_err)
                 DEBUG(debug, "pid %ld doesn't exist", pid);
                 break;
             }
-            set_pid_winsz(it->second, rows, cols);
+            if (set_pid_winsz(it->second, rows, cols))
+                send_ok(transId, -1);
+            else
+                send_error_str(transId, false, "failed to set window size");
+            break;
+        }
+        case PTYOPTS: {
+            // {pty_opts, OsPid::integer(), pty_opts::list()}
+            long pid;
+            if (arity != 3 || eis.decodeInt(pid) < 0) {
+                send_error_str(transId, true, "badarg");
+                break;
+            }
+
+            auto it = children.find(pid);
+            if (it == children.end()) {
+                DEBUG(debug, "pid %ld doesn't exist", pid);
+                break;
+            }
+
+            int opt_env_sz = eis.decodeListSize();
+            if (opt_env_sz < 0) {
+                send_error_str(transId, true, "badarg");
+                break;
+            }
+
+            CmdInfo& ci = it->second;
+            int& fd = ci.stream_fd[STDIN_FILENO];
+            struct termios ios;
+            tcgetattr(fd, &ios);
+
+            for (int i=0; i < opt_env_sz; i++) {
+                int sz, type = eis.decodeType(sz);
+                bool res = false;
+                std::string key;
+                int val;
+
+                if (type == etTuple && sz == 2) {
+                    eis.decodeTupleSize();
+                    if (!eis.decodeAtom(key) && !key.empty()) {
+                        if (!eis.decodeInt(val)) {
+                            res = true;
+                        }
+                    }
+                }
+
+                if (!res) {
+                    continue;
+                }
+                set_pty_opt(&ios, key, val);
+            }
+            eis.decodeListEnd();
+
+            if (tcsetattr(fd, TCSANOW, &ios) == 0)
+                send_ok(transId, -1);
+            else
+                send_error_str(transId, false, "failed to set pty opts");
+
             break;
         }
             

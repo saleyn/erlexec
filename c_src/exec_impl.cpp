@@ -184,7 +184,7 @@ bool set_pid_winsz(CmdInfo& ci, int rows, int cols)
     r = ioctl(fd, TIOCSWINSZ, &ws);
     DEBUG(debug, "TIOCSWINSZ rows=%d cols=%d ret=%d\n", rows, cols, r);
     
-    return true;
+    return r == 0;
 }
 
 //------------------------------------------------------------------------------
