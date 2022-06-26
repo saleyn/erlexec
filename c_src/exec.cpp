@@ -39,8 +39,9 @@
               stdin  | {stdin, null | close | File::string()} |
               stdout | {stdout, Device::string()} |
               stderr | {stderr, Device::string()} |
-              pty    | {success_exit_code, N::integer()} |
-              pty_echo
+              pty    | {pty, [{echo, 1}, ...]}    |
+              pty_echo |
+              {success_exit_code, N::integer()}
 
     Device  = close | null | stderr | stdout | File::string() | {append, File::string()}
 
@@ -334,7 +335,7 @@ bool process_command(bool is_err)
     }
 
     enum CmdTypeT        {  MANAGE,  RUN,  STOP,  KILL,  LIST,  SHUTDOWN,  STDIN,  DEBUG, WINSZ  } cmd;
-    const char* cmds[] = { "manage","run","stop","kill","list","shutdown","stdin","debug", "winsz" };
+    const char* cmds[] = { "manage","run","stop","kill","list","shutdown","stdin","debug","winsz" };
 
     /* Determine the command */
     if ((int)(cmd = (CmdTypeT) eis.decodeAtomIndex(cmds, command)) < 0) {
