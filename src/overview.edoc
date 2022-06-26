@@ -441,6 +441,40 @@ Got: {stdout,26143,<<"baz\nbar\nfoo\n">>}
 % Execute a command with a pty
 38> exec:run("echo hello", [sync, stdout, pty]).
 {ok,[{stdout,[<<"hello">>,<<"\r\n">>]}]}
+
+% Execute a command with pty echo
+39> {ok, P0, I0} = exec:run("cat", [stdin, stdout, {stderr, stdout}, pty, pty_echo]).
+{ok,<0.162.0>,17086}
+40> exec:send(I0, <<"hello">>).
+ok
+41> flush().
+Shell got {stdout,17086,<<"hello">>}
+ok
+42> exec:send(I0, <<"\n">>).
+ok
+43> flush().
+Shell got {stdout,17086,<<"\r\n">>}
+Shell got {stdout,17086,<<"hello\r\n">>}
+ok
+44> exec:send(I, <<3>>).
+ok
+45> flush().
+Shell got {stdout,17086,<<"^C">>}
+Shell got {'DOWN',17086,process,<0.162.0>,{exit_status,2}}
+ok
+
+% Execute a command with custom pty options
+46> {ok, P1, I1} = exec:run("cat", [stdin, stdout, {stderr, stdout}, {pty, [{vintr, 2}]}, monitor]).
+{ok,<0.199.0>,16662}
+47> exec:send(I1, <<3>>).
+ok
+48> flush().
+ok
+49> exec:send(I1, <<2>>).
+ok
+50> flush().
+Shell got {'DOWN',16662,process,<0.199.0>,{exit_status,2}}
+ok
 '''
  
 === Kill a process group at process exit ===
@@ -449,13 +483,13 @@ Got: {stdout,26143,<<"baz\nbar\nfoo\n">>}
 % equal to the OS pid of that process (value = GID). The next two commands
 % are assigned to the same process group GID. As soon as the P0 process exits
 % P1 and P2 will also get terminated by signal 15 (SIGTERM):
-39> {ok, P0, GID} = exec:run("sleep 10",  [{group, 0},   kill_group]).
+51> {ok, P2, GID} = exec:run("sleep 10",  [{group, 0},   kill_group]).
 {ok,<0.37.0>,25306}
-40> {ok, P1,   _} = exec:run("sleep 15",  [{group, GID}, monitor]).
+52> {ok, P3,   _} = exec:run("sleep 15",  [{group, GID}, monitor]).
 {ok,<0.39.0>,25307}
-41> {ok, P2,   _} = exec:run("sleep 15",  [{group, GID}, monitor]).
+53> {ok, P4,   _} = exec:run("sleep 15",  [{group, GID}, monitor]).
 {ok,<0.41.0>,25308}
-42> flush().
+54> flush().
 Shell got {'DOWN',25307,process,<0.39.0>,{exit_status,15}}
 Shell got {'DOWN',25308,process,<0.41.0>,{exit_status,15}}
 ok

@@ -151,6 +151,7 @@ typedef std::pair<pid_t, ei::TimeVal>           KillPidInfoT;
 typedef std::map <kill_cmd_pid_t, KillPidInfoT> MapKillPidT;
 typedef std::map<std::string, std::string>      MapEnv;
 typedef MapEnv::iterator                        MapEnvIterator;
+typedef std::map<std::string, int>              MapPtyOpt;
 typedef std::map<pid_t, exit_status_t>          ExitedChildrenT;
 
 static const char* CS_DEV_NULL  = "/dev/null";
@@ -184,6 +185,7 @@ private:
     bool                    m_shell = true;
     bool                    m_pty = false;
     bool                    m_pty_echo = false;
+    MapPtyOpt               m_pty_opts;
     std::string             m_executable;
     CmdArgsList             m_cmd;
     std::string             m_cd;
@@ -248,6 +250,7 @@ public:
     bool                shell()         const { return m_shell; }
     bool                pty()           const { return m_pty; }
     bool                pty_echo()      const { return m_pty_echo; }
+    MapPtyOpt const&    pty_opts()      const { return m_pty_opts; }
     const char*   cd()                  const { return m_cd.c_str(); }
     MapEnv const& mapenv()              const { return m_env; }
     char* const*  env()                 const { return (char* const*)m_cenv; }

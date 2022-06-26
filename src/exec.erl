@@ -202,7 +202,7 @@
     | {stdout, stderr | output_dev_opt()}
     | {stderr, stdout | output_dev_opt()}
     | {stdout | stderr, string()|binary(), [output_file_opt()]}
-    | pty
+    | pty | {pty, list()}
     | pty_echo
     | debug | {debug, integer()}.
 %% Command options:
@@ -1226,6 +1226,14 @@ check_cmd_options([H|T], Pid, State, PortOpts, OtherOpts) when H=:=pty ->
     check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
 check_cmd_options([H|T], Pid, State, PortOpts, OtherOpts) when H=:=pty_echo ->
     check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
+check_cmd_options([{pty, Pty}=H|T], Pid, State, PortOpts, OtherOpts) when is_list(Pty) ->
+    case lists:filter(fun(S) when is_list(S); is_binary(S) -> false;
+                         ({S1,S2}) when (is_atom(S1) andalso is_integer(S2)) -> false;
+                         (_)       -> true
+                      end, Pty) of
+    [] -> check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+    L  -> throw({error, {invalid_pty_value, L}})
+    end;
 check_cmd_options([{stdin, I}=H|T], Pid, State, PortOpts, OtherOpts)
         when I=:=null; I=:=close; is_list(I); is_binary(I) ->
     check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
@@ -1333,7 +1341,8 @@ exec_test_() ->
             ?tt(test_kill_timeout()),
             ?tt(test_setpgid()),
             ?tt(test_pty()),
-            ?tt(test_pty_echo())
+            ?tt(test_pty_echo()),
+            ?tt(test_pty_opts())
         ]
     }.
 
@@ -1391,7 +1400,7 @@ test_sync() ->
 test_winsz() ->
     {ok, P, I} = exec:run(
         ["/bin/bash", "-i", "-c", "echo started; read x; echo LINES=$(tput lines) COLUMNS=$(tput cols)"],
-        [stdin, stdout, stderr, monitor, pty]),
+        [stdin, stdout, {stderr, stdout}, monitor, pty]),
     ?receiveMatch({stdout, I, <<"started\r\n">>}, 3000),
     ok = exec:winsz(I, 99, 88),
     ok = exec:send(I, <<"\n">>),
@@ -1543,8 +1552,13 @@ test_setpgid() ->
 test_pty() ->
     ?assertMatch({error,[{exit_status,256},{stdout,[<<"not a tty\n">>]}]},
         exec:run("tty", [stdin, stdout, sync])),
-    ?assertMatch({ok,[{stdout,[<<"/dev/pts/", _/binary>>|_]}]},
-        exec:run("tty", [stdin, stdout, pty, sync])),
+    ?assert(case exec:run("tty", [stdin, stdout, pty, sync]) of
+        {ok,[{stdout,[<<"/dev/pts/", _/binary>>|_]}]} ->
+            true;
+        {ok,[{stdout,[<<"/dev/ttys", _/binary>>|_]}]} ->
+            true;
+        _ -> false
+    end),
     {ok, P, I} = exec:run("/bin/bash --norc -i", [stdin, stdout, pty, monitor]),
     exec:send(I, <<"echo ok\n">>),
     receive
@@ -1559,34 +1573,82 @@ test_pty() ->
     ?receiveMatch({'DOWN', _, process, P, normal}, 1000).
 
 test_pty_echo() ->
-    % disable bash prompt using PS1
-    {ok, P, I} = exec:run("PS1=\"\" /bin/bash --norc -i", [
+    % without echo
+    {ok, _, I} = exec:run(["/bin/cat"], [
+        stdin,
+        stdout,
+        {stderr, stdout},
+        pty,
+        monitor
+    ]),
+    exec:send(I, <<"test\n">>),
+    ?receiveMatch({stdout, I, <<"test\r\n">>}, 1000),
+    exec:kill(I, 9),
+    % with echo
+    {ok, _, I2} = exec:run(["/bin/cat"], [
         stdin,
         stdout,
         {stderr, stdout},
         pty,
         pty_echo,
-        monitor,
-        % we set TERM to dumb to prevent strange
-        % bracketed paste mode characters from being inserted
-        % in echo responses
-        {env, [{<<"TERM">>, <<"dumb">>}]}
+        monitor
     ]),
-    % get the whole output
-    Accumulate = fun F(Acc) ->
-        receive
-        {stdout, I, Data} ->
-            F([Data|Acc]);
-        {'DOWN', _, process, P, normal} ->
-            {ok, lists:reverse(Acc)}
-        end
-    end,
-    exec:send(I, <<"echo ok\n">>),
-    exec:send(I, <<"exit\n">>),
-    {ok, Res} = Accumulate([]),
-    C = iolist_to_binary(Res),
-    % sometimes the binary has extra stuff in the beginning, e.g.
-    % <<"echo ok\r\nexit\r\necho ok\r\nok\r\nexit\r\nexit\r\n">>
-    % I'm not sure why...
-    ?assert(binary:match(C, <<"echo ok\r\nok\r\nexit\r\nexit\r\n">>) =/= nomatch).
+    exec:send(I2, <<"test\n">>),
+    ?receiveMatch({stdout, I2, <<"test\r\n">>}, 1000),
+    ?receiveMatch({stdout, I2, <<"test\r\n">>}, 1000).
+
+test_pty_opts() ->
+    ?assertMatch({error,[{exit_status,256},{stdout,[<<"not a tty\n">>]}]},
+        exec:run("tty", [stdin, stdout, sync])),
+    ?assert(case exec:run("tty", [stdin, stdout, {pty, []}, sync]) of
+        {ok,[{stdout,[<<"/dev/pts/", _/binary>>|_]}]} ->
+            true;
+        {ok,[{stdout,[<<"/dev/ttys", _/binary>>|_]}]} ->
+            true;
+        _ -> false
+    end),
+    % without echo
+    {ok, P, I} = exec:run(["/bin/cat"], [
+        stdin,
+        stdout,
+        {stderr, stdout},
+        {pty, [{echo, 0}]},
+        monitor
+    ]),
+    exec:send(I, <<"test\n">>),
+    ?receiveMatch({stdout, I, <<"test\r\n">>}, 1000),
+    exec:kill(I, 9),
+    ?receiveMatch({'DOWN', I, process, P, {exit_status, 9}}, 1000),
+    % with echo
+    {ok, P2, I2} = exec:run(["/bin/cat"], [
+        stdin,
+        stdout,
+        {stderr, stdout},
+        {pty, [{echo, 1}]},
+        monitor
+    ]),
+    exec:send(I2, <<"test\n">>),
+    ?receiveMatch({stdout, I2, <<"test\r\n">>}, 1000),
+    ?receiveMatch({stdout, I2, <<"test\r\n">>}, 1000),
+    % send ^C
+    exec:send(I2, <<3>>),
+    ?receiveMatch({stdout, I2, <<94, 67>>}, 1000),
+    ?receiveMatch({'DOWN', I2, process, P2, {exit_status, 2}}, 1000),
+    % vintr test
+    {ok, P3, I3} = exec:run(["/bin/cat"], [
+        stdin,
+        stdout,
+        {stderr, stdout},
+        {pty, [{echo, 1}, {vintr, 2}]},
+        monitor
+    ]),
+    exec:send(I3, <<"test">>),
+    ?receiveMatch({stdout, I3, <<"test">>}, 1000),
+    % send ^C (3), should not interrupt
+    exec:send(I3, <<3>>),
+    ?receiveMatch({stdout, I3, <<94, 67>>}, 1000),
+    % send ^B (2), should interrupt
+    exec:send(I3, <<2>>),
+    ?receiveMatch({stdout, I3, <<94, 66>>}, 1000),
+    ?receiveMatch({'DOWN', I3, process, P3, {exit_status, 2}}, 1000).
 -endif.
