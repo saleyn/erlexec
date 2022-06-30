@@ -164,7 +164,7 @@ int set_nice(pid_t pid,int nice, std::string& error)
 {
     ei::StringBuffer<128> err;
 
-    if (nice != INT_MAX && setpriority(PRIO_PROCESS, pid, nice) < 0) {
+    if (nice != std::numeric_limits<int>::max() && setpriority(PRIO_PROCESS, pid, nice) < 0) {
         err.write("Cannot set priority of pid %d to %d", pid, nice);
         error = err.c_str();
         DEBUG(debug, "%s", error.c_str());
@@ -413,7 +413,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
     if (debug || op.dbg()) {
         DEBUG(true, "Starting %s: '%s' (euid=%d)",
               op.is_kill_cmd() ? "custom kill command" : "child",
-              op.cmd().front().c_str(), op.user() == INT_MAX ? -1 : op.user());
+              op.cmd().front().c_str(), op.user() == std::numeric_limits<int>::max() ? -1 : op.user());
         if (!op.is_kill_cmd())
             fprintf(stderr,
                     "  child  = (stdin=%s, stdout=%s, stderr=%s)\r\n"
@@ -552,7 +552,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
         }
 
         #if !defined(__CYGWIN__) && !defined(__WIN32)
-        if (op.user() != INT_MAX &&
+        if (op.user() != std::numeric_limits<int>::max() &&
             #ifdef HAVE_SETRESUID
                 setresuid(op.user(), op.user(), op.user())
             #elif HAVE_SETREUID
@@ -567,7 +567,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
         }
         #endif
 
-        if (op.group() != INT_MAX && setpgid(0, op.group()) < 0) {
+        if (op.group() != std::numeric_limits<int>::max() && setpgid(0, op.group()) < 0) {
             err.write("Cannot set effective group to %d", op.group());
             perror(err.c_str());
             exit(EXIT_FAILURE);
@@ -638,7 +638,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
     // group ID to the same value immediately after a fork(), and the
     // parent ignores any occurrence of the EACCES error on the setpgid() call.
 
-    if (op.group() != INT_MAX) {
+    if (op.group() != std::numeric_limits<int>::max()) {
         pid_t gid = op.group() ? op.group() : pid;
         if (setpgid(pid, gid) == -1 && errno != EACCES)
             DEBUG(debug, "  Parent failed to set group of pid %d to %d: %s",
@@ -707,9 +707,9 @@ int stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify)
         kill_cmd.push_front(ci.kill_cmd.c_str());
         MapEnv env{{"CHILD_PID", std::to_string(ci.cmd_pid)}};
         CmdOptions co(kill_cmd, NULL, env,
-                      INT_MAX, // user
-                      INT_MAX, // nice
-                      INT_MAX, // group
+                      std::numeric_limits<int>::max(), // user
+                      std::numeric_limits<int>::max(), // nice
+                      std::numeric_limits<int>::max(), // group
                       true     // this is a custom kill command
                      );
 
@@ -876,7 +876,7 @@ int check_children(const TimeVal& now, bool& isTerminated, bool notify)
 
         if (i != children.end()) {
             for(int stream_id=STDOUT_FILENO; stream_id <= STDERR_FILENO; ++stream_id)
-                process_pid_output(i->second, stream_id, INT_MAX);
+                process_pid_output(i->second, stream_id, std::numeric_limits<int>::max());
             // Override status code if termination was requested by Erlang
             PidStatusT ps(it->first,
                 i->second.sigterm
@@ -885,7 +885,7 @@ int check_children(const TimeVal& now, bool& isTerminated, bool notify)
                     ? i->second.success_code // Override success status code
                     : it->second);
             // The process exited and it requires to kill all other processes in the group
-            if (i->second.kill_group && i->second.cmd_gid != INT_MAX && i->second.cmd_gid)
+            if (i->second.kill_group && i->second.cmd_gid != std::numeric_limits<int>::max() && i->second.cmd_gid)
                 erl_exec_kill(-(i->second.cmd_gid), SIGTERM, SRCLOC); // Kill all children in this group
 
             if (notify && send_pid_status_term(ps) < 0) {
@@ -1182,7 +1182,7 @@ int CmdOptions::ei_decode(bool getcmd)
     m_kill_cmd.clear();
     m_env.clear();
 
-    m_nice = INT_MAX;
+    m_nice = std::numeric_limits<int>::max();
 
     if (getcmd) {
         std::string s;

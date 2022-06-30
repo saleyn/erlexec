@@ -39,7 +39,6 @@ enum class FdType {
 #include <sys/wait.h>
 #include <sys/time.h>
 #include <sys/resource.h>
-#include <limits.h>
 #include <grp.h>
 #include <pwd.h>
 #include <fcntl.h>
@@ -216,11 +215,11 @@ private:
     }
 
 public:
-    explicit CmdOptions(int def_user=INT_MAX)
+    explicit CmdOptions(int def_user=std::numeric_limits<int>::max())
         : m_tmp(0, 256)
         , m_is_kill_cmd(false)
-        , m_nice(INT_MAX)
-        , m_group(INT_MAX), m_user(def_user)
+        , m_nice(std::numeric_limits<int>::max())
+        , m_group(std::numeric_limits<int>::max()), m_user(def_user)
     {
         init_streams();
     }
