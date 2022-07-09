@@ -62,7 +62,7 @@
 -export([
     start/0, start/1, start_link/1, run/2, run/3,
     run_link/2, run_link/3,
-    manage/2, send/2, winsz/3,
+    manage/2, send/2, winsz/3, pty_opts/2,
     which_children/0, kill/2,       setpgid/2, stop/1, stop_and_wait/2,
     ospid/1, pid/1,   status/1,     signal/1,  signal_to_int/1, debug/1
 ]).
@@ -202,7 +202,7 @@
     | {stdout, stderr | output_dev_opt()}
     | {stderr, stdout | output_dev_opt()}
     | {stdout | stderr, string()|binary(), [output_file_opt()]}
-    | pty
+    | pty | {pty, pty_opts()}
     | pty_echo
     | debug | {debug, integer()}.
 %% Command options:
@@ -329,6 +329,37 @@
 -type osgid() :: integer().
 %% Representation of OS group ID.
 -export_type([ospid/0, osgid/0]).
+
+-type tty_char() :: vintr | vquit | verase | vkill | veof | veol | veol2
+    | vstart | vstop | vsusp | vdsusp | vreprint | vwerase | vlnext
+    | vflush | vswtch | vstatus | vdiscard.
+-type tty_mode() :: ignpar | parmrk | inpck | istrip | inlcr | igncr | icrnl
+    | iuclc | ixon | ixany | ixoff | imaxbel | iutf8 | isig | icanon | xcase
+    | echo | echoe | echok | echonl | noflsh | tostop | iexten | echoctl
+    | echoke | pendin | opost | olcuc | onlcr | ocrnl | onocr | onlret
+    | cs7 | cs8 | parenb | parodd.
+-type tty_mode_arg() :: 0 | 1.
+-type tty_speed() :: tty_op_ispeed | tty_op_ospeed.
+-type pty_opt() :: {tty_char(), Arg::byte()}
+    | {tty_mode(), tty_mode_arg()}
+    | {tty_speed(), Speed::integer()}.
+%% Pty options, see:
+%% <ul>
+%%      <li>[https://man7.org/linux/man-pages/man3/termios.3.html]</li>
+%%      <li>[https://datatracker.ietf.org/doc/html/rfc4254#section-8]</li>
+%% </ul>
+%% <dl>
+%% <dt>{tty_char(), Arg}</dt>
+%%      <dd>A special character with value from 0 to 255</dd>
+%% <dt>{tty_mode(), tty_mode_arg()}</dt>
+%%      <dd>A tty mode with value 0 (disabled) or 1 (enabled)</dd>
+%% <dt>{tty_speed(), Speed}</dt>
+%%      <dd>Specify input or output baud rate. Probably not really
+%%          useful for pseudo terminals, but here for completeness.</dd>
+%% </dl>
+-type pty_opts() :: list(pty_opt()).
+%% List of pty options.
+-export_type([pty_opt/0, pty_opts/0]).
 
 %%-------------------------------------------------------------------------
 %% @doc Supervised start an external program manager.
@@ -533,12 +564,25 @@ send(OsPid, Data)
 %%
 %% @end
 %%-------------------------------------------------------------------------
--spec winsz(OsPid :: ospid() | pid(), integer(), integer()) -> ok.
+-spec winsz(OsPid :: ospid() | pid(), integer(), integer()) -> ok | {error, Reason::any()}.
 winsz(OsPid, Rows, Cols)
   when (is_integer(OsPid) orelse is_pid(OsPid)),
        is_integer(Rows),
        is_integer(Cols) ->
     gen_server:call(?MODULE, {port, {winsz, OsPid, Rows, Cols}}).
+
+%%-------------------------------------------------------------------------
+%% @doc Set the pty terminal options of the OS process identified by `OsPid'.
+%%
+%% The process must have been created with the `pty' option.
+%%
+%% @end
+%%-------------------------------------------------------------------------
+-spec pty_opts(OsPid :: ospid() | pid(), pty_opts()) -> ok | {error, Reason::any()}.
+pty_opts(OsPid, Opts)
+  when (is_integer(OsPid) orelse is_pid(OsPid)),
+       is_list(Opts) ->
+    gen_server:call(?MODULE, {port, {pty_opts, OsPid, Opts}}).
 
 %%-------------------------------------------------------------------------
 %% @doc Set debug level of the port process.
@@ -1162,12 +1206,21 @@ is_port_command({send, OsPid, Data}, _Pid, _State)
 is_port_command({winsz, Pid, Rows, Cols}, _Pid, _State)
   when is_pid(Pid), is_integer(Rows), is_integer(Cols) ->
     case ets:lookup(exec_mon, Pid) of
-    [{Pid, OsPid}]  -> {ok, {winsz, OsPid, Rows, Cols}};
+    [{Pid, OsPid}]  -> {ok, {winsz, OsPid, Rows, Cols}, undefined, undefined, []};
     []              -> throw({error, no_process})
     end;
 is_port_command({winsz, OsPid, Rows, Cols}, _Pid, _State)
   when is_integer(OsPid), is_integer(Rows), is_integer(Cols) ->
-    {ok, {winsz, OsPid, Rows, Cols}};
+    {ok, {winsz, OsPid, Rows, Cols}, undefined, undefined, []};
+is_port_command({pty_opts, Pid, Opts}, _Pid, _State)
+  when is_pid(Pid), is_list(Opts) ->
+    case ets:lookup(exec_mon, Pid) of
+    [{Pid, OsPid}]  -> {ok, {pty_opts, OsPid, Opts}, undefined, undefined, []};
+    []              -> throw({error, no_process})
+    end;
+is_port_command({pty_opts, OsPid, Opts}, _Pid, _State)
+  when is_integer(OsPid), is_list(Opts) ->
+    {ok, {pty_opts, OsPid, Opts}, undefined, undefined, []};
 is_port_command({kill, OsPid, Sig}=T, _Pid, _State) when is_integer(OsPid),is_integer(Sig) ->
     {ok, T, undefined, undefined, []};
 is_port_command({setpgid, OsPid, Gid}=T, _Pid, _State) when is_integer(OsPid),is_integer(Gid) ->
@@ -1226,6 +1279,14 @@ check_cmd_options([H|T], Pid, State, PortOpts, OtherOpts) when H=:=pty ->
     check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
 check_cmd_options([H|T], Pid, State, PortOpts, OtherOpts) when H=:=pty_echo ->
     check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
+check_cmd_options([{pty, Pty}=H|T], Pid, State, PortOpts, OtherOpts) when is_list(Pty) ->
+    case lists:filter(fun(S) when is_list(S); is_binary(S) -> false;
+                         ({S1,S2}) when (is_atom(S1) andalso is_integer(S2)) -> false;
+                         (_)       -> true
+                      end, Pty) of
+    [] -> check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+    L  -> throw({error, {invalid_pty_value, L}})
+    end;
 check_cmd_options([{stdin, I}=H|T], Pid, State, PortOpts, OtherOpts)
         when I=:=null; I=:=close; is_list(I); is_binary(I) ->
     check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
@@ -1333,7 +1394,9 @@ exec_test_() ->
             ?tt(test_kill_timeout()),
             ?tt(test_setpgid()),
             ?tt(test_pty()),
-            ?tt(test_pty_echo())
+            ?tt(test_pty_echo()),
+            ?tt(test_pty_opts()),
+            ?tt(test_dynamic_pty_opts())
         ]
     }.
 
@@ -1391,7 +1454,7 @@ test_sync() ->
 test_winsz() ->
     {ok, P, I} = exec:run(
         ["/bin/bash", "-i", "-c", "echo started; read x; echo LINES=$(tput lines) COLUMNS=$(tput cols)"],
-        [stdin, stdout, stderr, monitor, pty]),
+        [stdin, stdout, {stderr, stdout}, monitor, pty]),
     ?receiveMatch({stdout, I, <<"started\r\n">>}, 3000),
     ok = exec:winsz(I, 99, 88),
     ok = exec:send(I, <<"\n">>),
@@ -1543,10 +1606,16 @@ test_setpgid() ->
 test_pty() ->
     ?assertMatch({error,[{exit_status,256},{stdout,[<<"not a tty\n">>]}]},
         exec:run("tty", [stdin, stdout, sync])),
-    ?assertMatch({ok,[{stdout,[<<"/dev/pts/", _/binary>>|_]}]},
-        exec:run("tty", [stdin, stdout, pty, sync])),
+    ?assert(case exec:run("tty", [stdin, stdout, pty, sync]) of
+        {ok,[{stdout,[<<"/dev/pts/", _/binary>>|_]}]} ->
+            true;
+        % on macos, the pty has the format /dev/ttysXXX
+        {ok,[{stdout,[<<"/dev/ttys", _/binary>>|_]}]} ->
+            true;
+        _ -> false
+    end),
     {ok, P, I} = exec:run("/bin/bash --norc -i", [stdin, stdout, pty, monitor]),
-    exec:send(I, <<"echo ok\n">>),
+    ok = exec:send(I, <<"echo ok\n">>),
     receive
     {stdout, I, <<"echo ok\r\n">>} ->
         ?receiveMatch({stdout, I, <<"ok\r\n">>}, 1000);
@@ -1555,38 +1624,116 @@ test_pty() ->
     after 1000 ->
         ?assertMatch({stdout, I, <<"ok\r\n">>}, timeout)
     end,
-    exec:send(I, <<"exit\n">>),
+    ok = exec:send(I, <<"exit\n">>),
     ?receiveMatch({'DOWN', _, process, P, normal}, 1000).
 
 test_pty_echo() ->
-    % disable bash prompt using PS1
-    {ok, P, I} = exec:run("PS1=\"\" /bin/bash --norc -i", [
+    % without echo
+    {ok, _, I} = exec:run("echo started && cat", [
+        stdin,
+        stdout,
+        {stderr, stdout},
+        pty,
+        monitor
+    ]),
+    ?receiveMatch({stdout, I, <<"started\r\n">>}, 5000),
+    ok = exec:send(I, <<"test\n">>),
+    ?receiveMatch({stdout, I, <<"test\r\n">>}, 5000),
+    ok = exec:kill(I, 9),
+    % with echo
+    {ok, _, I2} = exec:run("echo started && cat", [
         stdin,
         stdout,
         {stderr, stdout},
         pty,
         pty_echo,
-        monitor,
-        % we set TERM to dumb to prevent strange
-        % bracketed paste mode characters from being inserted
-        % in echo responses
-        {env, [{<<"TERM">>, <<"dumb">>}]}
+        monitor
     ]),
-    % get the whole output
-    Accumulate = fun F(Acc) ->
-        receive
-        {stdout, I, Data} ->
-            F([Data|Acc]);
-        {'DOWN', _, process, P, normal} ->
-            {ok, lists:reverse(Acc)}
-        end
-    end,
-    exec:send(I, <<"echo ok\n">>),
-    exec:send(I, <<"exit\n">>),
-    {ok, Res} = Accumulate([]),
-    C = iolist_to_binary(Res),
-    % sometimes the binary has extra stuff in the beginning, e.g.
-    % <<"echo ok\r\nexit\r\necho ok\r\nok\r\nexit\r\nexit\r\n">>
-    % I'm not sure why...
-    ?assert(binary:match(C, <<"echo ok\r\nok\r\nexit\r\nexit\r\n">>) =/= nomatch).
+    ?receiveMatch({stdout, I2, <<"started\r\n">>}, 5000),
+    ok = exec:send(I2, <<"test\n">>),
+    ?receiveMatch({stdout, I2, <<"test\r\n">>}, 5000),
+    ?receiveMatch({stdout, I2, <<"test\r\n">>}, 5000).
+
+test_pty_opts() ->
+    ?assertMatch({error,[{exit_status,256},{stdout,[<<"not a tty\n">>]}]},
+        exec:run("tty", [stdin, stdout, sync])),
+    ?assert(case exec:run("tty", [stdin, stdout, {pty, []}, sync]) of
+        {ok,[{stdout,[<<"/dev/pts/", _/binary>>|_]}]} ->
+            true;
+        {ok,[{stdout,[<<"/dev/ttys", _/binary>>|_]}]} ->
+            true;
+        _ -> false
+    end),
+    % without echo
+    {ok, P, I} = exec:run("echo started && cat", [
+        stdin,
+        stdout,
+        {stderr, stdout},
+        {pty, [{echo, 0}]},
+        monitor
+    ]),
+    ?receiveMatch({stdout, I, <<"started\r\n">>}, 5000),
+    ok = exec:send(I, <<"test\n">>),
+    ?receiveMatch({stdout, I, <<"test\r\n">>}, 5000),
+    ok = exec:kill(I, 9),
+    ?receiveMatch({'DOWN', I, process, P, {exit_status, 9}}, 5000),
+    % with echo
+    {ok, P2, I2} = exec:run("echo started && cat", [
+        stdin,
+        stdout,
+        {stderr, stdout},
+        {pty, [{echo, 1}]},
+        monitor
+    ]),
+    ?receiveMatch({stdout, I2, <<"started\r\n">>}, 5000),
+    ok = exec:send(I2, <<"test\n">>),
+    ?receiveMatch({stdout, I2, <<"test\r\n">>}, 5000),
+    ?receiveMatch({stdout, I2, <<"test\r\n">>}, 5000),
+    % send ^C
+    ok = exec:send(I2, <<3>>),
+    ?receiveMatch({stdout, I2, <<"^C">>}, 1000),
+    ?receiveMatch({'DOWN', I2, process, P2, {exit_status, 2}}, 5000),
+    % vintr test
+    {ok, P3, I3} = exec:run("echo started && cat", [
+        stdin,
+        stdout,
+        {stderr, stdout},
+        {pty, [{echo, 1}, {vintr, 2}]},
+        monitor
+    ]),
+    ?receiveMatch({stdout, I3, <<"started\r\n">>}, 5000),
+    ok = exec:send(I3, <<"test">>),
+    ?receiveMatch({stdout, I3, <<"test">>}, 5000),
+    % send ^C (3), should not interrupt
+    ok = exec:send(I3, <<3>>),
+    ?receiveMatch({stdout, I3, <<"^C">>}, 5000),
+    % send ^B (2), should interrupt
+    ok = exec:send(I3, <<2>>),
+    ?receiveMatch({stdout, I3, <<"^B">>}, 5000),
+    ?receiveMatch({'DOWN', I3, process, P3, {exit_status, 2}}, 5000).
+
+test_dynamic_pty_opts() ->
+    % without echo
+    {ok, P, I} = exec:run("echo started && cat", [
+        stdin,
+        stdout,
+        {stderr, stdout},
+        pty,
+        monitor
+    ]),
+    ?receiveMatch({stdout, I, <<"started\r\n">>}, 5000),
+    ok = exec:send(I, <<"test\n">>),
+    ?receiveMatch({stdout, I, <<"test\r\n">>}, 5000),
+    ok = exec:send(I, <<2>>),
+    ok = exec:send(I, <<"\n">>),
+    ?receiveMatch({stdout, I, <<2, 13, 10>>}, 5000),
+    % change echo to 1, interrupt to ^B
+    ok = exec:pty_opts(I, [{echo, 1}, {vintr, 2}]),
+    ok = exec:send(I, <<"test\n">>),
+    ?receiveMatch({stdout, I, <<"test\r\n">>}, 5000),
+    ?receiveMatch({stdout, I, <<"test\r\n">>}, 5000),
+    % send ^B
+    ok = exec:send(I, <<2>>),
+    ?receiveMatch({stdout, I, <<"^B">>}, 5000),
+    ?receiveMatch({'DOWN', I, process, P, {exit_status, 2}}, 5000).
 -endif.
