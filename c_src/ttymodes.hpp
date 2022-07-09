@@ -117,7 +117,7 @@ TTYMODE(PARODD,  c_cflag, "parodd")
 
 /* name, field, atom */
 #ifdef c_ispeed
-TTYSPEED(TTY_OP_ISPEED, c_ispeed, "tty_op_ispeed")
+TTYSPEED(TTY_OP_ISPEED, c_ispeed,   "tty_op_ispeed")
 #endif
 
 #ifdef __c_ispeed
@@ -125,7 +125,7 @@ TTYSPEED(TTY_OP_ISPEED, __c_ispeed, "tty_op_ispeed")
 #endif
 
 #ifdef c_ospeed
-TTYSPEED(TTY_OP_OSPEED, c_ospeed, "tty_op_ospeed")
+TTYSPEED(TTY_OP_OSPEED, c_ospeed,   "tty_op_ospeed")
 #endif
 
 #ifdef __c_ospeed

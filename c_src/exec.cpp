@@ -458,10 +458,10 @@ bool process_command(bool is_err)
             }
             MapChildrenT::iterator it = children.find(pid);
             if (it == children.end()) {
-                DEBUG(debug, "pid %ld doesn't exist", pid);
+                send_error_str(transId, false, "pid %ld doesn't exist", pid);
                 break;
             }
-            if (set_pid_winsz(it->second, rows, cols))
+            if (!set_pid_winsz(it->second, rows, cols))
                 send_ok(transId, -1);
             else
                 send_error_str(transId, false, "failed to set window size");
@@ -477,7 +477,7 @@ bool process_command(bool is_err)
 
             auto it = children.find(pid);
             if (it == children.end()) {
-                DEBUG(debug, "pid %ld doesn't exist", pid);
+                send_error_str(transId, false, "pid %ld doesn't exist", pid);
                 break;
             }
 
@@ -487,30 +487,29 @@ bool process_command(bool is_err)
                 break;
             }
 
-            CmdInfo& ci = it->second;
-            int& fd = ci.stream_fd[STDIN_FILENO];
+            CmdInfo&       ci = it->second;
+            int&           fd = ci.stream_fd[STDIN_FILENO];
             struct termios ios;
             tcgetattr(fd, &ios);
 
             for (int i=0; i < opt_env_sz; i++) {
-                int sz, type = eis.decodeType(sz);
-                bool res = false;
                 std::string key;
-                int val;
+                int         val;
 
-                if (type == etTuple && sz == 2) {
-                    eis.decodeTupleSize();
-                    if (!eis.decodeAtom(key) && !key.empty()) {
-                        if (!eis.decodeInt(val)) {
-                            res = true;
-                        }
-                    }
+                if (eis.decodeTupleSize() != 2 || eis.decodeAtom(key) < 0 || key.empty()) {
+                    send_error_str(transId, true, "badarg");
+                    return true;
+                }
+ 
+                if (!eis.decodeIntOrBool(val)) {
+                    send_error_str(transId, false, "bad value type of pty option %s", key.c_str());
+                    return true;
                 }
 
-                if (!res) {
-                    continue;
+                if (!set_pty_opt(&ios, key, val)) {
+                    send_error_str(transId, false, "invalid pty option %s", key.c_str());
+                    return true;
                 }
-                set_pty_opt(&ios, key, val);
             }
             eis.decodeListEnd();
 
@@ -531,7 +530,7 @@ bool process_command(bool is_err)
             if (arity != 3 || eis.decodeInt(pid) < 0 ||
                     (eis.decodeBinary(data) < 0 &&
                      (eis.decodeAtom(s) < 0 || !(eof = (s == "eof")))
-                     )) {
+                    )) {
                 send_error_str(transId, true, "badarg");
                 break;
             }
