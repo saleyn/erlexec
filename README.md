@@ -542,7 +542,7 @@ ok
 50> flush().
 Shell got {'DOWN',16662,process,<0.199.0>,{exit_status,2}}
 ok
-'''
+```
  
 ### Kill a process group at process exit
 ```erlang
