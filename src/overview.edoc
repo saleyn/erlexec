@@ -63,6 +63,9 @@ sudo setcap cap_setuid,cap_kill,cap_sys_nice+eip _build/default/lib/erlexec/priv
     or a custom function. When redirected to a file, the file can be
     open in append/truncate mode, and given creation access mask.</li>
 <li>Run interactive processes with psudo-terminal pty support.</li>
+<li>Support all PTY options defined in the
+    [section-8](https://datatracker.ietf.org/doc/html/rfc4254#section-8)
+    of the [RFC4254](https://datatracker.ietf.org/doc/html/rfc4254).</li>
 <li>Execute OS processes under different user credentials (using Linux
     capabilities).</li>
 </ol>

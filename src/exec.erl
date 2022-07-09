@@ -202,7 +202,7 @@
     | {stdout, stderr | output_dev_opt()}
     | {stderr, stdout | output_dev_opt()}
     | {stdout | stderr, string()|binary(), [output_file_opt()]}
-    | pty | {pty, list()}
+    | pty | {pty, pty_opts()}
     | pty_echo
     | debug | {debug, integer()}.
 %% Command options:
@@ -329,6 +329,37 @@
 -type osgid() :: integer().
 %% Representation of OS group ID.
 -export_type([ospid/0, osgid/0]).
+
+-type tty_char() :: vintr | vquit | verase | vkill | veof | veol | veol2
+    | vstart | vstop | vsusp | vdsusp | vreprint | vwerase | vlnext
+    | vflush | vswtch | vstatus | vdiscard.
+-type tty_mode() :: ignpar | parmrk | inpck | istrip | inlcr | igncr | icrnl
+    | iuclc | ixon | ixany | ixoff | imaxbel | iutf8 | isig | icanon | xcase
+    | echo | echoe | echok | echonl | noflsh | tostop | iexten | echoctl
+    | echoke | pendin | opost | olcuc | onlcr | ocrnl | onocr | onlret
+    | cs7 | cs8 | parenb | parodd.
+-type tty_mode_arg() :: 0 | 1.
+-type tty_speed() :: tty_op_ispeed | tty_op_ospeed.
+-type pty_opt() :: {tty_char(), Arg::byte()}
+    | {tty_mode(), tty_mode_arg()}
+    | {tty_speed(), Speed::integer()}.
+%% Pty options, see:
+%% <ul>
+%%      <li>[https://man7.org/linux/man-pages/man3/termios.3.html]</li>
+%%      <li>[https://datatracker.ietf.org/doc/html/rfc4254#section-8]</li>
+%% </ul>
+%% <dl>
+%% <dt>{tty_char(), Arg}</dt>
+%%      <dd>A special character with value from 0 to 255</dd>
+%% <dt>{tty_mode(), tty_mode_arg()}</dt>
+%%      <dd>A tty mode with value 0 (disabled) or 1 (enabled)</dd>
+%% <dt>{tty_speed(), Speed}</dt>
+%%      <dd>Specify input or output baud rate. Probably not really
+%%          useful for pseudo terminals, but here for completeness.</dd>
+%% </dl>
+-type pty_opts() :: list(pty_opt()).
+%% List of pty options.
+-export_type([pty_opt/0, pty_opts/0]).
 
 %%-------------------------------------------------------------------------
 %% @doc Supervised start an external program manager.
@@ -547,7 +578,7 @@ winsz(OsPid, Rows, Cols)
 %%
 %% @end
 %%-------------------------------------------------------------------------
--spec pty_opts(OsPid :: ospid() | pid(), list()) -> ok | {error, Reason::any()}.
+-spec pty_opts(OsPid :: ospid() | pid(), pty_opts()) -> ok | {error, Reason::any()}.
 pty_opts(OsPid, Opts)
   when (is_integer(OsPid) orelse is_pid(OsPid)),
        is_list(Opts) ->
