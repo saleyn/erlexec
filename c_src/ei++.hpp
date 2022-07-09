@@ -52,7 +52,7 @@
 #include <iostream>
 #include <sys/time.h>
 #include <sys/resource.h>
-#include <limits.h>
+#include <limits>
 #include <assert.h>
 
 #define NEW_FLOAT_EXT 'F'
@@ -68,7 +68,7 @@ namespace ei {
     /// @param <size> optional size of the <cmds> array.
     /// @return an offset <cmd> in the cmds array starting with <firstIdx> value. On failure
     ///         returns <firstIdx>-1.
-    int stringIndex(const char** cmds, const std::string& cmd, int firstIdx = 0, int size = INT_MAX);
+    int stringIndex(const char** cmds, const std::string& cmd, int firstIdx = 0, int size = std::numeric_limits<int>::max());
 
     /// Class for stack-based (and on-demand heap based) memory allocation
     /// of string buffers.  It's very efficient for strings not exceeding <N>

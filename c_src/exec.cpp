@@ -78,7 +78,7 @@ int   ei::max_fds;
 int   ei::dev_null;
 int   ei::sigchld_pipe[2] = { -1, -1 }; // Pipe for delivering sig child details
 
-static int run_as_euid    = INT_MAX;
+static int run_as_euid    = std::numeric_limits<int>::max();
 
 //-------------------------------------------------------------------------
 // Types & variables
