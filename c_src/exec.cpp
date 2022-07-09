@@ -334,7 +334,7 @@ bool process_command(bool is_err)
         return false;
     }
 
-    enum CmdTypeT        {  MANAGE,  RUN,  STOP,  KILL,  LIST,  SHUTDOWN,  STDIN,  DEBUG, WINSZ, PTYOPTS  } cmd;
+    enum CmdTypeT        {  MANAGE,  RUN,  STOP,  KILL,  LIST,  SHUTDOWN,  STDIN,  DEBUG,  WINSZ,  PTY_OPTS  } cmd;
     const char* cmds[] = { "manage","run","stop","kill","list","shutdown","stdin","debug","winsz","pty_opts" };
 
     /* Determine the command */
@@ -467,7 +467,7 @@ bool process_command(bool is_err)
                 send_error_str(transId, false, "failed to set window size");
             break;
         }
-        case PTYOPTS: {
+        case PTY_OPTS: {
             // {pty_opts, OsPid::integer(), pty_opts::list()}
             long pid;
             if (arity != 3 || eis.decodeInt(pid) < 0) {
