@@ -208,9 +208,17 @@ bool set_pty_opt(struct termios* tio, const std::string& key, int value) {
         return true;                                                           \
     }
 
-#define TTYSPEED(NAME, FIELD, STR_NAME)                                        \
-    if (key == STR_NAME) {                                                     \
-        if (tio) tio->FIELD = value;                                           \
+#define TTYSPEED(VALUE)                                                        \
+    if (key == "tty_op_ispeed" && value == VALUE) {                            \
+        if (tio) {                                                             \
+            return cfsetispeed(tio, value) == 0;                               \
+        }                                                                      \
+        return true;                                                           \
+    }                                                                          \
+    if (key == "tty_op_ospeed" && value == VALUE) {                            \
+        if (tio) {                                                             \
+            return cfsetospeed(tio, value) == 0;                               \
+        }                                                                      \
         return true;                                                           \
     }
 
