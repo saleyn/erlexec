@@ -184,7 +184,42 @@ bool set_pid_winsz(CmdInfo& ci, int rows, int cols)
     r = ioctl(fd, TIOCSWINSZ, &ws);
     DEBUG(debug, "TIOCSWINSZ rows=%d cols=%d ret=%d\n", rows, cols, r);
     
-    return true;
+    return r == 0;
+}
+
+//------------------------------------------------------------------------------
+bool set_pty_opt(struct termios *tio, std::string atom, int value) {
+#define TTYCHAR(NAME, VALUE)                                                   \
+    if (atom.compare(VALUE) == 0) {                                            \
+        DEBUG(debug, "set tty_char %s\r\n", #NAME);                            \
+        tio->c_cc[NAME] = value;                                               \
+        return true;                                                           \
+    }
+
+#define TTYMODE(NAME, FIELD, VALUE)                                            \
+    if (atom.compare(VALUE) == 0) {                                            \
+        if (value) {                                                           \
+            DEBUG(debug, "enable %s = %d\r\n", #NAME, value);                  \
+            tio->FIELD |= NAME;                                                \
+        } else {                                                               \
+            DEBUG(debug, "disable %s = %d\r\n", #NAME, value);                 \
+            tio->FIELD &= ~NAME;                                               \
+        }                                                                      \
+        return true;                                                           \
+    }
+
+#define TTYSPEED(NAME, FIELD, VALUE)                                           \
+    if (atom.compare(VALUE) == 0) {                                            \
+        tio->FIELD = value;                                                    \
+        return true;                                                           \
+    }
+
+#include "ttymodes.h"
+
+#undef TTYCHAR
+#undef TTYMODE
+#undef TTYSPEED
+    return false;
 }
 
 //------------------------------------------------------------------------------
@@ -497,6 +532,14 @@ pid_t start_child(CmdOptions& op, std::string& error)
                 ios.c_lflag &= ~(ECHO | ECHONL | ECHOE | ECHOK);
                 // We don't check if it succeeded because if the STDIN is not a terminal
                 // it won't be able to disable the ECHO anyway.
+                tcsetattr(STDIN_FILENO, TCSANOW, &ios);
+            }
+            if (!op.pty_opts().empty()) {
+                MapPtyOpt pty_opts = op.pty_opts();
+                struct termios ios;
+                tcgetattr(STDIN_FILENO, &ios);
+                for (auto it = pty_opts.begin(), end = pty_opts.end(); it != end; ++it)
+                    set_pty_opt(&ios, it->first, it->second);
                 tcsetattr(STDIN_FILENO, TCSANOW, &ios);
             }
 
@@ -1353,9 +1396,39 @@ int CmdOptions::ei_decode(bool getcmd)
                 break;
             }
 
-            case PTY:
+            case PTY: {
                 m_pty = true;
+                // pty | {pty, [{echo, 1}, ...]}
+                // see https://www.erlang.org/doc/man/ssh_connection.html#type-term_mode
+                int opt_env_sz = eis.decodeListSize();
+                if (opt_env_sz < 0) {
+                    // this is ok, we've got just the atom pty
+                    break;
+                }
+                for (int i=0; i < opt_env_sz; i++) {
+                    int sz, type = eis.decodeType(sz);
+                    bool res = false;
+                    std::string key;
+                    int val;
+
+                    if (type == etTuple && sz == 2) {
+                        eis.decodeTupleSize();
+                        if (!eis.decodeAtom(key) && !key.empty()) {
+                            if (!eis.decodeInt(val)) {
+                                res = true;
+                            }
+                        }
+                    }
+
+                    if (!res) {
+                        m_err << op << " - invalid pty argument #" << i;
+                        return -1;
+                    }
+                    m_pty_opts[key] = val;
+                }
+                eis.decodeListEnd();
                 break;
+            }
 
             case PTY_ECHO:
                 m_pty_echo = true;
