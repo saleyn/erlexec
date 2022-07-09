@@ -490,6 +490,9 @@ namespace ei {
         void encodeListEnd(int sz,int idx)  { ei_encode_list_header(&m_wbuf, &idx, sz); encodeListEnd(); }
 
         ErlTypeT decodeType(int& size)      { int t;  return (ErlTypeT)(ei_get_type(&m_rbuf, &m_rIdx, &t, &size) < 0 ? -1 : t); }
+
+        // TODO: change return types to boolean
+        
         int  decodeInt(int&  v)             { long l, ret = decodeInt(l); v = l; return ret; }
         int  decodeInt(long& v)             { return (ei_decode_long(&m_rbuf, &m_rIdx, &v) < 0) ? -1 : 0; }
         int  decodeUInt(unsigned int&  v)   { unsigned long l, ret = decodeUInt(l); v = l; return ret; }
@@ -504,6 +507,14 @@ namespace ei {
             else if (s == "true")  { a = true;  return 0; }
             else if (s == "false") { a = false; return 0; }
             else return -1;
+        }
+
+        bool decodeIntOrBool(int& v) {
+            bool b;
+            if (decodeInt(v))      return true;
+            if (decodeBool(b) < 0) return false;
+            v = b;
+            return true;
         }
 
         int  decodeString(std::string& a) {
