@@ -188,33 +188,33 @@ bool set_pid_winsz(CmdInfo& ci, int rows, int cols)
 }
 
 //------------------------------------------------------------------------------
-bool set_pty_opt(struct termios *tio, std::string atom, int value) {
-#define TTYCHAR(NAME, VALUE)                                                   \
-    if (atom.compare(VALUE) == 0) {                                            \
+bool set_pty_opt(struct termios* tio, const std::string& key, int value) {
+#define TTYCHAR(NAME, STR_NAME)                                                \
+    if (key == STR_NAME) {                                                     \
         DEBUG(debug, "set tty_char %s\r\n", #NAME);                            \
-        tio->c_cc[NAME] = value;                                               \
+        if (tio) tio->c_cc[NAME] = value;                                      \
         return true;                                                           \
     }
 
-#define TTYMODE(NAME, FIELD, VALUE)                                            \
-    if (atom.compare(VALUE) == 0) {                                            \
-        if (value) {                                                           \
-            DEBUG(debug, "enable %s = %d\r\n", #NAME, value);                  \
-            tio->FIELD |= NAME;                                                \
-        } else {                                                               \
-            DEBUG(debug, "disable %s = %d\r\n", #NAME, value);                 \
-            tio->FIELD &= ~NAME;                                               \
+#define TTYMODE(NAME, FIELD, STR_NAME)                                         \
+    if (key == STR_NAME) {                                                     \
+        DEBUG(debug, "tty mode %s %s\r\n", #NAME, value?"enabled":"disabled"); \
+        if (tio) {                                                             \
+            if (value)                                                         \
+                tio->FIELD |=  NAME;                                           \
+            else                                                               \
+                tio->FIELD &= ~NAME;                                           \
         }                                                                      \
         return true;                                                           \
     }
 
-#define TTYSPEED(NAME, FIELD, VALUE)                                           \
-    if (atom.compare(VALUE) == 0) {                                            \
-        tio->FIELD = value;                                                    \
+#define TTYSPEED(NAME, FIELD, STR_NAME)                                        \
+    if (key == STR_NAME) {                                                     \
+        if (tio) tio->FIELD = value;                                           \
         return true;                                                           \
     }
 
-#include "ttymodes.h"
+#include "ttymodes.hpp"
 
 #undef TTYCHAR
 #undef TTYMODE
@@ -1406,24 +1406,18 @@ int CmdOptions::ei_decode(bool getcmd)
                     break;
                 }
                 for (int i=0; i < opt_env_sz; i++) {
-                    int sz, type = eis.decodeType(sz);
-                    bool res = false;
                     std::string key;
-                    int val;
+                    int         val;
 
-                    if (type == etTuple && sz == 2) {
-                        eis.decodeTupleSize();
-                        if (!eis.decodeAtom(key) && !key.empty()) {
-                            if (!eis.decodeInt(val)) {
-                                res = true;
-                            }
-                        }
-                    }
-
-                    if (!res) {
-                        m_err << op << " - invalid pty argument #" << i;
+                    if (eis.decodeTupleSize() != 2 || eis.decodeAtom(key) < 0 || key.empty() ||
+                        !eis.decodeIntOrBool(val)  || !set_pty_opt(nullptr, key, val))
+                    {
+                        m_err << op << " - invalid pty argument ";
+                        if (!key.empty()) m_err << "'" << key << "'";
+                        else              m_err << "#" << i;
                         return -1;
                     }
+
                     m_pty_opts[key] = val;
                 }
                 eis.decodeListEnd();

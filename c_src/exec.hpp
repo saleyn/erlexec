@@ -371,7 +371,7 @@ int     set_euid(int userid);
 int     set_nice(pid_t pid,int nice, std::string& error);
 bool    process_sigchld();
 bool    set_pid_winsz(CmdInfo& ci, int rows, int cols);
-bool    set_pty_opt(struct termios *tio, std::string atom, int value);
+bool    set_pty_opt(struct termios* tio, const std::string& key, int value);
 bool    set_cloexec_flag(int fd, bool value);
 bool    process_pid_input(CmdInfo& ci);
 void    process_pid_output(CmdInfo& ci, int stream_id, int maxsize = 4096);
