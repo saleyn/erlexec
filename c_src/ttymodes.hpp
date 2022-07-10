@@ -115,19 +115,85 @@ TTYMODE(CS8,     c_cflag, "cs8")
 TTYMODE(PARENB,  c_cflag, "parenb")
 TTYMODE(PARODD,  c_cflag, "parodd")
 
-/* name, field, atom */
-#ifdef c_ispeed
-TTYSPEED(TTY_OP_ISPEED, c_ispeed,   "tty_op_ispeed")
+/* speed */
+#ifdef B0
+TTYSPEED(B0)
 #endif
-
-#ifdef __c_ispeed
-TTYSPEED(TTY_OP_ISPEED, __c_ispeed, "tty_op_ispeed")
+#ifdef B50
+TTYSPEED(B50)
 #endif
-
-#ifdef c_ospeed
-TTYSPEED(TTY_OP_OSPEED, c_ospeed,   "tty_op_ospeed")
+#ifdef B75
+TTYSPEED(B75)
 #endif
-
-#ifdef __c_ospeed
-TTYSPEED(TTY_OP_OSPEED, __c_ospeed, "tty_op_ospeed")
+#ifdef B110
+TTYSPEED(B110)
+#endif
+#ifdef B134
+TTYSPEED(B134)
+#endif
+#ifdef B150
+TTYSPEED(B150)
+#endif
+#ifdef B200
+TTYSPEED(B200)
+#endif
+#ifdef B300
+TTYSPEED(B300)
+#endif
+#ifdef B600
+TTYSPEED(B600)
+#endif
+#ifdef B1200
+TTYSPEED(B1200)
+#endif
+#ifdef B1800
+TTYSPEED(B1800)
+#endif
+#ifdef B2400
+TTYSPEED(B2400)
+#endif
+#ifdef B4800
+TTYSPEED(B4800)
+#endif
+#ifdef B9600
+TTYSPEED(B9600)
+#endif
+#ifdef B19200
+TTYSPEED(B19200)
+#endif
+#ifdef B38400
+TTYSPEED(B38400)
+#endif
+#ifdef B57600
+TTYSPEED(B57600)
+#endif
+#ifdef B115200
+TTYSPEED(B115200)
+#endif
+#ifdef B230400
+TTYSPEED(B230400)
+#endif
+#ifdef B460800
+TTYSPEED(B460800)
+#endif
+#ifdef B500000
+TTYSPEED(B500000)
+#endif
+#ifdef B576000
+TTYSPEED(B576000)
+#endif
+#ifdef B921600
+TTYSPEED(B921600)
+#endif
+#ifdef B1000000
+TTYSPEED(B1000000)
+#endif
+#ifdef B1152000
+TTYSPEED(B1152000)
+#endif
+#ifdef B1500000
+TTYSPEED(B1500000)
+#endif
+#ifdef B200000
+TTYSPEED(B2000000)
 #endif
