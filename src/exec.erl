@@ -330,6 +330,7 @@
 %% Representation of OS group ID.
 -export_type([ospid/0, osgid/0]).
 
+% keep these in sync with validate_pty_opt in exec_impl.cpp
 -type tty_char() ::
     vintr  | vquit  | verase  | vkill  | veof     | veol    | veol2  |
     vstart | vstop  | vsusp   | vdsusp | vreprint | vwerase | vlnext |
@@ -1689,8 +1690,15 @@ test_pty_opts() ->
     ]),
     ?receiveMatch({stdout, I2, <<"started\r\n">>}, 5000),
     ok = exec:send(I2, <<"test\n">>),
-    ?receiveMatch({stdout, I2, <<"test\r\n">>}, 5000),
-    ?receiveMatch({stdout, I2, <<"test\r\n">>}, 5000),
+    receive
+        {stdout, I2, <<"test\r\n">>} ->
+            % we received a single "test\r\n", expect it again (echo)
+            ?receiveMatch({stdout, I2, <<"test\r\n">>}, 5000);
+        {stdout, I2, <<"test\r\ntest\r\n">>} ->
+            ok
+    after
+        5000 -> ?assert(false)
+    end,
     % send ^C
     ok = exec:send(I2, <<3>>),
     ?receiveMatch({stdout, I2, <<"^C">>}, 1000),
@@ -1732,8 +1740,15 @@ test_dynamic_pty_opts() ->
     % change echo to 1, interrupt to ^B
     ok = exec:pty_opts(I, [{echo, 1}, {vintr, 2}]),
     ok = exec:send(I, <<"test\n">>),
-    ?receiveMatch({stdout, I, <<"test\r\n">>}, 5000),
-    ?receiveMatch({stdout, I, <<"test\r\n">>}, 5000),
+    receive
+        {stdout, I, <<"test\r\n">>} ->
+            % we received a single "test\r\n", expect it again (echo)
+            ?receiveMatch({stdout, I, <<"test\r\n">>}, 5000);
+        {stdout, I, <<"test\r\ntest\r\n">>} ->
+            ok
+    after
+        5000 -> ?assert(false)
+    end,
     % send ^B
     ok = exec:send(I, <<2>>),
     ?receiveMatch({stdout, I, <<"^B">>}, 5000),
