@@ -188,6 +188,36 @@ bool set_pid_winsz(CmdInfo& ci, int rows, int cols)
 }
 
 //------------------------------------------------------------------------------
+bool validate_pty_opt(const std::string& key, int value) {
+    // keep this in sync with the type definition in exec.erl
+    const std::string tty_chars[] = {
+        "vintr", "vquit", "verase", "vkill", "veof",
+        "veol", "veol2", "vstart", "vstop", "vsusp",
+        "vdsusp", "vreprint", "vwerase", "vlnext",
+        "vflush", "vswtch", "vstatus", "vdiscard"
+    };
+    const std::string tty_modes[] = {
+        "ignpar", "parmrk", "inpck", "istrip", "inlcr",
+        "igncr", "icrnl", "xcase", "iuclc", "ixon", "ixany",
+        "ixoff", "imaxbel", "iutf8", "isig", "icanon",
+        "echo", "echoe", "echok", "echonl", "noflsh",
+        "tostop", "iexten", "echoctl", "echoke", "pendin",
+        "opost", "olcuc", "onlcr", "ocrnl", "onocr",
+        "onlret", "cs7", "cs8", "parenb", "parodd"
+    };
+    // special characters must be between 0 and 255
+    if (std::find(std::begin(tty_chars), std::end(tty_chars), key) != std::end(tty_chars)) {
+        return value >= 0 && value <= 255;
+    }
+    // modes must be either enabled or disabled
+    if (std::find(std::begin(tty_modes), std::end(tty_modes), key) != std::end(tty_modes)) {
+        return value == 0 || value == 1;
+    }
+    // only valid remaining options are speed
+    return key == "tty_op_ispeed" || key == "tty_op_ospeed";
+}
+
+//------------------------------------------------------------------------------
 bool set_pty_opt(struct termios* tio, const std::string& key, int value) {
 #define TTYCHAR(NAME, STR_NAME)                                                \
     if (key == STR_NAME) {                                                     \
@@ -223,6 +253,17 @@ bool set_pty_opt(struct termios* tio, const std::string& key, int value) {
 #undef TTYCHAR
 #undef TTYMODE
 #undef TTYSPEED
+
+    // fallback for systems without pre-defined baud rates
+    if (key == "tty_op_ispeed") {
+        DEBUG(debug, "set tty_ispeed %d\r\n", value);
+        return !tio || cfsetispeed(tio, value) == 0;
+    }
+    if (key == "tty_op_ospeed") {
+        DEBUG(debug, "set tty_ospeed %d\r\n", value);
+        return !tio || cfsetospeed(tio, value) == 0;
+    }
+
     return false;
 }
 
@@ -1414,9 +1455,9 @@ int CmdOptions::ei_decode(bool getcmd)
                     int         val;
 
                     if (eis.decodeTupleSize() != 2 || eis.decodeAtom(key) < 0 || key.empty() ||
-                        !eis.decodeIntOrBool(val)  || !set_pty_opt(nullptr, key, val))
+                        !eis.decodeIntOrBool(val)  || !validate_pty_opt(key, val))
                     {
-                        m_err << op << " - invalid pty argument ";
+                        m_err << op << " - invalid pty argument or value ";
                         if (!key.empty()) m_err << "'" << key << "'";
                         else              m_err << "#" << i;
                         return -1;
