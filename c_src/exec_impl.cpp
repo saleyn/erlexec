@@ -223,6 +223,17 @@ bool set_pty_opt(struct termios* tio, const std::string& key, int value) {
 #undef TTYCHAR
 #undef TTYMODE
 #undef TTYSPEED
+
+    // fallback for systems without pre-defined baud rates
+    if (key == "tty_op_ispeed") {
+        DEBUG(debug, "set tty_ispeed %d\r\n", value);
+        return !tio || cfsetispeed(tio, value) == 0;
+    }
+    if (key == "tty_op_ospeed") {
+        DEBUG(debug, "set tty_ospeed %d\r\n", value);
+        return !tio || cfsetospeed(tio, value) == 0;
+    }
+
     return false;
 }
 
@@ -1414,9 +1425,9 @@ int CmdOptions::ei_decode(bool getcmd)
                     int         val;
 
                     if (eis.decodeTupleSize() != 2 || eis.decodeAtom(key) < 0 || key.empty() ||
-                        !eis.decodeIntOrBool(val)  || !set_pty_opt(nullptr, key, val))
+                        !eis.decodeIntOrBool(val))
                     {
-                        m_err << op << " - invalid pty argument ";
+                        m_err << op << " - invalid pty argument or value ";
                         if (!key.empty()) m_err << "'" << key << "'";
                         else              m_err << "#" << i;
                         return -1;
