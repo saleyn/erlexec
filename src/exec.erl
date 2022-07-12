@@ -1402,7 +1402,7 @@ check_pty_opt(_,             _) -> false.
 
 is_byte(V)  -> V >= 0 andalso V =< 255.
 is_mode(V)  -> is_boolean(V) orelse V==0 orelse V==1.
-is_speed(V) -> is_integer(Val) andalso Val >= 0.
+is_speed(V) -> is_integer(V) andalso V >= 0.
 
 next_trans(I) when I =< 134217727 ->
     I+1;
