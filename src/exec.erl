@@ -1339,73 +1339,70 @@ check_pty_opts(Pty) when is_list(Pty) ->
     L  -> throw({error, {invalid_pty_value, L}})
     end.
 
-check_pty_opt(Key, Val) ->
-    if
-        % special characters
-        Key =:= vintr;
-        Key =:= vquit;
-        Key =:= verase;
-        Key =:= vkill;
-        Key =:= veof;
-        Key =:= veol;
-        Key =:= veol2;
-        Key =:= vstart;
-        Key =:= vstop;
-        Key =:= vsusp;
-        Key =:= vdsusp;
-        Key =:= vreprint;
-        Key =:= vwerase;
-        Key =:= vlnext;
-        Key =:= vflush;
-        Key =:= vswtch;
-        Key =:= vstatus;
-        Key =:= vdiscard ->
-            Val >= 0 andalso Val =< 255;
-        % modes
-        Key =:= ignpar;
-        Key =:= parmrk;
-        Key =:= inpck;
-        Key =:= istrip;
-        Key =:= inlcr;
-        Key =:= igncr;
-        Key =:= icrnl;
-        Key =:= xcase;
-        Key =:= iuclc;
-        Key =:= ixon;
-        Key =:= ixany;
-        Key =:= ixoff;
-        Key =:= imaxbel;
-        Key =:= iutf8;
-        Key =:= isig;
-        Key =:= icanon;
-        Key =:= echo;
-        Key =:= echoe;
-        Key =:= echok;
-        Key =:= echonl;
-        Key =:= noflsh;
-        Key =:= tostop;
-        Key =:= iexten;
-        Key =:= echoctl;
-        Key =:= echoke;
-        Key =:= pendin;
-        Key =:= opost;
-        Key =:= olcuc;
-        Key =:= onlcr;
-        Key =:= ocrnl;
-        Key =:= onocr;
-        Key =:= onlret;
-        Key =:= cs7;
-        Key =:= cs8;
-        Key =:= parenb;
-        Key =:= parodd ->
-            Val =:= 0 orelse Val =:= 1 orelse Val =:= true orelse Val =:= false;
-        % speed
-        Key =:= tty_op_ispeed; Key =:= tty_op_ospeed ->
-            is_integer(Val) andalso Val >= 0;
-        % invalid
-        true ->
-            false
-    end.
+%% special characters
+check_pty_opt(vintr,    V) -> is_byte(V);
+check_pty_opt(vquit,    V) -> is_byte(V);
+check_pty_opt(verase,   V) -> is_byte(V);
+check_pty_opt(vkill,    V) -> is_byte(V);
+check_pty_opt(veof,     V) -> is_byte(V);
+check_pty_opt(veol,     V) -> is_byte(V);
+check_pty_opt(veol2,    V) -> is_byte(V);
+check_pty_opt(vstart,   V) -> is_byte(V);
+check_pty_opt(vstop,    V) -> is_byte(V);
+check_pty_opt(vsusp,    V) -> is_byte(V);
+check_pty_opt(vdsusp,   V) -> is_byte(V);
+check_pty_opt(vreprint, V) -> is_byte(V);
+check_pty_opt(vwerase,  V) -> is_byte(V);
+check_pty_opt(vlnext,   V) -> is_byte(V);
+check_pty_opt(vflush,   V) -> is_byte(V);
+check_pty_opt(vswtch,   V) -> is_byte(V);
+check_pty_opt(vstatus,  V) -> is_byte(V);
+check_pty_opt(vdiscard, V) -> is_byte(V);
+%% modes
+check_pty_opt(ignpar,   V) -> is_mode(V);
+check_pty_opt(parmrk,   V) -> is_mode(V);
+check_pty_opt(inpck,    V) -> is_mode(V);
+check_pty_opt(istrip,   V) -> is_mode(V);
+check_pty_opt(inlcr,    V) -> is_mode(V);
+check_pty_opt(igncr,    V) -> is_mode(V);
+check_pty_opt(icrnl,    V) -> is_mode(V);
+check_pty_opt(xcase,    V) -> is_mode(V);
+check_pty_opt(iuclc,    V) -> is_mode(V);
+check_pty_opt(ixon,     V) -> is_mode(V);
+check_pty_opt(ixany,    V) -> is_mode(V);
+check_pty_opt(ixoff,    V) -> is_mode(V);
+check_pty_opt(imaxbel,  V) -> is_mode(V);
+check_pty_opt(iutf8,    V) -> is_mode(V);
+check_pty_opt(isig,     V) -> is_mode(V);
+check_pty_opt(icanon,   V) -> is_mode(V);
+check_pty_opt(echo,     V) -> is_mode(V);
+check_pty_opt(echoe,    V) -> is_mode(V);
+check_pty_opt(echok,    V) -> is_mode(V);
+check_pty_opt(echonl,   V) -> is_mode(V);
+check_pty_opt(noflsh,   V) -> is_mode(V);
+check_pty_opt(tostop,   V) -> is_mode(V);
+check_pty_opt(iexten,   V) -> is_mode(V);
+check_pty_opt(echoctl,  V) -> is_mode(V);
+check_pty_opt(echoke,   V) -> is_mode(V);
+check_pty_opt(pendin,   V) -> is_mode(V);
+check_pty_opt(opost,    V) -> is_mode(V);
+check_pty_opt(olcuc,    V) -> is_mode(V);
+check_pty_opt(onlcr,    V) -> is_mode(V);
+check_pty_opt(ocrnl,    V) -> is_mode(V);
+check_pty_opt(onocr,    V) -> is_mode(V);
+check_pty_opt(onlret,   V) -> is_mode(V);
+check_pty_opt(cs7,      V) -> is_mode(V);
+check_pty_opt(cs8,      V) -> is_mode(V);
+check_pty_opt(parenb,   V) -> is_mode(V);
+check_pty_opt(parodd,   V) -> is_mode(V);
+% speed
+check_pty_opt(tty_op_ispeed, V) -> is_speed(V);
+check_pty_opt(tty_op_ospeed, V) -> is_speed(V);
+check_pty_opt(_,             _) -> false.
+
+is_byte(V)  -> V >= 0 andalso V =< 255.
+is_mode(V)  -> is_boolean(V) orelse V==0 orelse V==1.
+is_speed(V) -> is_integer(Val) andalso Val >= 0.
 
 next_trans(I) when I =< 134217727 ->
     I+1;
