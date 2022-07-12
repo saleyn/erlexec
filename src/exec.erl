@@ -1443,7 +1443,8 @@ exec_test_() ->
             Opts =
                 case os:getenv("TEST_USER") of
                     false -> [];
-                    User  -> [root, {limit_users, [User]}, {user, User}]
+                    User  -> 
+                        [root, {limit_users, [User]}, {user, User}]
                 end,
             {ok, Pid} = exec:start([{debug, 0}] ++ Opts),
             Pid
