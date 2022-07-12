@@ -176,12 +176,22 @@ int set_nice(pid_t pid,int nice, std::string& error)
 //------------------------------------------------------------------------------
 bool set_pid_winsz(CmdInfo& ci, int rows, int cols)
 {
-    int& fd = ci.stream_fd[STDIN_FILENO];
-    int r;
+    int&   fd = ci.stream_fd[STDIN_FILENO];
+
     struct winsize ws;
-    ws.ws_row = rows;
-    ws.ws_col = cols;
-    r = ioctl(fd, TIOCSWINSZ, &ws);
+    ws.ws_row =  rows;
+    ws.ws_col =  cols;
+
+    int r = ioctl(fd, TIOCSWINSZ, &ws);
+
+	if (r == -1 || ws.ws_row == 0 || ws.ws_col == 0) {
+		int tty = open("/dev/tty", O_RDONLY);
+		if (tty != -1) {
+			r = ioctl(tty, TIOCGWINSZ, &ws);
+			close(tty);
+		}
+	}
+
     DEBUG(debug, "TIOCSWINSZ rows=%d cols=%d ret=%d\n", rows, cols, r);
     
     return r == 0;

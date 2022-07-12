@@ -18,11 +18,11 @@ jobs:
       matrix:
         os: [ linux ]
         compiler:
-          - { compiler: GNU-10,  CC: gcc-10,   CXX: g++-10 }
+          - { compiler: GNU-12,  CC: gcc-12,   CXX: g++-12 }
           - { compiler: GNU-11,  CC: gcc-11,   CXX: g++-11 }
-          - { compiler: LLVM-10, CC: clang-11, CXX: clang++-11 }
+          - { compiler: LLVM-12, CC: clang-12, CXX: clang++-12 }
           - { compiler: LLVM-11, CC: clang-11, CXX: clang++-11 }
-        otp: ["24.1", "24.2"]
+        otp: ["24.2", "25.0.2"]
 
     steps:
     - uses: actions/checkout@v2
@@ -39,8 +39,8 @@ jobs:
       matrix:
         os: [ macos-latest ]
         compiler:
-          - { compiler: XCode,   CC: cc, CXX: c++ }
-        otp: ["24.1", "24.2"]
+          - { compiler: XCode, CC: cc, CXX: c++ }
+        otp: ["24.2", "25.0.2"]
     steps:
       - uses: actions/checkout@v2
       - name: Install Base Dependencies
@@ -60,8 +60,6 @@ jobs:
         run: |
           erl -eval '{ok, Version} = file:read_file(filename:join([code:root_dir(), "releases", erlang:system_info(otp_release), "OTP_VERSION"])), io:format("Version=~s\n", [Version]), halt().' -noshell;
           make
-      - name: Test
-        run: make test
 
 #  windows-msys2:
 #    name: OTP ${{ matrix.otp }} ${{ matrix.os }}.${{ matrix.msys2.msystem }}.${{ matrix.compiler.compiler }}

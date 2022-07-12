@@ -593,18 +593,22 @@ void initialize(int userid, bool use_alt_fds, bool is_root, bool requested_root)
     // only users from the `{limit_users, Users}` list are permitted
     // to be effective users.
 
-    if (is_root && userid == 0 && !requested_root) {
-        DEBUG(true, "Not allowed to run as root without setting effective user (-user option)!");
-        exit(4);
-    } else if (!is_root && userid == 0 && requested_root) {
-        DEBUG(true, "Requested to run as root (-user root), but effective user is not root!");
-        exit(4);
-    } else if (!is_root && userid > 0 && int(geteuid()) != userid) {
-        DEBUG(true, "Cannot switch effective user to euid=%d", userid);
-        exit(4);
-    } else if (!getenv("SHELL") || strcmp(getenv("SHELL"), "") == 0) {
-        DEBUG(true, "SHELL environment variable not set!");
-        exit(4);
+    // Use the ERLEXEC_ALLOW_ROOT_USER option for CI testing
+    auto permit = getenv("ERLEXEC_ALLOW_ROOT_USER");
+    if (!permit || (strcmp("true", permit) != 0 && strcmp("1", permit) != 0)) {
+        if (is_root && userid == 0 && !requested_root) {
+            DEBUG(true, "Not allowed to run as root without setting effective user (-user option)!");
+            exit(4);
+        } else if (!is_root && userid == 0 && requested_root) {
+            DEBUG(true, "Requested to run as root (-user root), but effective user is not root!");
+            exit(4);
+        } else if (!is_root && userid > 0 && int(geteuid()) != userid) {
+            DEBUG(true, "Cannot switch effective user to euid=%d", userid);
+            exit(4);
+        } else if (!getenv("SHELL") || strcmp(getenv("SHELL"), "") == 0) {
+            DEBUG(true, "SHELL environment variable not set!");
+            exit(4);
+        }
     }
 
     // (is_root && requested_root && userid > 0)
