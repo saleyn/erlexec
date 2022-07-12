@@ -1217,12 +1217,14 @@ is_port_command({winsz, OsPid, Rows, Cols}, _Pid, _State)
     {ok, {winsz, OsPid, Rows, Cols}, undefined, undefined, []};
 is_port_command({pty_opts, Pid, Opts}, _Pid, _State)
   when is_pid(Pid), is_list(Opts) ->
+    ok = check_pty_opts(Opts),
     case ets:lookup(exec_mon, Pid) of
     [{Pid, OsPid}]  -> {ok, {pty_opts, OsPid, Opts}, undefined, undefined, []};
     []              -> throw({error, no_process})
     end;
 is_port_command({pty_opts, OsPid, Opts}, _Pid, _State)
   when is_integer(OsPid), is_list(Opts) ->
+    ok = check_pty_opts(Opts),
     {ok, {pty_opts, OsPid, Opts}, undefined, undefined, []};
 is_port_command({kill, OsPid, Sig}=T, _Pid, _State) when is_integer(OsPid),is_integer(Sig) ->
     {ok, T, undefined, undefined, []};
@@ -1283,12 +1285,8 @@ check_cmd_options([H|T], Pid, State, PortOpts, OtherOpts) when H=:=pty ->
 check_cmd_options([H|T], Pid, State, PortOpts, OtherOpts) when H=:=pty_echo ->
     check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
 check_cmd_options([{pty, Pty}=H|T], Pid, State, PortOpts, OtherOpts) when is_list(Pty) ->
-    case lists:filter(fun({K,V}) when is_atom(K), (is_integer(V) orelse is_boolean(V)) -> false;
-                         (_) -> true
-                      end, Pty) of
-    [] -> check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
-    L  -> throw({error, {invalid_pty_value, L}})
-    end;
+    ok = check_pty_opts(Pty),
+    check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
 check_cmd_options([{stdin, I}=H|T], Pid, State, PortOpts, OtherOpts)
         when I=:=null; I=:=close; is_list(I); is_binary(I) ->
     check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
@@ -1332,6 +1330,79 @@ check_cmd_options([Other|_], _Pid, _State, _PortOpts, _OtherOpts) ->
     throw({error, {invalid_option, Other}});
 check_cmd_options([], _Pid, _State, PortOpts, OtherOpts) ->
     {PortOpts, OtherOpts}.
+
+check_pty_opts(Pty) when is_list(Pty) ->
+    case lists:filter(fun({K,V}) when is_atom(K), (is_integer(V) orelse is_boolean(V)) -> not check_pty_opt(K, V);
+                         (_) -> true
+                      end, Pty) of
+    [] -> ok;
+    L  -> throw({error, {invalid_pty_value, L}})
+    end.
+
+%% special characters
+check_pty_opt(vintr,    V) -> is_byte(V);
+check_pty_opt(vquit,    V) -> is_byte(V);
+check_pty_opt(verase,   V) -> is_byte(V);
+check_pty_opt(vkill,    V) -> is_byte(V);
+check_pty_opt(veof,     V) -> is_byte(V);
+check_pty_opt(veol,     V) -> is_byte(V);
+check_pty_opt(veol2,    V) -> is_byte(V);
+check_pty_opt(vstart,   V) -> is_byte(V);
+check_pty_opt(vstop,    V) -> is_byte(V);
+check_pty_opt(vsusp,    V) -> is_byte(V);
+check_pty_opt(vdsusp,   V) -> is_byte(V);
+check_pty_opt(vreprint, V) -> is_byte(V);
+check_pty_opt(vwerase,  V) -> is_byte(V);
+check_pty_opt(vlnext,   V) -> is_byte(V);
+check_pty_opt(vflush,   V) -> is_byte(V);
+check_pty_opt(vswtch,   V) -> is_byte(V);
+check_pty_opt(vstatus,  V) -> is_byte(V);
+check_pty_opt(vdiscard, V) -> is_byte(V);
+%% modes
+check_pty_opt(ignpar,   V) -> is_mode(V);
+check_pty_opt(parmrk,   V) -> is_mode(V);
+check_pty_opt(inpck,    V) -> is_mode(V);
+check_pty_opt(istrip,   V) -> is_mode(V);
+check_pty_opt(inlcr,    V) -> is_mode(V);
+check_pty_opt(igncr,    V) -> is_mode(V);
+check_pty_opt(icrnl,    V) -> is_mode(V);
+check_pty_opt(xcase,    V) -> is_mode(V);
+check_pty_opt(iuclc,    V) -> is_mode(V);
+check_pty_opt(ixon,     V) -> is_mode(V);
+check_pty_opt(ixany,    V) -> is_mode(V);
+check_pty_opt(ixoff,    V) -> is_mode(V);
+check_pty_opt(imaxbel,  V) -> is_mode(V);
+check_pty_opt(iutf8,    V) -> is_mode(V);
+check_pty_opt(isig,     V) -> is_mode(V);
+check_pty_opt(icanon,   V) -> is_mode(V);
+check_pty_opt(echo,     V) -> is_mode(V);
+check_pty_opt(echoe,    V) -> is_mode(V);
+check_pty_opt(echok,    V) -> is_mode(V);
+check_pty_opt(echonl,   V) -> is_mode(V);
+check_pty_opt(noflsh,   V) -> is_mode(V);
+check_pty_opt(tostop,   V) -> is_mode(V);
+check_pty_opt(iexten,   V) -> is_mode(V);
+check_pty_opt(echoctl,  V) -> is_mode(V);
+check_pty_opt(echoke,   V) -> is_mode(V);
+check_pty_opt(pendin,   V) -> is_mode(V);
+check_pty_opt(opost,    V) -> is_mode(V);
+check_pty_opt(olcuc,    V) -> is_mode(V);
+check_pty_opt(onlcr,    V) -> is_mode(V);
+check_pty_opt(ocrnl,    V) -> is_mode(V);
+check_pty_opt(onocr,    V) -> is_mode(V);
+check_pty_opt(onlret,   V) -> is_mode(V);
+check_pty_opt(cs7,      V) -> is_mode(V);
+check_pty_opt(cs8,      V) -> is_mode(V);
+check_pty_opt(parenb,   V) -> is_mode(V);
+check_pty_opt(parodd,   V) -> is_mode(V);
+% speed
+check_pty_opt(tty_op_ispeed, V) -> is_speed(V);
+check_pty_opt(tty_op_ospeed, V) -> is_speed(V);
+check_pty_opt(_,             _) -> false.
+
+is_byte(V)  -> V >= 0 andalso V =< 255.
+is_mode(V)  -> is_boolean(V) orelse V==0 orelse V==1.
+is_speed(V) -> is_integer(V) andalso V >= 0.
 
 next_trans(I) when I =< 134217727 ->
     I+1;
@@ -1689,8 +1760,15 @@ test_pty_opts() ->
     ]),
     ?receiveMatch({stdout, I2, <<"started\r\n">>}, 5000),
     ok = exec:send(I2, <<"test\n">>),
-    ?receiveMatch({stdout, I2, <<"test\r\n">>}, 5000),
-    ?receiveMatch({stdout, I2, <<"test\r\n">>}, 5000),
+    receive
+        {stdout, I2, <<"test\r\n">>} ->
+            % we received a single "test\r\n", expect it again (echo)
+            ?receiveMatch({stdout, I2, <<"test\r\n">>}, 5000);
+        {stdout, I2, <<"test\r\ntest\r\n">>} ->
+            ok
+    after
+        5000 -> ?assert(false)
+    end,
     % send ^C
     ok = exec:send(I2, <<3>>),
     ?receiveMatch({stdout, I2, <<"^C">>}, 1000),
@@ -1712,7 +1790,25 @@ test_pty_opts() ->
     % send ^B (2), should interrupt
     ok = exec:send(I3, <<2>>),
     ?receiveMatch({stdout, I3, <<"^B">>}, 5000),
-    ?receiveMatch({'DOWN', I3, process, P3, {exit_status, 2}}, 5000).
+    ?receiveMatch({'DOWN', I3, process, P3, {exit_status, 2}}, 5000),
+    % opts validation
+    ?assertMatch(
+        {error,{invalid_pty_value,[{vintr,false},
+                                   {tty_op_ispeed,-1},
+                                   {invalid,1}]}},
+        exec:run("echo not ok", [
+            sync,
+            stdin,
+            stdout,
+            {pty, [
+                {echo, true},
+                {echoke, 0},
+                {echoe, false},
+                {vintr, false},
+                {verase, 13},
+                {tty_op_ispeed, -1},
+                {invalid, 1}
+            ]}])).
 
 test_dynamic_pty_opts() ->
     % without echo
@@ -1731,9 +1827,30 @@ test_dynamic_pty_opts() ->
     ?receiveMatch({stdout, I, <<2, 13, 10>>}, 5000),
     % change echo to 1, interrupt to ^B
     ok = exec:pty_opts(I, [{echo, 1}, {vintr, 2}]),
+    % opts validation
+    ?assertMatch(
+        {error,{invalid_pty_value,[{vintr,false},
+                                   {tty_op_ispeed,-1},
+                                   {invalid,1}]}},
+        exec:pty_opts(I, [
+            {echo, true},
+            {echoke, 0},
+            {echoe, false},
+            {vintr, false},
+            {verase, 13},
+            {tty_op_ispeed, -1},
+            {invalid, 1}
+        ])),
     ok = exec:send(I, <<"test\n">>),
-    ?receiveMatch({stdout, I, <<"test\r\n">>}, 5000),
-    ?receiveMatch({stdout, I, <<"test\r\n">>}, 5000),
+    receive
+        {stdout, I, <<"test\r\n">>} ->
+            % we received a single "test\r\n", expect it again (echo)
+            ?receiveMatch({stdout, I, <<"test\r\n">>}, 5000);
+        {stdout, I, <<"test\r\ntest\r\n">>} ->
+            ok
+    after
+        5000 -> ?assert(false)
+    end,
     % send ^B
     ok = exec:send(I, <<2>>),
     ?receiveMatch({stdout, I, <<"^B">>}, 5000),
