@@ -330,7 +330,6 @@
 %% Representation of OS group ID.
 -export_type([ospid/0, osgid/0]).
 
-% keep these in sync with validate_pty_opt in exec_impl.cpp
 -type tty_char() ::
     vintr  | vquit  | verase  | vkill  | veof     | veol    | veol2  |
     vstart | vstop  | vsusp   | vdsusp | vreprint | vwerase | vlnext |
@@ -1218,12 +1217,14 @@ is_port_command({winsz, OsPid, Rows, Cols}, _Pid, _State)
     {ok, {winsz, OsPid, Rows, Cols}, undefined, undefined, []};
 is_port_command({pty_opts, Pid, Opts}, _Pid, _State)
   when is_pid(Pid), is_list(Opts) ->
+    ok = check_pty_opts(Opts),
     case ets:lookup(exec_mon, Pid) of
     [{Pid, OsPid}]  -> {ok, {pty_opts, OsPid, Opts}, undefined, undefined, []};
     []              -> throw({error, no_process})
     end;
 is_port_command({pty_opts, OsPid, Opts}, _Pid, _State)
   when is_integer(OsPid), is_list(Opts) ->
+    ok = check_pty_opts(Opts),
     {ok, {pty_opts, OsPid, Opts}, undefined, undefined, []};
 is_port_command({kill, OsPid, Sig}=T, _Pid, _State) when is_integer(OsPid),is_integer(Sig) ->
     {ok, T, undefined, undefined, []};
@@ -1284,12 +1285,8 @@ check_cmd_options([H|T], Pid, State, PortOpts, OtherOpts) when H=:=pty ->
 check_cmd_options([H|T], Pid, State, PortOpts, OtherOpts) when H=:=pty_echo ->
     check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
 check_cmd_options([{pty, Pty}=H|T], Pid, State, PortOpts, OtherOpts) when is_list(Pty) ->
-    case lists:filter(fun({K,V}) when is_atom(K), (is_integer(V) orelse is_boolean(V)) -> false;
-                         (_) -> true
-                      end, Pty) of
-    [] -> check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
-    L  -> throw({error, {invalid_pty_value, L}})
-    end;
+    ok = check_pty_opts(Pty),
+    check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
 check_cmd_options([{stdin, I}=H|T], Pid, State, PortOpts, OtherOpts)
         when I=:=null; I=:=close; is_list(I); is_binary(I) ->
     check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
@@ -1333,6 +1330,82 @@ check_cmd_options([Other|_], _Pid, _State, _PortOpts, _OtherOpts) ->
     throw({error, {invalid_option, Other}});
 check_cmd_options([], _Pid, _State, PortOpts, OtherOpts) ->
     {PortOpts, OtherOpts}.
+
+check_pty_opts(Pty) when is_list(Pty) ->
+    case lists:filter(fun({K,V}) when is_atom(K), (is_integer(V) orelse is_boolean(V)) -> not check_pty_opt(K, V);
+                         (_) -> true
+                      end, Pty) of
+    [] -> ok;
+    L  -> throw({error, {invalid_pty_value, L}})
+    end.
+
+check_pty_opt(Key, Val) ->
+    if
+        % special characters
+        Key =:= vintr;
+        Key =:= vquit;
+        Key =:= verase;
+        Key =:= vkill;
+        Key =:= veof;
+        Key =:= veol;
+        Key =:= veol2;
+        Key =:= vstart;
+        Key =:= vstop;
+        Key =:= vsusp;
+        Key =:= vdsusp;
+        Key =:= vreprint;
+        Key =:= vwerase;
+        Key =:= vlnext;
+        Key =:= vflush;
+        Key =:= vswtch;
+        Key =:= vstatus;
+        Key =:= vdiscard ->
+            Val >= 0 andalso Val =< 255;
+        % modes
+        Key =:= ignpar;
+        Key =:= parmrk;
+        Key =:= inpck;
+        Key =:= istrip;
+        Key =:= inlcr;
+        Key =:= igncr;
+        Key =:= icrnl;
+        Key =:= xcase;
+        Key =:= iuclc;
+        Key =:= ixon;
+        Key =:= ixany;
+        Key =:= ixoff;
+        Key =:= imaxbel;
+        Key =:= iutf8;
+        Key =:= isig;
+        Key =:= icanon;
+        Key =:= echo;
+        Key =:= echoe;
+        Key =:= echok;
+        Key =:= echonl;
+        Key =:= noflsh;
+        Key =:= tostop;
+        Key =:= iexten;
+        Key =:= echoctl;
+        Key =:= echoke;
+        Key =:= pendin;
+        Key =:= opost;
+        Key =:= olcuc;
+        Key =:= onlcr;
+        Key =:= ocrnl;
+        Key =:= onocr;
+        Key =:= onlret;
+        Key =:= cs7;
+        Key =:= cs8;
+        Key =:= parenb;
+        Key =:= parodd ->
+            Val =:= 0 orelse Val =:= 1 orelse Val =:= true orelse Val =:= false;
+        % speed
+        Key =:= tty_op_ispeed; Key =:= tty_op_ospeed ->
+            is_integer(Val) andalso Val >= 0;
+        % invalid
+        true ->
+            false
+    end.
 
 next_trans(I) when I =< 134217727 ->
     I+1;
@@ -1720,7 +1793,25 @@ test_pty_opts() ->
     % send ^B (2), should interrupt
     ok = exec:send(I3, <<2>>),
     ?receiveMatch({stdout, I3, <<"^B">>}, 5000),
-    ?receiveMatch({'DOWN', I3, process, P3, {exit_status, 2}}, 5000).
+    ?receiveMatch({'DOWN', I3, process, P3, {exit_status, 2}}, 5000),
+    % opts validation
+    ?assertMatch(
+        {error,{invalid_pty_value,[{vintr,false},
+                                   {tty_op_ispeed,-1},
+                                   {invalid,1}]}},
+        exec:run("echo not ok", [
+            sync,
+            stdin,
+            stdout,
+            {pty, [
+                {echo, true},
+                {echoke, 0},
+                {echoe, false},
+                {vintr, false},
+                {verase, 13},
+                {tty_op_ispeed, -1},
+                {invalid, 1}
+            ]}])).
 
 test_dynamic_pty_opts() ->
     % without echo
@@ -1739,6 +1830,20 @@ test_dynamic_pty_opts() ->
     ?receiveMatch({stdout, I, <<2, 13, 10>>}, 5000),
     % change echo to 1, interrupt to ^B
     ok = exec:pty_opts(I, [{echo, 1}, {vintr, 2}]),
+    % opts validation
+    ?assertMatch(
+        {error,{invalid_pty_value,[{vintr,false},
+                                   {tty_op_ispeed,-1},
+                                   {invalid,1}]}},
+        exec:pty_opts(I, [
+            {echo, true},
+            {echoke, 0},
+            {echoe, false},
+            {vintr, false},
+            {verase, 13},
+            {tty_op_ispeed, -1},
+            {invalid, 1}
+        ])),
     ok = exec:send(I, <<"test\n">>),
     receive
         {stdout, I, <<"test\r\n">>} ->

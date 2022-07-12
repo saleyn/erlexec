@@ -506,11 +506,6 @@ bool process_command(bool is_err)
                     return true;
                 }
 
-                if (!validate_pty_opt(key, val)) {
-                    send_error_str(transId, false, "invalid pty option %s or value", key.c_str());
-                    return true;
-                }
-
                 if (!set_pty_opt(&ios, key, val)) {
                     send_error_str(transId, false, "failed to set pty option %s", key.c_str());
                     return true;
