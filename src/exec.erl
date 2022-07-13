@@ -1430,13 +1430,13 @@ print(Stream, OsPid, Data) ->
             A -> ok;
             _ -> ?debugMsg(
                     io_lib:format(
-                        "==> TEST ~s FAILED!!!\n", [?FUNCTION_NAME])),
+                        "==> TEST ~s FAILED (line: ~w)!!!\n", [?FUNCTION_NAME, ?LINE])),
                  ?assertMatch(A,B)
         end
     end)()).
 
 -define(receiveBytes(A, Timeout),
-    check_receive(A, A, [], Timeout, ?FUNCTION_NAME)).
+    check_receive(A, A, [], Timeout, ?FUNCTION_NAME, ?LINE)).
 
 -define(receivePattern(A, Timeout),
     (fun() ->
@@ -1456,7 +1456,7 @@ print(Stream, OsPid, Data) ->
 
 -define(tt(F), {timeout, 20, ?_test(F)}).
 
-check_receive({Stream, Pid, Bin} = A, Orig, Got, Timeout, TestName)
+check_receive({Stream, Pid, Bin} = A, Orig, Got, Timeout, TestName, Line)
         when is_atom(Stream), is_integer(Pid), is_binary(Bin) ->
     receive
         A ->
@@ -1465,25 +1465,35 @@ check_receive({Stream, Pid, Bin} = A, Orig, Got, Timeout, TestName)
             Len = byte_size(B),
             case Bin of
                 <<C:Len/binary, Rest/binary>> when C == B ->
-                    check_receive({Stream, Pid, Rest}, Orig, [B|Got], Timeout, TestName);
-                _ ->
-                    ?debugMsg(io_lib:format("==> TEST ~s FAILED!!!\n", [TestName]))
-            end
+                    check_receive({Stream, Pid, Rest}, Orig, [B|Got], Timeout, TestName, Line);
+                Other ->
+                    ?debugMsg(io_lib:format("==> TEST ~s FAILED (line: ~w)!!!\n",
+                                            [TestName, Line])),
+                    erlang:error(#{error    => unexpected_bytes,
+                                   expected => Orig,
+                                   got      => lists:reverse([Other|Got]),
+                                   test     => TestName,
+                                   line     => Line})
+                end
     after Timeout ->
         case flush() of
             [] ->
                 ?debugMsg(io_lib:format(
-                    "==> TEST ~s FAILED!!!\n", [TestName])),
+                    "==> TEST ~s FAILED (line: ~w)!!!\n", [TestName, Line])),
                 erlang:error(#{error    => timeout,
                                expected => Orig,
-                               got      => lists:reverse(Got)});
+                               got      => lists:reverse(Got),
+                               test     => TestName,
+                               line     => Line});
             LL ->
                 R = lists:reverse(Got) ++ lists:reverse(LL),
                 ?debugMsg(io_lib:format(
-                    "==> TEST ~s FAILED!!!\n", [TestName])),
+                    "==> TEST ~s FAILED (line: ~w)!!!\n", [TestName, Line])),
                 erlang:error(#{error    => unexpected_messages,
                                expected => Orig,
-                               got      => R})
+                               got      => R,
+                               test     => TestName,
+                               line     => Line})
         end
     end.
 
