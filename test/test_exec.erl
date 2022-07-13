@@ -41,6 +41,8 @@ run(Count) ->
 run(Count, Timeout) ->
     run(Count, Timeout, 1000).
 
+run(0, _Timeout, _DelayMS) ->
+  {ok,[{io_ops,0},{success,0}]};
 run(Count, Timeout, DelayMS) when is_integer(Count), is_integer(Timeout), is_integer(DelayMS) ->
     %application:ensure_started(erlexec),
     io:format(standard_error, "\n==> Test Concurrency: ~w\n", [Count]),
