@@ -1284,7 +1284,8 @@ check_cmd_options([H|T], Pid, State, PortOpts, OtherOpts) when H=:=pty ->
     check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
 check_cmd_options([H|T], Pid, State, PortOpts, OtherOpts) when H=:=pty_echo ->
     check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
-check_cmd_options([{winsz, {Rows, Cols}}=H|T], Pid, State, PortOpts, OtherOpts) when is_integer(Rows), Rows >= 0, is_integer(Cols), Cols >= 0 ->
+check_cmd_options([{winsz, {Rows, Cols}}=H|T], Pid, State, PortOpts, OtherOpts)
+        when is_integer(Rows), Rows >= 0, is_integer(Cols), Cols >= 0 ->
     check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
 check_cmd_options([{pty, Pty}=H|T], Pid, State, PortOpts, OtherOpts) when is_list(Pty) ->
     ok = check_pty_opts(Pty),
