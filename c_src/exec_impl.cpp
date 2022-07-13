@@ -181,13 +181,14 @@ bool set_winsz(int fd, int rows, int cols) {
 
     int r = ioctl(fd, TIOCSWINSZ, &ws);
 
-	if (r == -1 || ws.ws_row == 0 || ws.ws_col == 0) {
-		int tty = open("/dev/tty", O_RDONLY);
-		if (tty != -1) {
-			r = ioctl(tty, TIOCGWINSZ, &ws);
-			close(tty);
-		}
-	}
+    if (r == -1 || ws.ws_row == 0 || ws.ws_col == 0) {
+        int tty = open("/dev/tty", O_RDONLY);
+        DEBUG(debug, "TIOCSWINSZ rows=%d cols=%d tty=%d ret=%d", ws.ws_row, ws.ws_col, r, tty);
+        if (tty != -1) {
+            r = ioctl(tty, TIOCGWINSZ, &ws);
+            close(tty);
+        }
+    }
 
     DEBUG(debug, "TIOCSWINSZ rows=%d cols=%d ret=%d\n", rows, cols, r);
 
