@@ -1714,7 +1714,7 @@ test_executable() ->
                  [sync, {executable, "/bin/echo"}, stdout, stderr])),
     
     % Cmd given as a unicode string
-    File = "/tmp/тест-эрл",
+    File = unicode:characters_to_binary("/tmp/тест-эрл"),
     try
         ok = file:write_file(File, "#!/bin/bash\necho ok\n"),
         ok = file:change_mode(File, 8#755),
@@ -1723,7 +1723,7 @@ test_executable() ->
            exec:run(File, [sync, stdout, stderr])),
         ?AssertMatch(
            {ok, [{stdout,[<<"ok\n">>]}]},
-           exec:run(["/bin/bash", "-c", File], [sync, stdout, stderr]))
+           exec:run([<<"/bin/bash">>, <<"-c">>, File], [sync, stdout, stderr]))
     after
         ok = file:delete(File)
     end.
