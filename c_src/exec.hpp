@@ -204,6 +204,8 @@ private:
     int                     m_std_stream_fd[3];
     int                     m_std_stream_mode[3];
     int                     m_debug = 0;
+    int                     m_winsz_rows;
+    int                     m_winsz_cols;
 
     void init_streams() {
         for (int i=STDIN_FILENO; i <= STDERR_FILENO; i++) {
@@ -243,13 +245,14 @@ public:
         m_cenv = NULL;
     }
 
-    std::string         error()         const { return m_err.str();  }
-    const std::string&  executable()    const { return m_executable; }
-    const CmdArgsList&  cmd()           const { return m_cmd; }
-    bool                shell()         const { return m_shell; }
-    bool                pty()           const { return m_pty; }
-    bool                pty_echo()      const { return m_pty_echo; }
-    MapPtyOpt const&    pty_opts()      const { return m_pty_opts; }
+    std::string          error()        const { return m_err.str();  }
+    const std::string&   executable()   const { return m_executable; }
+    const CmdArgsList&   cmd()          const { return m_cmd; }
+    bool                 shell()        const { return m_shell; }
+    bool                 pty()          const { return m_pty; }
+    bool                 pty_echo()     const { return m_pty_echo; }
+    MapPtyOpt const&     pty_opts()     const { return m_pty_opts; }
+    std::tuple<int, int> winsz()        const { return std::make_tuple(m_winsz_rows, m_winsz_cols); }
     const char*   cd()                  const { return m_cd.c_str(); }
     MapEnv const& mapenv()              const { return m_env; }
     char* const*  env()                 const { return (char* const*)m_cenv; }

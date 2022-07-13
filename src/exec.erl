@@ -1284,6 +1284,8 @@ check_cmd_options([H|T], Pid, State, PortOpts, OtherOpts) when H=:=pty ->
     check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
 check_cmd_options([H|T], Pid, State, PortOpts, OtherOpts) when H=:=pty_echo ->
     check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
+check_cmd_options([{winsz, {Rows, Cols}}=H|T], Pid, State, PortOpts, OtherOpts) when is_integer(Rows), Rows >= 0, is_integer(Cols), Cols >= 0 ->
+    check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
 check_cmd_options([{pty, Pty}=H|T], Pid, State, PortOpts, OtherOpts) when is_list(Pty) ->
     ok = check_pty_opts(Pty),
     check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
@@ -1533,7 +1535,16 @@ test_winsz() ->
     ok = exec:winsz(I, 99, 88),
     ok = exec:send(I, <<"\n">>),
     ?receiveMatch({stdout, I, <<"LINES=99 COLUMNS=88\r\n">>}, 3000),
-    ?receiveMatch({'DOWN', _, process, P, normal}, 5000).
+    ?receiveMatch({'DOWN', _, process, P, normal}, 5000),
+    % can set size on run
+    Rows = max(10, rand:uniform(100)),
+    Cols = max(10, rand:uniform(100)),
+    {ok,[{stdout,[ActRows]}]} =
+        exec:run("tput lines", [sync, stdin, stdout, pty, {winsz, {Rows, Cols}}]),
+    {ok,[{stdout,[ActCols]}]} =
+        exec:run("tput cols", [sync, stdin, stdout, pty, {winsz, {Rows, Cols}}]),
+    ?assert(binary_to_integer(string:trim(ActRows)) =:= Rows),
+    ?assert(binary_to_integer(string:trim(ActCols)) =:= Cols).
 
 test_stdin() ->
     {ok, P, I} = exec:run("read x; echo \"Got: $x\"", [stdin, stdout, monitor]),

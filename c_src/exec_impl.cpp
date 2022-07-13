@@ -174,10 +174,7 @@ int set_nice(pid_t pid,int nice, std::string& error)
 }
 
 //------------------------------------------------------------------------------
-bool set_pid_winsz(CmdInfo& ci, int rows, int cols)
-{
-    int&   fd = ci.stream_fd[STDIN_FILENO];
-
+bool set_winsz(int fd, int rows, int cols) {
     struct winsize ws;
     ws.ws_row =  rows;
     ws.ws_col =  cols;
@@ -193,8 +190,15 @@ bool set_pid_winsz(CmdInfo& ci, int rows, int cols)
 	}
 
     DEBUG(debug, "TIOCSWINSZ rows=%d cols=%d ret=%d\n", rows, cols, r);
-    
+
     return r == 0;
+}
+
+//------------------------------------------------------------------------------
+bool set_pid_winsz(CmdInfo& ci, int rows, int cols)
+{
+    int&   fd = ci.stream_fd[STDIN_FILENO];
+    return set_winsz(fd, rows, cols);
 }
 
 //------------------------------------------------------------------------------
@@ -566,6 +570,12 @@ pid_t start_child(CmdOptions& op, std::string& error)
                 for (auto it = pty_opts.begin(), end = pty_opts.end(); it != end; ++it)
                     set_pty_opt(&ios, it->first, it->second);
                 tcsetattr(STDIN_FILENO, TCSANOW, &ios);
+            }
+            std::tuple<int, int> winsz = op.winsz();
+            int rows = std::get<0>(winsz);
+            int cols = std::get<1>(winsz);
+            if (rows && cols) {
+                set_winsz(STDIN_FILENO, rows, cols);
             }
 
             // Make the current process a new session leader
@@ -1244,14 +1254,14 @@ int CmdOptions::ei_decode(bool getcmd)
         PTY,        SUCCESS_EXIT_CODE, CD,     ENV,
         EXECUTABLE, KILL,              KILL_TIMEOUT,
         KILL_GROUP, NICE,              USER,    GROUP,
-        DEBUG_OPT,  PTY_ECHO
+        DEBUG_OPT,  PTY_ECHO,          WINSZ
     } opt;
     const char* opts[] = {
         "stdin",      "stdout",            "stderr",
         "pty",        "success_exit_code", "cd", "env",
         "executable", "kill",              "kill_timeout",
         "kill_group", "nice",              "user",  "group",
-        "debug",      "pty_echo"
+        "debug",      "pty_echo",          "winsz"
     };
 
     bool seen_opt[sizeof(opts) / sizeof(char*)] = {false};
@@ -1451,6 +1461,19 @@ int CmdOptions::ei_decode(bool getcmd)
 
             case PTY_ECHO:
                 m_pty_echo = true;
+                break;
+
+            case WINSZ:
+                type = eis.decodeType(arity);
+                if (type == etTuple) {
+                    if (eis.decodeTupleSize() != 2 || eis.decodeInt(m_winsz_rows) < 0 || eis.decodeInt(m_winsz_cols) < 0) {
+                        m_err << op << " - invalid winsz";
+                        return -1;
+                    }
+                } else {
+                    m_err << op << " - invalid winsz";
+                    return -1;
+                }
                 break;
 
             case SUCCESS_EXIT_CODE:
