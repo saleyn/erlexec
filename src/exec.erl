@@ -1436,6 +1436,9 @@ print(Stream, OsPid, Data) ->
     end)()).
 
 -define(receiveMatch(A, Timeout),
+    check_receive(A, A, [], Timeout, ?FUNCTION_NAME)).
+
+-define(receivePattern(A, Timeout),
     (fun() ->
         receive
             A -> true
@@ -1443,17 +1446,46 @@ print(Stream, OsPid, Data) ->
             case flush() of
                 [] -> ?AssertMatch(A, timeout);
                 LL ->
-                    R = lists:reverse(LL),
                     ?debugMsg(io_lib:format(
-                        "==> TEST ~s: unexpected message(s): ~p\n",
-                        [?FUNCTION_NAME, R])),
+                        "==> TEST ~s FAILED!!!\n", [?FUNCTION_NAME])),
                     erlang:error(#{error => unexpected_messages,
-                                   msgs  => R})
+                                   msgs  => lists:reverse(LL)})
             end
         end
     end)()).
 
 -define(tt(F), {timeout, 20, ?_test(F)}).
+
+check_receive({Stream, Pid, Bin} = A, Orig, Got, Timeout, TestName)
+        when is_atom(Stream), is_integer(Pid), is_binary(Bin) ->
+    receive
+        A ->
+            true;
+        {Stream, Pid, B} when is_binary(B) ->
+            Len = byte_size(B),
+            case Bin of
+                <<C:Len/binary, Rest/binary>> when C == B ->
+                    check_receive({Stream, Pid, Rest}, Orig, [B|Got], Timeout, TestName);
+                _ ->
+                    ?debugMsg(io_lib:format("==> TEST ~s FAILED!!!\n", [TestName]))
+            end
+    after Timeout ->
+        case flush() of
+            [] ->
+                ?debugMsg(io_lib:format(
+                    "==> TEST ~s FAILED!!!\n", [TestName])),
+                erlang:error(#{error    => timeout,
+                               expected => Orig,
+                               got      => lists:reverse(Got)});
+            LL ->
+                R = lists:reverse(Got) ++ lists:reverse(LL),
+                ?debugMsg(io_lib:format(
+                    "==> TEST ~s FAILED!!!\n", [TestName])),
+                erlang:error(#{error    => unexpected_messages,
+                               expected => Orig,
+                               got      => R})
+        end
+    end.
 
 flush() ->
     receive
@@ -1552,7 +1584,7 @@ test_root() ->
 
 test_monitor() ->
     {ok, P, _} = exec:run("echo ok", [{stdout, null}, monitor]),
-    ?receiveMatch({'DOWN', _, process, P, normal}, 5000).
+    ?receivePattern({'DOWN', _, process, P, normal}, 5000).
 
 test_sync() ->
     ?AssertMatch({ok, [{stdout, [<<"Test\n">>]}, {stderr, [<<"ERR\n">>]}]},
@@ -1571,7 +1603,7 @@ test_winsz() ->
     ok = exec:winsz(I, 99, 88),
     ok = exec:send(I, <<"\n">>),
     ?receiveMatch({stdout, I, <<"LINES=99 COLUMNS=88\r\n">>}, 3000),
-    ?receiveMatch({'DOWN', _, process, P, normal}, 5000),
+    ?receivePattern({'DOWN', _, process, P, normal}, 5000),
     % can set size on run
     Rows = max(10, rand:uniform(100)),
     Cols = max(10, rand:uniform(100)),
@@ -1586,7 +1618,7 @@ test_stdin() ->
     {ok, P, I} = exec:run("read x; echo \"Got: $x\"", [stdin, stdout, monitor]),
     ok = exec:send(I, <<"Test data\n">>),
     ?receiveMatch({stdout,I,<<"Got: Test data\n">>}, 3000),
-    ?receiveMatch({'DOWN', _, process, P, normal}, 5000).
+    ?receivePattern({'DOWN', _, process, P, normal}, 5000).
 
 test_stdin_eof() ->
     case os:find_executable("tac") of
@@ -1597,7 +1629,7 @@ test_stdin_eof() ->
         [ok = exec:send(I, Data)
          || Data <- [<<"foo\n">>, <<"bar\n">>, <<"baz\n">>, eof]],
         ?receiveMatch({stdout,I,<<"baz\nbar\nfoo\n">>}, 3000),
-        ?receiveMatch({'DOWN', _, process, P, normal}, 5000)
+        ?receivePattern({'DOWN', _, process, P, normal}, 5000)
     end.
 
 test_std(Stream) ->
@@ -1713,16 +1745,16 @@ test_kill_timeout() ->
     exec:stop(I2),
     timer:sleep(50),
     %exec:debug(_OldDebug),
-    ?receiveMatch({'DOWN', I2, process, P2, normal}, 5000).
+    ?receivePattern({'DOWN', I2, process, P2, normal}, 5000).
 
 test_setpgid() ->
     % Cmd given as string
     {ok, P0, P} = exec:run("sleep  1", [{group, 0}, kill_group, monitor]),
     {ok, P1, _} = exec:run("sleep 15", [{group, P}, monitor]),
     {ok, P2, _} = exec:run("sleep 15", [{group, P}, monitor]),
-    ?receiveMatch({'DOWN',_,process, P0, normal}, 5000),
-    ?receiveMatch({'DOWN',_,process, P1, {exit_status, 15}}, 5000),
-    ?receiveMatch({'DOWN',_,process, P2, {exit_status, 15}}, 5000).
+    ?receivePattern({'DOWN',_,process, P0, normal}, 5000),
+    ?receivePattern({'DOWN',_,process, P1, {exit_status, 15}}, 5000),
+    ?receivePattern({'DOWN',_,process, P2, {exit_status, 15}}, 5000).
 
 test_pty() ->
     ?AssertMatch({error,[{exit_status,256},{stdout,[<<"not a tty\n">>]}]},
@@ -1746,7 +1778,7 @@ test_pty() ->
         ?AssertMatch({stdout, I, <<"ok\r\n">>}, timeout)
     end,
     ok = exec:send(I, <<"exit\n">>),
-    ?receiveMatch({'DOWN', _, process, P, normal}, 1000).
+    ?receivePattern({'DOWN', _, process, P, normal}, 1000).
 
 test_pty_echo() ->
     % without echo
@@ -1797,7 +1829,7 @@ test_pty_opts() ->
     ok = exec:send(I, <<"test\n">>),
     ?receiveMatch({stdout, I, <<"test\r\n">>}, 5000),
     ok = exec:kill(I, 9),
-    ?receiveMatch({'DOWN', I, process, P, {exit_status, 9}}, 5000),
+    ?receivePattern({'DOWN', I, process, P, {exit_status, 9}}, 5000),
     % with echo
     {ok, P2, I2} = exec:run("echo started && cat", [
         stdin,
@@ -1820,7 +1852,7 @@ test_pty_opts() ->
     % send ^C
     ok = exec:send(I2, <<3>>),
     ?receiveMatch({stdout, I2, <<"^C">>}, 1000),
-    ?receiveMatch({'DOWN', I2, process, P2, {exit_status, 2}}, 5000),
+    ?receivePattern({'DOWN', I2, process, P2, {exit_status, 2}}, 5000),
     % vintr test
     {ok, P3, I3} = exec:run("echo started && cat", [
         stdin,
@@ -1838,7 +1870,7 @@ test_pty_opts() ->
     % send ^B (2), should interrupt
     ok = exec:send(I3, <<2>>),
     ?receiveMatch({stdout, I3, <<"^B">>}, 5000),
-    ?receiveMatch({'DOWN', I3, process, P3, {exit_status, 2}}, 5000),
+    ?receivePattern({'DOWN', I3, process, P3, {exit_status, 2}}, 5000),
     % opts validation
     ?AssertMatch(
         {error,{invalid_pty_value,[{vintr,false},
@@ -1902,5 +1934,5 @@ test_dynamic_pty_opts() ->
     % send ^B
     ok = exec:send(I, <<2>>),
     ?receiveMatch({stdout, I, <<"^B">>}, 5000),
-    ?receiveMatch({'DOWN', I, process, P, {exit_status, 2}}, 5000).
+    ?receivePattern({'DOWN', I, process, P, {exit_status, 2}}, 5000).
 -endif.
