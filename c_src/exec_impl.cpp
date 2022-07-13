@@ -206,14 +206,14 @@ bool set_pid_winsz(CmdInfo& ci, int rows, int cols)
 bool set_pty_opt(struct termios* tio, const std::string& key, int value) {
 #define TTYCHAR(NAME, STR_NAME)                                                \
     if (key == STR_NAME) {                                                     \
-        DEBUG(debug, "set tty_char %s\r\n", #NAME);                            \
+        DEBUG(debug, "set tty_char %s", #NAME);                                \
         if (tio) tio->c_cc[NAME] = value;                                      \
         return true;                                                           \
     }
 
 #define TTYMODE(NAME, FIELD, STR_NAME)                                         \
     if (key == STR_NAME) {                                                     \
-        DEBUG(debug, "tty mode %s %s\r\n", #NAME, value?"enabled":"disabled"); \
+        DEBUG(debug, "tty mode %s %s", #NAME, value?"enabled":"disabled");     \
         if (tio) {                                                             \
             if (value)                                                         \
                 tio->FIELD |=  NAME;                                           \
@@ -225,11 +225,11 @@ bool set_pty_opt(struct termios* tio, const std::string& key, int value) {
 
 #define TTYSPEED(VALUE)                                                        \
     if (key == "tty_op_ispeed" && value == VALUE) {                            \
-        DEBUG(debug, "set tty_ispeed %d\r\n", value);                          \
+        DEBUG(debug, "set tty_ispeed %d", value);                              \
         return !tio || cfsetispeed(tio, value) == 0;                           \
     }                                                                          \
     if (key == "tty_op_ospeed" && value == VALUE) {                            \
-        DEBUG(debug, "set tty_ospeed %d\r\n", value);                          \
+        DEBUG(debug, "set tty_ospeed %d", value);                              \
         return !tio || cfsetospeed(tio, value) == 0;                           \
     }
 
@@ -241,11 +241,11 @@ bool set_pty_opt(struct termios* tio, const std::string& key, int value) {
 
     // fallback for systems without pre-defined baud rates
     if (key == "tty_op_ispeed") {
-        DEBUG(debug, "set tty_ispeed %d\r\n", value);
+        DEBUG(debug, "set tty_ispeed %d", value);
         return !tio || cfsetispeed(tio, value) == 0;
     }
     if (key == "tty_op_ospeed") {
-        DEBUG(debug, "set tty_ospeed %d\r\n", value);
+        DEBUG(debug, "set tty_ospeed %d", value);
         return !tio || cfsetospeed(tio, value) == 0;
     }
 
