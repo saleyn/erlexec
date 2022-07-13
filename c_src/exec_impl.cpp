@@ -190,7 +190,7 @@ bool set_winsz(int fd, int rows, int cols) {
         }
     }
 
-    DEBUG(debug, "TIOCSWINSZ rows=%d cols=%d ret=%d\n", rows, cols, r);
+    DEBUG(debug, "TIOCSWINSZ rows=%d cols=%d ret=%d", rows, cols, r);
 
     return r == 0;
 }
