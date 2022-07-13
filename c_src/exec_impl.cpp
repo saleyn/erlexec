@@ -183,15 +183,14 @@ bool set_winsz(int fd, int rows, int cols) {
 
 	if (r == -1 || ws.ws_row == 0 || ws.ws_col == 0) {
 		int tty = open("/dev/tty", O_RDONLY);
-        DEBUG(debug, "TIOCSWINSZ rows=%d cols=%d tty=%d ret=%d", ws.ws_row, ws.ws_col, r, tty);
 		if (tty != -1) {
-			r = ioctl(tty, TIOCSWINSZ, &ws);
+			r = ioctl(tty, TIOCGWINSZ, &ws);
 			close(tty);
 		}
 	}
 
-    DEBUG(debug, "TIOCSWINSZ rows=%d cols=%d ret=%d", rows, cols, r);
-    
+    DEBUG(debug, "TIOCSWINSZ rows=%d cols=%d ret=%d\n", rows, cols, r);
+
     return r == 0;
 }
 
@@ -575,9 +574,8 @@ pid_t start_child(CmdOptions& op, std::string& error)
             std::tuple<int, int> winsz = op.winsz();
             int rows = std::get<0>(winsz);
             int cols = std::get<1>(winsz);
-            if (rows && cols) {
+            if (rows && cols)
                 set_winsz(STDIN_FILENO, rows, cols);
-            }
 
             // Make the current process a new session leader
             setsid();
@@ -1465,13 +1463,11 @@ int CmdOptions::ei_decode(bool getcmd)
                 break;
 
             case WINSZ:
-                type = eis.decodeType(arity);
-                if (type == etTuple) {
-                    if (eis.decodeTupleSize() != 2 || eis.decodeInt(m_winsz_rows) < 0 || eis.decodeInt(m_winsz_cols) < 0) {
-                        m_err << op << " - invalid winsz";
-                        return -1;
-                    }
-                } else {
+                if (eis.decodeType(arity) != etTuple ||
+                    eis.decodeTupleSize() != 2       ||
+		    eis.decodeInt(m_winsz_rows) < 0  ||
+		    eis.decodeInt(m_winsz_cols) < 0)
+		{
                     m_err << op << " - invalid winsz";
                     return -1;
                 }
