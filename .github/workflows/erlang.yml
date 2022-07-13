@@ -33,7 +33,7 @@ jobs:
     - name: Test
       run:  |
         adduser --disabled-password --gecos '' newuser
-        chown -R newuser:newuser $SHIPPABLE_BUILD_DIR
+        chown -R newuser:newuser .
         ls -l
         su -c "make test" newuser
 
