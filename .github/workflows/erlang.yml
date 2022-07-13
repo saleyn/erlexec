@@ -34,8 +34,7 @@ jobs:
       run:  |
         adduser --disabled-password --gecos '' newuser
         chown -R newuser:newuser .
-        ls -l
-        su -c "make test" newuser
+        su -c "PORT_DEBUG=1 RUN_COUNT=0 make test" newuser
 
   macOS:
     name: OTP ${{ matrix.otp }} ${{ matrix.os }}.${{ matrix.compiler.compiler }}

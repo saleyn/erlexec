@@ -1446,7 +1446,12 @@ exec_test_() ->
                     User  -> 
                         [root, {limit_users, [User]}, {user, User}]
                 end,
-            {ok, Pid} = exec:start([{debug, 0}] ++ Opts),
+            Opts1 =
+                case os:getenv("PORT_DEBUG") of
+                    false -> Opts;
+                    _     -> [{debug, 1}, verbose | Opts]
+                end,
+            {ok, Pid} = exec:start(Opts1),
             Pid
         end,
 
