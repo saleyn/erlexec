@@ -1440,11 +1440,26 @@ print(Stream, OsPid, Data) ->
         receive
             A -> true
         after Timeout ->
-            ?AssertMatch(A, timeout)
+            case flush() of
+                [] -> ?AssertMatch(A, timeout);
+                LL ->
+                    ?debugMsg(io_lib:format(
+                        "==> TEST ~s: unexpected message(s): ~p\n",
+                        [?FUNCTION_NAME, LL])),
+                    erlang:error(#{error => unexpected_messages,
+                                   msgs  => LL})
+            end
         end
     end)()).
 
 -define(tt(F), {timeout, 20, ?_test(F)}).
+
+flush() ->
+    receive
+        B -> [B | flush()]
+    after 0 ->
+        []
+    end.
 
 temp_file() ->
     Dir =   case os:getenv("TEMP") of
