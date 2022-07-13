@@ -1422,9 +1422,9 @@ print(Stream, OsPid, Data) ->
     (fun() ->
         case B of
             A -> ok;
-            _ -> io:format(standard_error,
-                           "==> TEST FAILED (~s at ~w:~w)!!!\n",
-                           [?FUNCTION_NAME, ?MODULE, ?LINE]),
+            _ -> ?debugMsg(
+                    io_lib:format(
+                        "==> TEST ~s FAILED!!!\n", [?FUNCTION_NAME])),
                  ?assertMatch(A,B)
         end
     end)()).
