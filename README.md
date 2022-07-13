@@ -36,6 +36,8 @@ The following features are supported:
   When redirected to a file, the file can be open in append/truncate mode, and given creation
   access mask.
 * Run interactive processes with psudo-terminal pty support.
+* Support all RFC4254 pty psudo-terminal options defined in
+  [section-8](https://datatracker.ietf.org/doc/html/rfc4254#section-8) of the spec.
 * Execute OS processes under different user credentials (using Linux capabilities).
 * Perform proper cleanup of OS child processes at port program termination time.
 
@@ -45,7 +47,7 @@ over OS processes than built-in `erlang:open_port/2` command with a
 when the emulator exits. 
 
 The `erlexec` application has been in production use by Erlang and Elixir systems,
-and is stable.
+and is considered stable.
 
 ## Donations ##
 If you find this project useful, please donate to:
