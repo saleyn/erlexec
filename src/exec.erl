@@ -1435,7 +1435,7 @@ print(Stream, OsPid, Data) ->
         end
     end)()).
 
--define(receiveMatch(A, Timeout),
+-define(receiveBytes(A, Timeout),
     check_receive(A, A, [], Timeout, ?FUNCTION_NAME)).
 
 -define(receivePattern(A, Timeout),
@@ -1599,10 +1599,10 @@ test_winsz() ->
     {ok, P, I} = exec:run(
         ["/bin/bash", "-i", "-c", "echo started; read x; echo LINES=$(tput lines) COLUMNS=$(tput cols)"],
         [stdin, stdout, {stderr, stdout}, monitor, pty]),
-    ?receiveMatch({stdout, I, <<"started\r\n">>}, 3000),
+    ?receiveBytes({stdout, I, <<"started\r\n">>}, 3000),
     ok = exec:winsz(I, 99, 88),
     ok = exec:send(I, <<"\n">>),
-    ?receiveMatch({stdout, I, <<"LINES=99 COLUMNS=88\r\n">>}, 3000),
+    ?receiveBytes({stdout, I, <<"LINES=99 COLUMNS=88\r\n">>}, 3000),
     ?receivePattern({'DOWN', _, process, P, normal}, 5000),
     % can set size on run
     Rows = max(10, rand:uniform(100)),
@@ -1617,7 +1617,7 @@ test_winsz() ->
 test_stdin() ->
     {ok, P, I} = exec:run("read x; echo \"Got: $x\"", [stdin, stdout, monitor]),
     ok = exec:send(I, <<"Test data\n">>),
-    ?receiveMatch({stdout,I,<<"Got: Test data\n">>}, 3000),
+    ?receiveBytes({stdout,I,<<"Got: Test data\n">>}, 3000),
     ?receivePattern({'DOWN', _, process, P, normal}, 5000).
 
 test_stdin_eof() ->
@@ -1628,7 +1628,7 @@ test_stdin_eof() ->
         {ok, P, I} = exec:run("tac", [stdin, stdout, monitor]),
         [ok = exec:send(I, Data)
          || Data <- [<<"foo\n">>, <<"bar\n">>, <<"baz\n">>, eof]],
-        ?receiveMatch({stdout,I,<<"baz\nbar\nfoo\n">>}, 3000),
+        ?receiveBytes({stdout,I,<<"baz\nbar\nfoo\n">>}, 3000),
         ?receivePattern({'DOWN', _, process, P, normal}, 5000)
     end.
 
@@ -1638,8 +1638,8 @@ test_std(Stream) ->
              stdout -> ""
              end,
     {ok, _, I} = exec:run("for i in 1 2; do echo TEST$i; sleep 0.05; done" ++ Suffix, [Stream]),
-    ?receiveMatch({Stream,I,<<"TEST1\n">>}, 5000),
-    ?receiveMatch({Stream,I,<<"TEST2\n">>}, 5000),
+    ?receiveBytes({Stream,I,<<"TEST1\n">>}, 5000),
+    ?receiveBytes({Stream,I,<<"TEST2\n">>}, 5000),
 
     Filename = temp_file(),
     try
@@ -1771,7 +1771,7 @@ test_pty() ->
     ok = exec:send(I, <<"echo ok\n">>),
     receive
     {stdout, I, <<"echo ok\r\n">>} ->
-        ?receiveMatch({stdout, I, <<"ok\r\n">>}, 1000);
+        ?receiveBytes({stdout, I, <<"ok\r\n">>}, 1000);
     {stdout, I, <<"ok\r\n">>} ->
         ok
     after 1000 ->
@@ -1789,9 +1789,9 @@ test_pty_echo() ->
         pty,
         monitor
     ]),
-    ?receiveMatch({stdout, I, <<"started\r\n">>}, 5000),
+    ?receiveBytes({stdout, I, <<"started\r\n">>}, 5000),
     ok = exec:send(I, <<"test\n">>),
-    ?receiveMatch({stdout, I, <<"test\r\n">>}, 5000),
+    ?receiveBytes({stdout, I, <<"test\r\n">>}, 5000),
     ok = exec:kill(I, 9),
     % with echo
     {ok, _, I2} = exec:run("echo started && cat", [
@@ -1802,10 +1802,10 @@ test_pty_echo() ->
         pty_echo,
         monitor
     ]),
-    ?receiveMatch({stdout, I2, <<"started\r\n">>}, 5000),
+    ?receiveBytes({stdout, I2, <<"started\r\n">>}, 5000),
     ok = exec:send(I2, <<"test\n">>),
-    ?receiveMatch({stdout, I2, <<"test\r\n">>}, 5000),
-    ?receiveMatch({stdout, I2, <<"test\r\n">>}, 5000).
+    ?receiveBytes({stdout, I2, <<"test\r\n">>}, 5000),
+    ?receiveBytes({stdout, I2, <<"test\r\n">>}, 5000).
 
 test_pty_opts() ->
     ?AssertMatch({error,[{exit_status,256},{stdout,[<<"not a tty\n">>]}]},
@@ -1825,9 +1825,9 @@ test_pty_opts() ->
         {pty, [{echo, false}]},
         monitor
     ]),
-    ?receiveMatch({stdout, I, <<"started\r\n">>}, 5000),
+    ?receiveBytes({stdout, I, <<"started\r\n">>}, 5000),
     ok = exec:send(I, <<"test\n">>),
-    ?receiveMatch({stdout, I, <<"test\r\n">>}, 5000),
+    ?receiveBytes({stdout, I, <<"test\r\n">>}, 5000),
     ok = exec:kill(I, 9),
     ?receivePattern({'DOWN', I, process, P, {exit_status, 9}}, 5000),
     % with echo
@@ -1838,12 +1838,12 @@ test_pty_opts() ->
         {pty, [{echo, true}]},
         monitor
     ]),
-    ?receiveMatch({stdout, I2, <<"started\r\n">>}, 5000),
+    ?receiveBytes({stdout, I2, <<"started\r\n">>}, 5000),
     ok = exec:send(I2, <<"test\n">>),
     receive
         {stdout, I2, <<"test\r\n">>} ->
             % we received a single "test\r\n", expect it again (echo)
-            ?receiveMatch({stdout, I2, <<"test\r\n">>}, 5000);
+            ?receiveBytes({stdout, I2, <<"test\r\n">>}, 5000);
         {stdout, I2, <<"test\r\ntest\r\n">>} ->
             ok
     after
@@ -1851,7 +1851,7 @@ test_pty_opts() ->
     end,
     % send ^C
     ok = exec:send(I2, <<3>>),
-    ?receiveMatch({stdout, I2, <<"^C">>}, 1000),
+    ?receiveBytes({stdout, I2, <<"^C">>}, 1000),
     ?receivePattern({'DOWN', I2, process, P2, {exit_status, 2}}, 5000),
     % vintr test
     {ok, P3, I3} = exec:run("echo started && cat", [
@@ -1861,15 +1861,15 @@ test_pty_opts() ->
         {pty, [{echo, true}, {vintr, 2}]},
         monitor
     ]),
-    ?receiveMatch({stdout, I3, <<"started\r\n">>}, 5000),
+    ?receiveBytes({stdout, I3, <<"started\r\n">>}, 5000),
     ok = exec:send(I3, <<"test">>),
-    ?receiveMatch({stdout, I3, <<"test">>}, 5000),
+    ?receiveBytes({stdout, I3, <<"test">>}, 5000),
     % send ^C (3), should not interrupt
     ok = exec:send(I3, <<3>>),
-    ?receiveMatch({stdout, I3, <<"^C">>}, 5000),
+    ?receiveBytes({stdout, I3, <<"^C">>}, 5000),
     % send ^B (2), should interrupt
     ok = exec:send(I3, <<2>>),
-    ?receiveMatch({stdout, I3, <<"^B">>}, 5000),
+    ?receiveBytes({stdout, I3, <<"^B">>}, 5000),
     ?receivePattern({'DOWN', I3, process, P3, {exit_status, 2}}, 5000),
     % opts validation
     ?AssertMatch(
@@ -1899,12 +1899,12 @@ test_dynamic_pty_opts() ->
         pty,
         monitor
     ]),
-    ?receiveMatch({stdout, I, <<"started\r\n">>}, 5000),
+    ?receiveBytes({stdout, I, <<"started\r\n">>}, 5000),
     ok = exec:send(I, <<"test\n">>),
-    ?receiveMatch({stdout, I, <<"test\r\n">>}, 5000),
+    ?receiveBytes({stdout, I, <<"test\r\n">>}, 5000),
     ok = exec:send(I, <<2>>),
     ok = exec:send(I, <<"\n">>),
-    ?receiveMatch({stdout, I, <<2, 13, 10>>}, 5000),
+    ?receiveBytes({stdout, I, <<2, 13, 10>>}, 5000),
     % change echo to 1, interrupt to ^B
     ok = exec:pty_opts(I, [{echo, 1}, {vintr, 2}]),
     % opts validation
@@ -1925,7 +1925,7 @@ test_dynamic_pty_opts() ->
     receive
         {stdout, I, <<"test\r\n">>} ->
             % we received a single "test\r\n", expect it again (echo)
-            ?receiveMatch({stdout, I, <<"test\r\n">>}, 5000);
+            ?receiveBytes({stdout, I, <<"test\r\n">>}, 5000);
         {stdout, I, <<"test\r\ntest\r\n">>} ->
             ok
     after
@@ -1933,6 +1933,6 @@ test_dynamic_pty_opts() ->
     end,
     % send ^B
     ok = exec:send(I, <<2>>),
-    ?receiveMatch({stdout, I, <<"^B">>}, 5000),
+    ?receiveBytes({stdout, I, <<"^B">>}, 5000),
     ?receivePattern({'DOWN', I, process, P, {exit_status, 2}}, 5000).
 -endif.
