@@ -1418,12 +1418,23 @@ print(Stream, OsPid, Data) ->
 
 -ifdef(EUNIT).
 
+-define(AssertMatch(A, B),
+    (fun() ->
+        case A of
+            B -> ok;
+            C -> io:format(standard_error,
+                           "==> TEST FAILED (~s at ~w:~w)!!!\n",
+                           ?FUNCTION_NAME, ?MODULE, ?LINE),
+                 ?assertMatch(A,B)
+        end
+    end).
+
 -define(receiveMatch(A, Timeout),
     (fun() ->
         receive
             A -> true
         after Timeout ->
-            ?assertMatch(A, timeout)
+            ?AssertMatch(A, timeout)
         end
     end)()).
 
@@ -1505,13 +1516,13 @@ exec_run_many_test_() ->
 test_root() ->
     case os:getenv("NO_ROOT_TESTS") of
         false ->
-            ?assertMatch({error, "Cannot specify effective user"++_},
+            ?AssertMatch({error, "Cannot specify effective user"++_},
                          exec:start([{user, "xxxx"}, {limit_users, [yyyy]}])),
-            ?assertMatch({error, "Cannot restrict users"++_},
+            ?AssertMatch({error, "Cannot restrict users"++_},
                          exec:start([{limit_users, [yyyy]}])),
-            ?assertMatch({error, "Not allowed to run without restricting effective users"++_},
+            ?AssertMatch({error, "Not allowed to run without restricting effective users"++_},
                          exec:start([root, {user, "xxxx"}])),
-            ?assertMatch({error, "Not allowed to run without providing effective user "++_},
+            ?AssertMatch({error, "Not allowed to run without providing effective user "++_},
                          exec:start([root, {limit_users, [yyyy]}]));
         _ ->
             ok
@@ -1522,11 +1533,11 @@ test_monitor() ->
     ?receiveMatch({'DOWN', _, process, P, normal}, 5000).
 
 test_sync() ->
-    ?assertMatch({ok, [{stdout, [<<"Test\n">>]}, {stderr, [<<"ERR\n">>]}]},
+    ?AssertMatch({ok, [{stdout, [<<"Test\n">>]}, {stderr, [<<"ERR\n">>]}]},
         exec:run("echo Test; echo ERR 1>&2", [stdout, stderr, sync])),
-    ?assertMatch({ok,[{stdout,[<<"\n">>]}]},
+    ?AssertMatch({ok,[{stdout,[<<"\n">>]}]},
          exec:run([<<"/bin/echo">>], [sync, stdout])),
-    ?assertMatch({ok,[{stdout,[<<"\n">>]}]},
+    ?AssertMatch({ok,[{stdout,[<<"\n">>]}]},
          exec:run(["/bin/echo"], [sync, stdout])).
 
 
@@ -1569,14 +1580,14 @@ test_std(Stream) ->
 
     Filename = temp_file(),
     try
-        ?assertMatch({ok, []}, exec:run("echo Test"++Suffix, [{Stream, Filename}, sync])),
-        ?assertMatch({ok, <<"Test\n">>}, file:read_file(Filename)),
+        ?AssertMatch({ok, []}, exec:run("echo Test"++Suffix, [{Stream, Filename}, sync])),
+        ?AssertMatch({ok, <<"Test\n">>}, file:read_file(Filename)),
 
-        ?assertMatch({ok, []}, exec:run("echo Test"++Suffix, [{Stream, Filename}, sync])),
-        ?assertMatch({ok, <<"Test\n">>}, file:read_file(Filename)),
+        ?AssertMatch({ok, []}, exec:run("echo Test"++Suffix, [{Stream, Filename}, sync])),
+        ?AssertMatch({ok, <<"Test\n">>}, file:read_file(Filename)),
 
-        ?assertMatch({ok, []}, exec:run("echo Test2"++Suffix, [{Stream, Filename, [append]}, sync])),
-        ?assertMatch({ok, <<"Test\nTest2\n">>}, file:read_file(Filename))
+        ?AssertMatch({ok, []}, exec:run("echo Test2"++Suffix, [{Stream, Filename, [append]}, sync])),
+        ?AssertMatch({ok, <<"Test\nTest2\n">>}, file:read_file(Filename))
 
     after
         ?assertEqual(ok, file:delete(Filename))
@@ -1584,26 +1595,26 @@ test_std(Stream) ->
 
 test_cmd() ->
     % Cmd given as string
-    ?assertMatch(
+    ?AssertMatch(
         {ok, [{stdout, [<<"ok\n">>]}]},
         exec:run("/bin/echo ok", [sync, stdout])),
-    ?assertMatch(
+    ?AssertMatch(
         {ok, [{stdout, [<<"ok\n">>]}]},
         exec:run(<<"/bin/echo ok">>, [sync, stdout])),
     % Cmd given as list
-    ?assertMatch(
+    ?AssertMatch(
         {ok, [{stdout, [<<"ok\n">>]}]},
         exec:run(["/bin/bash", "-c", "echo ok"], [sync, stdout])),
-    ?assertMatch(
+    ?AssertMatch(
         {ok, [{stdout, [<<"ok\n">>]}]},
         exec:run([<<"/bin/bash">>, <<"-c">>, <<"echo ok">>], [sync, stdout])),
-    ?assertMatch(
+    ?AssertMatch(
         {ok, [{stdout, [<<"ok\n">>]}]},
         exec:run(["/bin/echo", "ok"], [sync, stdout])).
 
 test_executable() ->
     % Cmd given as string
-    ?assertMatch(
+    ?AssertMatch(
         [<<"Pid ", _/binary>>, <<" cannot execute '00kuku00': No such file or directory\n">>],
         begin
             Res = exec:run("ls", [sync, {executable, "00kuku00"}, stdout, stderr]),
@@ -1611,20 +1622,20 @@ test_executable() ->
             binary:split(E, <<":">>)
         end),
 
-    ?assertMatch(
+    ?AssertMatch(
         {ok, [{stdout,[<<"ok\n">>]}]},
         exec:run("echo ok", [sync, {executable, "/bin/sh"}, stdout, stderr])),
 
-    ?assertMatch(
+    ?AssertMatch(
         {ok, [{stdout,[<<"ok\n">>]}]},
         exec:run(<<"echo ok">>, [sync, {executable, <<"/bin/sh">>}, stdout, stderr])),
 
     % Cmd given as list
-    ?assertMatch(
+    ?AssertMatch(
         {ok, [{stdout,[<<"ok\n">>]}]},
         exec:run(["/bin/bash", "-c", "/bin/echo ok"],
                  [sync, {executable, "/bin/sh"}, stdout, stderr])),
-    ?assertMatch(
+    ?AssertMatch(
         {ok, [{stdout,[<<"XYZ\n">>]}]},
         exec:run(["/bin/echoXXXX abc", "XYZ"],
                  [sync, {executable, "/bin/echo"}, stdout, stderr])),
@@ -1634,10 +1645,10 @@ test_executable() ->
     try
         ok = file:write_file(File, "#!/bin/bash\necho ok\n"),
         ok = file:change_mode(File, 8#755),
-        ?assertMatch(
+        ?AssertMatch(
            {ok, [{stdout,[<<"ok\n">>]}]},
            exec:run(File, [sync, stdout, stderr])),
-        ?assertMatch(
+        ?AssertMatch(
            {ok, [{stdout,[<<"ok\n">>]}]},
            exec:run(["/bin/bash", "-c", File], [sync, stdout, stderr]))
     after
@@ -1645,23 +1656,23 @@ test_executable() ->
     end.
 
 test_redirect() ->
-    ?assertMatch({ok,[{stderr,[<<"TEST1\n">>]}]},
+    ?AssertMatch({ok,[{stderr,[<<"TEST1\n">>]}]},
         exec:run("echo TEST1", [stderr, {stdout, stderr}, sync])),
-    ?assertMatch({ok,[{stdout,[<<"TEST2\n">>]}]},
+    ?AssertMatch({ok,[{stdout,[<<"TEST2\n">>]}]},
         exec:run("echo TEST2 1>&2", [stdout, {stderr, stdout}, sync])),
     ok.
 
 test_redirect_stdin() ->
-    ?assertMatch("ttt\n",
+    ?AssertMatch("ttt\n",
         os:cmd("echo ttt > /tmp/output.txt; cat /tmp/output.txt")),
-    ?assertMatch({ok,[{stdout,[<<"ttt\n">>]}]},
+    ?AssertMatch({ok,[{stdout,[<<"ttt\n">>]}]},
         exec:run("cat", [{stdin, "/tmp/output.txt"}, sync, stdout])),
-    ?assertMatch({ok,[{stdout,[<<"ttt\n">>]}]},
+    ?AssertMatch({ok,[{stdout,[<<"ttt\n">>]}]},
         exec:run("cat", [{stdin, <<"/tmp/output.txt">>}, sync, stdout])),
     file:delete("/tmp/output.txt").
 
 test_env() ->
-    ?assertMatch({ok, [{stdout, [<<"X-Y\n">>]}]},
+    ?AssertMatch({ok, [{stdout, [<<"X-Y\n">>]}]},
         exec:run("echo $XXX-$YYY", [stdout, {env, [{"XXX", "X"}, {<<"YYY">>, <<"Y">>}]}, sync])).
 
 test_kill_timeout() ->
@@ -1683,7 +1694,7 @@ test_setpgid() ->
     ?receiveMatch({'DOWN',_,process, P2, {exit_status, 15}}, 5000).
 
 test_pty() ->
-    ?assertMatch({error,[{exit_status,256},{stdout,[<<"not a tty\n">>]}]},
+    ?AssertMatch({error,[{exit_status,256},{stdout,[<<"not a tty\n">>]}]},
         exec:run("tty", [stdin, stdout, sync])),
     ?assert(case exec:run("tty", [stdin, stdout, pty, sync]) of
         {ok,[{stdout,[<<"/dev/pts/", _/binary>>|_]}]} ->
@@ -1701,7 +1712,7 @@ test_pty() ->
     {stdout, I, <<"ok\r\n">>} ->
         ok
     after 1000 ->
-        ?assertMatch({stdout, I, <<"ok\r\n">>}, timeout)
+        ?AssertMatch({stdout, I, <<"ok\r\n">>}, timeout)
     end,
     ok = exec:send(I, <<"exit\n">>),
     ?receiveMatch({'DOWN', _, process, P, normal}, 1000).
@@ -1734,7 +1745,7 @@ test_pty_echo() ->
     ?receiveMatch({stdout, I2, <<"test\r\n">>}, 5000).
 
 test_pty_opts() ->
-    ?assertMatch({error,[{exit_status,256},{stdout,[<<"not a tty\n">>]}]},
+    ?AssertMatch({error,[{exit_status,256},{stdout,[<<"not a tty\n">>]}]},
         exec:run("tty", [stdin, stdout, sync])),
     ?assert(case exec:run("tty", [stdin, stdout, {pty, []}, sync]) of
         {ok,[{stdout,[<<"/dev/pts/", _/binary>>|_]}]} ->
@@ -1798,7 +1809,7 @@ test_pty_opts() ->
     ?receiveMatch({stdout, I3, <<"^B">>}, 5000),
     ?receiveMatch({'DOWN', I3, process, P3, {exit_status, 2}}, 5000),
     % opts validation
-    ?assertMatch(
+    ?AssertMatch(
         {error,{invalid_pty_value,[{vintr,false},
                                    {tty_op_ispeed,-1},
                                    {invalid,1}]}},
@@ -1834,7 +1845,7 @@ test_dynamic_pty_opts() ->
     % change echo to 1, interrupt to ^B
     ok = exec:pty_opts(I, [{echo, 1}, {vintr, 2}]),
     % opts validation
-    ?assertMatch(
+    ?AssertMatch(
         {error,{invalid_pty_value,[{vintr,false},
                                    {tty_op_ispeed,-1},
                                    {invalid,1}]}},

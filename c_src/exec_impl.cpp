@@ -186,13 +186,14 @@ bool set_pid_winsz(CmdInfo& ci, int rows, int cols)
 
 	if (r == -1 || ws.ws_row == 0 || ws.ws_col == 0) {
 		int tty = open("/dev/tty", O_RDONLY);
+        DEBUG(debug, "TIOCSWINSZ rows=%d cols=%d tty=%d ret=%d", ws.ws_row, ws.ws_col, r, tty);
 		if (tty != -1) {
 			r = ioctl(tty, TIOCGWINSZ, &ws);
 			close(tty);
 		}
 	}
 
-    DEBUG(debug, "TIOCSWINSZ rows=%d cols=%d ret=%d\n", rows, cols, r);
+    DEBUG(debug, "TIOCSWINSZ rows=%d cols=%d ret=%d", rows, cols, r);
     
     return r == 0;
 }
