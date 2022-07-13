@@ -202,6 +202,7 @@
     | {stdout, stderr | output_dev_opt()}
     | {stderr, stdout | output_dev_opt()}
     | {stdout | stderr, string()|binary(), [output_file_opt()]}
+    | {winsz, {Rows::non_neg_integer(), Cols::non_neg_integer()}
     | pty | {pty, pty_opts()}
     | pty_echo
     | debug | {debug, integer()}.
@@ -288,6 +289,8 @@
 %%     <dd>Redirect process's standard error stream</dd>
 %% <dt>{stdout | stderr, Filename::string(), [output_dev_opt()]}</dt>
 %%     <dd>Redirect process's stdout/stderr stream to file</dd>
+%% <dt>{winsz, {Rows, Cols}}</dt>
+%%     <dd>Set the (psudo) terminal's dimensions of rows and columns</dd>
 %% <dt>pty</dt>
 %%     <dd>Use pseudo terminal for the process's stdin, stdout and stderr</dd>
 %% <dt>pty_echo</dt>
@@ -1559,7 +1562,7 @@ test_winsz() ->
     {ok,[{stdout,[ActRows]}]} =
         exec:run("tput lines", [sync, stdin, stdout, pty, {winsz, {Rows, Cols}}]),
     {ok,[{stdout,[ActCols]}]} =
-        exec:run("tput cols", [sync, stdin, stdout, pty, {winsz, {Rows, Cols}}]),
+        exec:run("tput cols",  [sync, stdin, stdout, pty, {winsz, {Rows, Cols}}]),
     ?assert(binary_to_integer(string:trim(ActRows)) =:= Rows),
     ?assert(binary_to_integer(string:trim(ActCols)) =:= Cols).
 
