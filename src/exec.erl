@@ -1608,9 +1608,9 @@ test_winsz() ->
     Rows = max(10, rand:uniform(100)),
     Cols = max(10, rand:uniform(100)),
     {ok,[{stdout,[ActRows]}]} =
-        exec:run("tput lines", [sync, stdin, stdout, pty, {winsz, {Rows, Cols}}]),
+        exec:run("/bin/tput lines", [sync, stdin, stdout, pty, {winsz, {Rows, Cols}}]),
     {ok,[{stdout,[ActCols]}]} =
-        exec:run("tput cols",  [sync, stdin, stdout, pty, {winsz, {Rows, Cols}}]),
+        exec:run("/bin/tput cols",  [sync, stdin, stdout, pty, {winsz, {Rows, Cols}}]),
     ?assert(binary_to_integer(string:trim(ActRows)) =:= Rows),
     ?assert(binary_to_integer(string:trim(ActCols)) =:= Cols).
 
