@@ -25,16 +25,16 @@ jobs:
         otp: ["24.2", "25.0.2"]
 
     steps:
-    - uses: actions/checkout@v2
-    - name: OTP Version
-      run:  |
-        erl -eval '{ok, Version} = file:read_file(filename:join([code:root_dir(), "releases", erlang:system_info(otp_release), "OTP_VERSION"])), io:format("Version=~s\n", [Version]), halt().' -noshell;
-        make
-    - name: Test
-      run:  |
-        adduser --disabled-password --gecos '' newuser
-        chown -R newuser:newuser .
-        su -c "PORT_DEBUG=1 RUN_COUNT=0 make test" newuser
+      - uses: actions/checkout@v2
+      - name: OTP Version
+        run:  |
+          erl -eval '{ok, Version} = file:read_file(filename:join([code:root_dir(), "releases", erlang:system_info(otp_release), "OTP_VERSION"])), io:format("Version=~s\n", [Version]), halt().' -noshell;
+          make
+      - name: Test
+        run:  |
+          adduser --disabled-password --gecos '' newuser
+          chown -R newuser:newuser .
+          su -c "PORT_DEBUG=1 RUN_COUNT=0 make test" newuser
 
   macOS:
     name: OTP ${{ matrix.otp }} ${{ matrix.os }}.${{ matrix.compiler.compiler }}
@@ -65,6 +65,11 @@ jobs:
         run: |
           erl -eval '{ok, Version} = file:read_file(filename:join([code:root_dir(), "releases", erlang:system_info(otp_release), "OTP_VERSION"])), io:format("Version=~s\n", [Version]), halt().' -noshell;
           make
+    - name: Test
+      run:  |
+        adduser --disabled-password --gecos '' newuser
+        chown -R newuser:newuser .
+        su -c "PORT_DEBUG=0 RUN_COUNT=0 make test" newuser
 
 #  windows-msys2:
 #    name: OTP ${{ matrix.otp }} ${{ matrix.os }}.${{ matrix.msys2.msystem }}.${{ matrix.compiler.compiler }}
