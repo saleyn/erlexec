@@ -30,6 +30,12 @@ jobs:
       run:  |
         erl -eval '{ok, Version} = file:read_file(filename:join([code:root_dir(), "releases", erlang:system_info(otp_release), "OTP_VERSION"])), io:format("Version=~s\n", [Version]), halt().' -noshell;
         make
+    - name: Test
+      run:  |
+        adduser --disabled-password --gecos '' newuser
+        chown -R newuser:newuser $SHIPPABLE_BUILD_DIR
+        ls -l
+        su -c "make test" newuser
 
   macOS:
     name: OTP ${{ matrix.otp }} ${{ matrix.os }}.${{ matrix.compiler.compiler }}
