@@ -1443,11 +1443,12 @@ print(Stream, OsPid, Data) ->
             case flush() of
                 [] -> ?AssertMatch(A, timeout);
                 LL ->
+                    R = lists:reverse(LL),
                     ?debugMsg(io_lib:format(
                         "==> TEST ~s: unexpected message(s): ~p\n",
-                        [?FUNCTION_NAME, LL])),
+                        [?FUNCTION_NAME, R])),
                     erlang:error(#{error => unexpected_messages,
-                                   msgs  => LL})
+                                   msgs  => R})
             end
         end
     end)()).
