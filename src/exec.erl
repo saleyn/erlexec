@@ -1420,14 +1420,14 @@ print(Stream, OsPid, Data) ->
 
 -define(AssertMatch(A, B),
     (fun() ->
-        case A of
-            B -> ok;
-            C -> io:format(standard_error,
+        case B of
+            A -> ok;
+            _ -> io:format(standard_error,
                            "==> TEST FAILED (~s at ~w:~w)!!!\n",
-                           ?FUNCTION_NAME, ?MODULE, ?LINE),
+                           [?FUNCTION_NAME, ?MODULE, ?LINE]),
                  ?assertMatch(A,B)
         end
-    end).
+    end)()).
 
 -define(receiveMatch(A, Timeout),
     (fun() ->
