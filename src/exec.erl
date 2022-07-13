@@ -202,7 +202,7 @@
     | {stdout, stderr | output_dev_opt()}
     | {stderr, stdout | output_dev_opt()}
     | {stdout | stderr, string()|binary(), [output_file_opt()]}
-    | {winsz, {Rows::non_neg_integer(), Cols::non_neg_integer()}
+    | {winsz, {Rows::non_neg_integer(), Cols::non_neg_integer()}}
     | pty | {pty, pty_opts()}
     | pty_echo
     | debug | {debug, integer()}.
