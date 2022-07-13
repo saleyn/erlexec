@@ -34,7 +34,7 @@ jobs:
         run:  |
           adduser --disabled-password --gecos '' newuser
           chown -R newuser:newuser .
-          su -c "PORT_DEBUG=0 make test" newuser
+          su -c "make test" newuser
 
   macOS:
     name: OTP ${{ matrix.otp }} ${{ matrix.os }}.${{ matrix.compiler.compiler }}
@@ -67,9 +67,7 @@ jobs:
           make
       - name: Test
         run:  |
-          adduser --disabled-password --gecos '' newuser
-          chown -R newuser:newuser .
-          su -c "PORT_DEBUG=0 make test" newuser
+          make test
 
 #  windows-msys2:
 #    name: OTP ${{ matrix.otp }} ${{ matrix.os }}.${{ matrix.msys2.msystem }}.${{ matrix.compiler.compiler }}

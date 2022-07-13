@@ -1449,7 +1449,8 @@ print(Stream, OsPid, Data) ->
                     ?debugMsg(io_lib:format(
                         "==> TEST ~s FAILED!!!\n", [?FUNCTION_NAME])),
                     erlang:error(#{error => unexpected_messages,
-                                   msgs  => lists:reverse(LL)})
+                                   msgs  => lists:reverse(LL)}),
+                    ?assert(false)
             end
         end
     end)()).
@@ -1504,11 +1505,14 @@ flush() ->
         []
     end.
 
+temp_dir() ->
+    case os:getenv("TEMP") of
+    false -> "/tmp";
+    Path  -> Path
+    end.
+
 temp_file() ->
-    Dir =   case os:getenv("TEMP") of
-            false -> "/tmp";
-            Path  -> Path
-            end,
+    Dir = temp_dir(),
     {I1, I2, I3}  = erlang:timestamp(),
     filename:join(Dir, io_lib:format("exec_temp_~w_~w_~w", [I1, I2, I3])).
 
@@ -1608,21 +1612,18 @@ test_sync() ->
 test_winsz() ->
     {ok, P, I} = exec:run(
         ["/bin/bash", "-i", "-c", "echo started; read x; echo LINES=$(tput lines) COLUMNS=$(tput cols)"],
-        [stdin, stdout, {stderr, stdout}, monitor, pty]),
+        [stdin, stdout, {stderr, stdout}, monitor, pty, {env, [{"TERM", "xterm"}]}]),
     ?receiveBytes({stdout, I, <<"started\r\n">>}, 3000),
     ok = exec:winsz(I, 99, 88),
     ok = exec:send(I, <<"\n">>),
     ?receiveBytes({stdout, I, <<"LINES=99 COLUMNS=88\r\n">>}, 3000),
     ?receivePattern({'DOWN', _, process, P, normal}, 5000),
     % can set size on run
-    Rows = max(10, rand:uniform(100)),
-    Cols = max(10, rand:uniform(100)),
-    {ok,[{stdout,[ActRows]}]} =
-        exec:run("/bin/tput lines", [sync, stdin, stdout, pty, {winsz, {Rows, Cols}}]),
-    {ok,[{stdout,[ActCols]}]} =
-        exec:run("/bin/tput cols",  [sync, stdin, stdout, pty, {winsz, {Rows, Cols}}]),
-    ?assert(binary_to_integer(string:trim(ActRows)) =:= Rows),
-    ?assert(binary_to_integer(string:trim(ActCols)) =:= Cols).
+    {ok, P2, I2} = exec:run(
+        ["/bin/bash", "-i", "-c", "echo LINES=$(tput lines) COLUMNS=$(tput cols)\n"],
+        [stdin, stdout, {stderr, stdout}, monitor, pty, {env, [{"TERM", "xterm"}]}, {winsz, {99, 88}}]),
+    ?receiveBytes({stdout, I2, <<"LINES=99 COLUMNS=88\r\n">>}, 5000),
+    ?receivePattern({'DOWN', _, process, P2, normal}, 5000).
 
 test_stdin() ->
     {ok, P, I} = exec:run("read x; echo \"Got: $x\"", [stdin, stdout, monitor]),
@@ -1714,7 +1715,7 @@ test_executable() ->
                  [sync, {executable, "/bin/echo"}, stdout, stderr])),
     
     % Cmd given as a unicode string
-    File = unicode:characters_to_binary("/tmp/тест-эрл"),
+    File = unicode:characters_to_binary(filename:join(temp_dir(), "тест-эрл")),
     try
         ok = file:write_file(File, "#!/bin/bash\necho ok\n"),
         ok = file:change_mode(File, 8#755),
@@ -1814,8 +1815,7 @@ test_pty_echo() ->
     ]),
     ?receiveBytes({stdout, I2, <<"started\r\n">>}, 5000),
     ok = exec:send(I2, <<"test\n">>),
-    ?receiveBytes({stdout, I2, <<"test\r\n">>}, 5000),
-    ?receiveBytes({stdout, I2, <<"test\r\n">>}, 5000).
+    ?receiveBytes({stdout, I2, <<"test\r\ntest\r\n">>}, 5000).
 
 test_pty_opts() ->
     ?AssertMatch({error,[{exit_status,256},{stdout,[<<"not a tty\n">>]}]},
@@ -1850,15 +1850,7 @@ test_pty_opts() ->
     ]),
     ?receiveBytes({stdout, I2, <<"started\r\n">>}, 5000),
     ok = exec:send(I2, <<"test\n">>),
-    receive
-        {stdout, I2, <<"test\r\n">>} ->
-            % we received a single "test\r\n", expect it again (echo)
-            ?receiveBytes({stdout, I2, <<"test\r\n">>}, 5000);
-        {stdout, I2, <<"test\r\ntest\r\n">>} ->
-            ok
-    after
-        5000 -> ?assert(false)
-    end,
+    ?receiveBytes({stdout, I2, <<"test\r\ntest\r\n">>}, 5000),
     % send ^C
     ok = exec:send(I2, <<3>>),
     ?receiveBytes({stdout, I2, <<"^C">>}, 1000),
@@ -1932,15 +1924,7 @@ test_dynamic_pty_opts() ->
             {invalid, 1}
         ])),
     ok = exec:send(I, <<"test\n">>),
-    receive
-        {stdout, I, <<"test\r\n">>} ->
-            % we received a single "test\r\n", expect it again (echo)
-            ?receiveBytes({stdout, I, <<"test\r\n">>}, 5000);
-        {stdout, I, <<"test\r\ntest\r\n">>} ->
-            ok
-    after
-        5000 -> ?assert(false)
-    end,
+    ?receiveBytes({stdout, I, <<"test\r\ntest\r\n">>}, 5000),
     % send ^B
     ok = exec:send(I, <<2>>),
     ?receiveBytes({stdout, I, <<"^B">>}, 5000),
