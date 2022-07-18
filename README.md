@@ -26,7 +26,7 @@ The following features are supported:
   default SIGTERM/SIGKILL behavior.
 * Specify custom timeout for SIGKILL after the termination command or SIGTERM
   was executed and the running OS child process is still alive.
-* Link an Erlang processes to OS processes (via intermediate Erlang Pids that are linked
+* Link Erlang processes to OS processes (via intermediate Erlang Pids that are linked
   to an associated OS process).
 * Monitor termination of OS processes.
 * Terminate all processes belonging to an OS process group.
