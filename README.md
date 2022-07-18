@@ -71,7 +71,7 @@ See http://saleyn.github.io/erlexec
 ```erlang
 {deps,
  [% ...
-  {erlexec, "~> 1.0"}
+  {erlexec, "~> 2.0"}
   ]}.
 ```
 
@@ -91,7 +91,7 @@ See http://saleyn.github.io/erlexec
 defp deps do
   [
     # ...
-    {:erlexec, "~> 1.0"}
+    {:erlexec, "~> 2.0"}
   ]
 end
 ```
