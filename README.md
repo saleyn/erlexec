@@ -27,14 +27,15 @@ The following features are supported:
 * Specify custom timeout for SIGKILL after the termination command or SIGTERM
   was executed and the running OS child process is still alive.
 * Link Erlang processes to OS processes (via intermediate Erlang Pids that are linked
-  to an associated OS process).
-* Monitor termination of OS processes.
+  to an associated OS process), so that the termination of an OS process results
+  in termination of an Erlang Pid, and vice versa.
+* Monitor termination of OS processes using `erlang:monitor/2`.
 * Terminate all processes belonging to an OS process group.
 * Kill processes belonging to an OS process group at process exit.
 * Communicate with an OS process via its STDIN.
-* Redirect STDOUT and STDERR of an OS process to a file, erlang process, or a custom function.
-  When redirected to a file, the file can be open in append/truncate mode, and given creation
-  access mask.
+* Redirect STDOUT and STDERR of an OS process to a file, erlang process,
+  or a custom function. When redirected to a file, the file can be open in
+  append/truncate mode, and given at creation an access mask.
 * Run interactive processes with psudo-terminal pty support.
 * Support all RFC4254 pty psudo-terminal options defined in
   [section-8](https://datatracker.ietf.org/doc/html/rfc4254#section-8) of the spec.
