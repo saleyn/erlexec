@@ -323,6 +323,7 @@ struct CmdInfo {
     int             poll_fd_idx[3] = {-1,-1,-1}; // Indexes to the pollfd structure in the poll array
 #endif
     std::list<std::string> stdin_queue;
+    bool eof_arrived = false;
 
     // delete default constructor, copy-ctor and assignment operator
     CmdInfo() = delete;

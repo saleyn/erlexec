@@ -543,7 +543,8 @@ bool process_command(bool is_err)
             }
 
             if (eof) {
-                close_stdin(it->second);
+                it->second.eof_arrived = true;
+                process_pid_input(it->second);
                 break;
             }
 

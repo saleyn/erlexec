@@ -290,6 +290,10 @@ bool process_pid_input(CmdInfo& ci)
         ci.stdin_wr_pos = 0;
     }
 
+    if (ci.stdin_queue.empty() && ci.eof_arrived) {
+        close_stdin(ci);
+    }
+
     return true;
 }
 
