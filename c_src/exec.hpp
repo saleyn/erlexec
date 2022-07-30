@@ -304,25 +304,28 @@ public:
 /// structure will contain its run-time information.
 //-------------------------------------------------------------------------
 struct CmdInfo {
-    CmdArgsList     cmd;               // Executed command
-    pid_t           cmd_pid;           // Pid of the custom kill command
-    pid_t           cmd_gid;           // Command's group ID
-    std::string     kill_cmd;          // Kill command to use (default: use SIGTERM)
-    kill_cmd_pid_t  kill_cmd_pid = -1; // Pid of the command that <pid> is supposed to kill
-    ei::TimeVal     deadline;          // Time when the <cmd_pid> is supposed to be killed using SIGTERM.
-    bool            sigterm = false;   // <true> if sigterm was issued.
-    bool            sigkill = false;   // <true> if sigkill was issued.
-    int             kill_timeout;      // Pid shutdown interval in sec before it's killed with SIGKILL
-    bool            kill_group;        // Indicates if at exit the whole group needs to be killed
-    int             success_code;      // Exit code to use on success
-    bool            managed;           // <true> if this pid is started externally, but managed by erlexec
-    int             stream_fd[3];      // Pipe fd getting   process's stdin/stdout/stderr
-    int             stdin_wr_pos = 0;  // Offset of the unwritten portion of the head item of stdin_queue
-    int             dbg = 0;           // Debug flag
-#if defined(USE_POLL) && USE_POLL > 0
+    using Queue = std::list<std::string>;
+    
+    CmdArgsList     cmd;                // Executed command
+    pid_t           cmd_pid;            // Pid of the custom kill command
+    pid_t           cmd_gid;            // Command's group ID
+    std::string     kill_cmd;           // Kill command to use (default: use SIGTERM)
+    kill_cmd_pid_t  kill_cmd_pid   = -1;// Pid of the command that <pid> is supposed to kill
+    ei::TimeVal     deadline;           // Time when the <cmd_pid> is supposed to be killed using SIGTERM.
+    bool            sigterm = false;    // <true> if sigterm was issued.
+    bool            sigkill = false;    // <true> if sigkill was issued.
+    int             kill_timeout;       // Pid shutdown interval in sec before it's killed with SIGKILL
+    bool            kill_group;         // Indicates if at exit the whole group needs to be killed
+    int             success_code;       // Exit code to use on success
+    bool            managed;            // <true> if this pid is started externally, but managed by erlexec
+    int             stream_fd[3];       // Pipe fd getting   process's stdin/stdout/stderr
+    int             stdin_wr_pos   = 0; // Offset of the unwritten portion of the head item of stdin_queue
+    int             dbg            = 0; // Debug flag
+    Queue           stdin_queue;
+    bool            eof_arrived    = false;
+#if defined(USE_POLL) && USE_POLL  > 0
     int             poll_fd_idx[3] = {-1,-1,-1}; // Indexes to the pollfd structure in the poll array
 #endif
-    std::list<std::string> stdin_queue;
 
     // delete default constructor, copy-ctor and assignment operator
     CmdInfo() = delete;
