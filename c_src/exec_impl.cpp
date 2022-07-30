@@ -261,9 +261,8 @@ bool process_pid_input(CmdInfo& ci)
 
     while (!ci.stdin_queue.empty()) {
         std::string& s = ci.stdin_queue.back();
-
-        const void* p = s.c_str() + ci.stdin_wr_pos;
-        int n, len = s.size() - ci.stdin_wr_pos;
+        const void*  p = s.c_str() + ci.stdin_wr_pos;
+        int   n,   len = s.size()  - ci.stdin_wr_pos;
 
         while ((n = write(fd, p, len)) < 0 && errno == EINTR);
 
