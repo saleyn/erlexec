@@ -1,3 +1,4 @@
+2022-07-15: Bumped version to 2.0.0. No breaking changes. Included fine-grain control of pty options.
 2021-01-06: Dropped support of non C++11 compilers. Add poll(2) support. Fixed exec-port hanging issue.
 2020-06-14: Add support of binary commands to simplify erlexec's use by Elixir.
 2016-11-16: Fix timing bugs that caused occasionally missing SIGCHLD on busy systems.
