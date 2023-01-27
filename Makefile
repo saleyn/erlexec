@@ -30,8 +30,9 @@ clean:
 path:
 	@echo $(shell $(REBAR) $@)
 
-doc ebin:
+doc:
 	mkdir -p $@
+	$(REBAR) ex_doc
 
 test:
 	@$(REBAR) eunit
