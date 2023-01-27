@@ -61,7 +61,7 @@ Linux, Solaris, FreeBSD, OpenBSD, MacOS X
 
 ## DOCUMENTATION ##
 
-See http://saleyn.github.io/erlexec
+See https://hexdocs.pm/erlexec/readme.html
 
 ## USAGE ##
 
