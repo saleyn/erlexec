@@ -490,10 +490,11 @@ Got: {stdout,26143,<<"baz\nbar\nfoo\n">>}
 ### Running OS commands with/without shell
 ```erlang
 % Execute a command by an OS shell interpreter
-34> exec:run("/bin/echo ok", [sync, stdout]).
+34> exec:run("echo ok", [sync, stdout]).
 {ok, [{stdout, [<<"ok\n">>]}]}
 
-% Execute an executable without a shell
+% Execute an executable without a shell (note that in this case
+% the full path to the executable is required):
 35> exec:run(["/bin/echo", "ok"], [sync, stdout])).
 {ok, [{stdout, [<<"ok\n">>]}]}
 

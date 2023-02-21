@@ -177,7 +177,8 @@
 %% When command is given in the form of a list of strings,
 %% it is passed to `execve(3)' library call directly without
 %% involving the shell process, so the list of strings
-%% represents the program to be executed with arguments.
+%% represents the program to be executed given with a full path,
+%% followed by the list of arguments (e.g. `["/bin/echo", "ok"]').
 %% In this case all shell-based features are disabled
 %% and there's no shell injection vulnerability.
 -export_type([cmd/0]).
