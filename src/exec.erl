@@ -760,10 +760,11 @@ init([Options]) ->
                 [" -"++atom_to_list(Opt)++" "++integer_to_list(I) | Acc];
            (_, Acc) -> Acc
         end, [], Opts),
-    Exe0  = case proplists:get_value(portexe, Options, noportexe) of
+    Exe00  = case proplists:get_value(portexe, Options, noportexe) of
             noportexe -> default(portexe);
             UserExe   -> to_list(UserExe)
             end,
+    Exe0  = ?FMT("~p", [Exe00]),
     Args  = lists:flatten(Args0),
     Users = case proplists:get_value(limit_users, Options, default(limit_users)) of
             [] -> [];
@@ -778,7 +779,7 @@ init([Options]) ->
             end,
     % When instructing to run as root, check that the port program has
     % the SUID bit set or else use "sudo"
-    {SUID,NeedSudo} = is_suid_and_root_owner(Exe0),
+    {SUID,NeedSudo} = is_suid_and_root_owner(Exe00),
     EffUsr= os:getenv("USER"),
     IsRoot= EffUsr =:= "root",
     Exe   = if not Root ->
