@@ -760,11 +760,11 @@ init([Options]) ->
                 [" -"++atom_to_list(Opt)++" "++integer_to_list(I) | Acc];
            (_, Acc) -> Acc
         end, [], Opts),
-    Exe00  = case proplists:get_value(portexe, Options, noportexe) of
+    Exe0  = case proplists:get_value(portexe, Options, noportexe) of
             noportexe -> default(portexe);
             UserExe   -> to_list(UserExe)
             end,
-    Exe0  = ?FMT("~p", [Exe00]),
+    Exe1  = ?FMT("~p", [Exe0]),
     Args  = lists:flatten(Args0),
     Users = case proplists:get_value(limit_users, Options, default(limit_users)) of
             [] -> [];
@@ -779,25 +779,25 @@ init([Options]) ->
             end,
     % When instructing to run as root, check that the port program has
     % the SUID bit set or else use "sudo"
-    {SUID,NeedSudo} = is_suid_and_root_owner(Exe00),
+    {SUID,NeedSudo} = is_suid_and_root_owner(Exe0),
     EffUsr= os:getenv("USER"),
     IsRoot= EffUsr =:= "root",
     Exe   = if not Root ->
-                Exe0++Args;
+                Exe1++Args;
             Root, IsRoot, User/=undefined, User/="", ((SUID     andalso Users/=[]) orelse
                                                       (not SUID andalso Users==[])) ->
-                Exe0++Args;
+                Exe1++Args;
             %Root, not IsRoot, NeedSudo, User/=undefined, User/="" ->
                 % Asked to enable root, but running as non-root, and have no SUID: use sudo.
-            %    lists:append(["/usr/bin/sudo -u ", to_list(User), " ", Exe0, Args]);
+            %    lists:append(["/usr/bin/sudo -u ", to_list(User), " ", Exe1, Args]);
             Root, not IsRoot, NeedSudo, ((User/=undefined andalso User/="") orelse
                                          (EffUsr/=User andalso User/=undefined
                                                        andalso User/=root
                                                        andalso User/="root")) ->
                 % Asked to enable root, but running as non-root, and have SUID: use sudo.
-                lists:append(["/usr/bin/sudo ", Exe0, Args]);
+                lists:append(["/usr/bin/sudo ", Exe1, Args]);
             true ->
-                Exe0++Args
+                Exe1++Args
             end,
     debug(Debug, "exec: ~s~sport program: ~s\n~s",
         [if SUID -> "[SUID] "; true -> "" end,
