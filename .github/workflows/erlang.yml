@@ -49,7 +49,7 @@ jobs:
         os: [ macos-latest ]
         compiler:
           - { compiler: XCode, CC: cc, CXX: c++ }
-        otp: [25, 26]
+        otp: [25]
     steps:
       - uses: actions/checkout@v2
       - name: Install Base Dependencies
