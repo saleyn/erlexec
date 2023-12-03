@@ -30,6 +30,8 @@ jobs:
         run:  |
           erl -eval '{ok, Version} = file:read_file(filename:join([code:root_dir(), "releases", erlang:system_info(otp_release), "OTP_VERSION"])), io:format("Version=~s\n", [Version]), halt().' -noshell;
           make
+      - name: Fix Ownership
+        run: git config --global --add safe.directory ${pwd}
       - name: Test
         run:  |
           adduser --disabled-password --gecos '' newuser
