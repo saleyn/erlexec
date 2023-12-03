@@ -113,8 +113,10 @@ info:
 	@echo "SOURCES: $(SOURCES)"
 	@echo "OBJECTS: $(OBJECTS)"
 	@echo "OUTPUT:  $(EXE_OUTPUT)"
+	@echo "OUT_DIR: $(EXE_DIR)"
 
 $(EXE_OUTPUT): $(OBJECTS) $(EXE_DIR)
+	mkdir -p "$(EXE_DIR)"
 	$(CXX) $(OBJECTS) $(LDFLAGS) -o $@
 
 $(EXE_DIR):
