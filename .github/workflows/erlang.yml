@@ -27,11 +27,11 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: OTP Version
-        run:  |
-          erl -eval '{ok, Version} = file:read_file(filename:join([code:root_dir(), "releases", erlang:system_info(otp_release), "OTP_VERSION"])), io:format("Version=~s\n", [Version]), halt().' -noshell;
-          make
+        run:  erl -eval '{ok, Version} = file:read_file(filename:join([code:root_dir(), "releases", erlang:system_info(otp_release), "OTP_VERSION"])), io:format("Version=~s\n", [Version]), halt().' -noshell -noinput;
       - name: Fix Ownership
-        run: git config --global --add safe.directory ${pwd}
+        run:  git config --global --add safe.directory ${pwd}
+      - name: Build
+        run:  make
       - name: Test
         run:  |
           adduser --disabled-password --gecos '' newuser
@@ -57,6 +57,8 @@ jobs:
           brew install erlang
           brew install rebar3
           #brew bundle --verbose
+      - name: Fix Ownership
+        run:  git config --global --add safe.directory ${pwd}
       - name: Build
         env:
           CC: ${{ matrix.compiler.CC }}
@@ -64,12 +66,11 @@ jobs:
           SRC_DIR: ${{ github.workspace }}
           BUILD_DIR: ${{ github.workspace }}/build
           INSTALL_PREFIX: ${{ github.workspace }}/install
-        run: |
-          erl -eval '{ok, Version} = file:read_file(filename:join([code:root_dir(), "releases", erlang:system_info(otp_release), "OTP_VERSION"])), io:format("Version=~s\n", [Version]), halt().' -noshell;
-          make
+        run: erl -eval '{ok, Version} = file:read_file(filename:join([code:root_dir(), "releases", erlang:system_info(otp_release), "OTP_VERSION"])), io:format("Version=~s\n", [Version]), halt().' -noshell -noinput
+      - name: Build
+        run:  make
       - name: Test
-        run:  |
-          make test
+        run:  make test
 
 #  windows-msys2:
 #    name: OTP ${{ matrix.otp }} ${{ matrix.os }}.${{ matrix.msys2.msystem }}.${{ matrix.compiler.compiler }}
