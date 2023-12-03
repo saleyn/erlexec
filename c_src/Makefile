@@ -55,7 +55,7 @@ else
 endif
 
 CXX_VSN   ?= $(shell $(CXX) --version | sed -n '1s/^[^0-9]\+\([0-9]\+\)\(.[0-9-]\)\+.*$$/\1/p')
-BASE_CXX  := $(basename $(CXX))
+BASE_CXX  := $(notdir $(CXX))
 
 ifeq ($(BASE_CXX),g++)
   ifeq ($(shell expr $(CXX_VSN) \>= 13),1)
@@ -95,7 +95,7 @@ LDFLAGS    += $(ERL_LDFLAGS) -lei
 
 SRC_DIR     = $(CURDIR)
 EXE_OUTPUT ?= $(BASEDIR)/priv/$(MARCH)/exec-port
-EXE_DIR    := $(dirname $(EXE_OUTPUT))
+EXE_DIR    := $(dir $(EXE_OUTPUT))
 
 SOURCES    := $(wildcard *.c*)
 OBJECTS     = $(SOURCES:%.cpp=%.o)
