@@ -12,20 +12,14 @@ ifeq (,$(REBAR))
 $(error rebar and rebar3 not found!)
 endif
 
-.PHONY : all clean test docs doc clean-docs github-docs dialyzer
+.PHONY : all clean test docs doc clean-docs dialyzer
 
 all:
 	@$(REBAR) compile
 
--include build-aux/docs-addon.mk
-
-build-aux/docs-addon.mk:
-	@echo "Fetching build-aux/docs-addon.mk" && \
-		mkdir -p build-aux && \
-		curl -s -o build-aux/docs-addon.mk https://raw.githubusercontent.com/saleyn/util/master/build-aux/docs-addon.mk
-
 clean:
 	@$(REBAR) $@
+	@rm -rf ebin erl_crash.dump _build
 
 path:
 	@echo $(shell $(REBAR) $@)
