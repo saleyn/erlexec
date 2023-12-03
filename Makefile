@@ -32,7 +32,7 @@ test:
 	@$(REBAR) eunit
 
 info:
-	@mkdir -C c_src $@
+	@make -C c_src $@
 
 test-debug:
 	@OPTIMIZE=0 $(REBAR) eunit
