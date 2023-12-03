@@ -40,39 +40,39 @@ jobs:
           chown -R newuser:newuser .
           su -c "make test" newuser
 
-  macOS:
-    name: OTP ${{ matrix.otp }} ${{ matrix.os }}.${{ matrix.compiler.compiler }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ macos-latest ]
-        compiler:
-          - { compiler: XCode, CC: cc, CXX: c++ }
-        otp: [25]
-    steps:
-      - uses: actions/checkout@v2
-      - name: Install Base Dependencies
-        run: |
-          brew update > /dev/null || true
-          brew tap Homebrew/bundle
-          brew install erlang
-          brew install rebar3
-          #brew bundle --verbose
-      - name: Fix Ownership
-        run:  git config --global --add safe.directory ${GITHUB_WORKSPACE}
-      - name: Build
-        env:
-          CC: ${{ matrix.compiler.CC }}
-          CXX: ${{ matrix.compiler.CXX }}
-          SRC_DIR: ${{ github.workspace }}
-          BUILD_DIR: ${{ github.workspace }}/build
-          INSTALL_PREFIX: ${{ github.workspace }}/install
-        run: erl -eval '{ok, Version} = file:read_file(filename:join([code:root_dir(), "releases", erlang:system_info(otp_release), "OTP_VERSION"])), io:format("Version=~s\n", [Version]), halt().' -noshell -noinput
-      - name: Build
-        run:  make
-      - name: Test
-        run:  make test
+#  macOS:
+#    name: OTP ${{ matrix.otp }} ${{ matrix.os }}.${{ matrix.compiler.compiler }}
+#    runs-on: ${{ matrix.os }}
+#    strategy:
+#      fail-fast: false
+#      matrix:
+#        os: [ macos-latest ]
+#        compiler:
+#          - { compiler: XCode, CC: cc, CXX: c++ }
+#        otp: [25]
+#    steps:
+#      - uses: actions/checkout@v2
+#      - name: Install Base Dependencies
+#        run: |
+#          brew update > /dev/null || true
+#          brew tap Homebrew/bundle
+#          brew install erlang
+#          brew install rebar3
+#          #brew bundle --verbose
+#      - name: Fix Ownership
+#        run:  git config --global --add safe.directory ${GITHUB_WORKSPACE}
+#      - name: Build
+#        env:
+#          CC: ${{ matrix.compiler.CC }}
+#          CXX: ${{ matrix.compiler.CXX }}
+#          SRC_DIR: ${{ github.workspace }}
+#          BUILD_DIR: ${{ github.workspace }}/build
+#          INSTALL_PREFIX: ${{ github.workspace }}/install
+#        run: erl -eval '{ok, Version} = file:read_file(filename:join([code:root_dir(), "releases", erlang:system_info(otp_release), "OTP_VERSION"])), io:format("Version=~s\n", [Version]), halt().' -noshell -noinput
+#      - name: Build
+#        run:  make
+#      - name: Test
+#        run:  make test
 
 #  windows-msys2:
 #    name: OTP ${{ matrix.otp }} ${{ matrix.os }}.${{ matrix.msys2.msystem }}.${{ matrix.compiler.compiler }}
