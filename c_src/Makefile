@@ -95,6 +95,7 @@ LDFLAGS    += $(ERL_LDFLAGS) -lei
 
 SRC_DIR     = $(CURDIR)
 EXE_OUTPUT ?= $(BASEDIR)/priv/$(MARCH)/exec-port
+EXE_DIR    := $(dirname $(EXE_OUTPUT))
 
 SOURCES    := $(wildcard *.c*)
 OBJECTS     = $(SOURCES:%.cpp=%.o)
@@ -113,11 +114,14 @@ info:
 	@echo "OBJECTS: $(OBJECTS)"
 	@echo "OUTPUT:  $(EXE_OUTPUT)"
 
-$(EXE_OUTPUT): $(OBJECTS)
-	@mkdir -p $(BASEDIR)/priv/
-	$(CXX) $(OBJECTS) $(LDFLAGS) -o $(EXE_OUTPUT)
+$(EXE_OUTPUT): $(OBJECTS) $(EXE_DIR)
+	$(CXX) $(OBJECTS) $(LDFLAGS) -o $@
+
+$(EXE_DIR):
+	mkdir -p $(BASEDIR)/priv/$(MARCH)/
 
 %.o: %.cpp
 	$(COMPILE_CPP) $(OUTPUT_OPTION) $<
 
+.SUFFIXES:  # Delete default suffixes
 .SUFFIXES: .cpp .o .hpp
