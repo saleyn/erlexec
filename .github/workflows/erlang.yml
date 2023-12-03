@@ -31,7 +31,9 @@ jobs:
       - name: Fix Ownership
         run:  git config --global --add safe.directory ${GITHUB_WORKSPACE}
       - name: Build
-        run:  make
+        run:  |
+          make info
+          make
       - name: Test
         run:  |
           adduser --disabled-password --gecos '' newuser
