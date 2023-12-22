@@ -801,7 +801,7 @@ init([Options]) ->
             end,
     debug(Debug, "exec: ~s~sport program: ~s\n~s",
         [if SUID -> "[SUID] "; true -> "" end,
-         if (Root orelse IsRoot) andalso User =:= undefined -> "[ROOT] "; true -> "" end,
+         if (Root orelse IsRoot) andalso User =:= [] -> "[ROOT] "; true -> "" end,
          Exe,
          if Env =/= [] -> "  env: "++?FMT("~p", Env)++"\n"; true -> "" end]),
     try
@@ -1150,7 +1150,7 @@ check_options(Options) when is_list(Options) ->
 %% @end
 %%----------------------------------------------------------------------
 -spec do_unlink_ospid(Pid::pid(), term(), State::#state{}) ->
-        {ok, LastTok::integer(), LeftLinks::integer()}.
+        ok | true.
 do_unlink_ospid(Pid, _Reason, State) ->
     case ets:lookup(exec_mon, Pid) of
     [{_Pid, OsPid}] when is_integer(OsPid) ->
