@@ -7,6 +7,7 @@ ERL_CXXFLAGS ?= $(shell erl -noshell -noinput -eval "io:format(\"-I~ts/erts-~ts/
 ERL_LDFLAGS  ?= $(shell erl -noshell -noinput -eval "io:format(\"-L~ts\", [code:lib_dir(erl_interface, lib)]), halt(0).")
 
 CXXFLAGS  += -g -std=c++11 -finline-functions -Wall -DHAVE_PTRACE -MMD
+USE_POLL  ?= 1
 
 UNAME_SYS := $(shell uname -s | tr 'A-Z' 'a-z')
 
@@ -26,8 +27,8 @@ endif
 
 
 # By default use poll(2). If USE_POLL=0 is defined, use select(2):
-ifneq ($(filter $(USE_POLL),1 true),)
-  CXXFLAGS += -DUSE_POLL=1
+ifneq ($(filter $(USE_POLL),0 1 true),)
+  CXXFLAGS += -DUSE_POLL=$(USE_POLL)
 endif
 
 ifeq ($(findstring $(TARGET),linux),)

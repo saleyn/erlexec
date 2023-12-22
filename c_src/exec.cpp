@@ -58,7 +58,7 @@
 */
 
 #include "exec.hpp"
-#if defined(USE_POLL) && USE_POLL > 0
+#if defined(USE_POLL) && USE_POLL
 # include <sys/poll.h>
 #endif
 
@@ -618,7 +618,7 @@ void initialize(int userid, bool use_alt_fds, bool is_root, bool requested_root)
     DEBUG(debug, "Initializing: uid=%d, userid=%d%s%s%s",
             getuid(), userid, is_root ? " is-root":"",
             requested_root ? " requested-root":"",
-            #if defined(USE_POLL) && USE_POLL > 0
+            #if defined(USE_POLL) && USE_POLL
             ", use-poll=1"
             #else
             ""
