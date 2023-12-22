@@ -26,7 +26,7 @@ int ptsname_r(int fd, char* buf, size_t buflen) {
 //------------------------------------------------------------------------------
 // CmdInfo
 //------------------------------------------------------------------------------
-#if !defined(USE_POLL) || (USE_POLL == 0)
+#if !defined(USE_POLL) || !USE_POLL
 void CmdInfo::include_stream_fd(FdHandler &fdhandler)
 {
     for (int i=STDIN_FILENO; i <= STDERR_FILENO; i++) {
@@ -59,7 +59,7 @@ void CmdInfo::process_stream_data(FdHandler &fdhandler)
 }
 #endif /* !defined(USE_POLL) */
 
-#if defined(USE_POLL) && USE_POLL > 0
+#if defined(USE_POLL) && USE_POLL
 void CmdInfo::include_stream_fd(FdHandler &fdhandler)
 {
     for (int i=STDIN_FILENO; i <= STDERR_FILENO; i++) {
