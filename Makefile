@@ -32,7 +32,7 @@ test:
 	@$(REBAR) eunit
 
 info:
-	@make -C c_src $@
+	@$(MAKE) -C c_src $@
 
 test-debug:
 	@OPTIMIZE=0 $(REBAR) eunit
