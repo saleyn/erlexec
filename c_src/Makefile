@@ -19,10 +19,8 @@ UNAME_SYS := $(shell uname -s | tr 'A-Z' 'a-z')
 ifeq ($(CXX),)
   CXX     := g++
   TARGET  := $(shell erl -noshell -noinput -eval "io:format("~s\n", [erlang:system_info(system_architecture)]), halt(0).")
-  SYSROOT := ""
 else
   TARGET  := $(shell $(CXX) -dumpmachine)
-  SYSROOT := $(shell $(CXX) -print-sysroot)
 endif
 
 
@@ -72,6 +70,7 @@ HAVE_FORMAT ?= $(C20_FEATURES)
 HAVE_SRCLOC ?= $(C20_FEATURES)
 
 ifeq ($(UNAME_SYS),linux)
+  SYSROOT  := $(shell $(CXX) -print-sysroot)
   CXXFLAGS += -mavx2 -DHAVE_SETRESUID -DHAVE_PIPE2 $(X64)
   # Check for Linux capability API (Install package: libcap-devel)
   ifneq ($(wildcard $(SYSROOT)/usr/include/sys/capability.h),)
