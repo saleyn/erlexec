@@ -1,6 +1,6 @@
 {application,erlexec,
              [{description,"OS Process Manager"},
-              {vsn,"2.0.3"},
+              {vsn,"2.0.4"},
               {id,"erlexec"},
               {modules,[]},
               {registered,[exec]},
