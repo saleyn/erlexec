@@ -40,6 +40,13 @@ test-debug:
 publish: docs clean
 	$(REBAR) hex $(if $(replace),publish --replace,cut)
 
+deprecate:
+	@if [ -z $(vsn) ]; then \
+    echo "Usage: $(MAKE) $@ vsn=X.Y.Z      - Deprecate version X.Y.Z"; \
+    exit 1; \
+  fi
+	$(REBAR) hex retire erlexec $(vsn) deprecated --message Deprecated
+
 tar:
 	@rm -f $(TARBALL).tgz; \
 	cd ..; \
