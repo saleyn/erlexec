@@ -70,8 +70,14 @@ HAVE_FORMAT ?= $(C20_FEATURES)
 HAVE_SRCLOC ?= $(C20_FEATURES)
 
 ifeq ($(UNAME_SYS),linux)
+  ifeq ($(shell gcc -march=native -dM -E - </dev/null | awk '/__AVX2__/ { print $$3 }'),1)
+    CXXFLAGS += -mavx2
+  else ifeq ($(shell gcc -march=native -dM -E - </dev/null | awk '/__AVX__/ { print $$3 }'),1)
+    CXXFLAGS += -mavx
+  endif
+
   SYSROOT  := $(shell $(CXX) -print-sysroot)
-  CXXFLAGS += -mavx2 -DHAVE_SETRESUID -DHAVE_PIPE2 $(X64)
+  CXXFLAGS += -DHAVE_SETRESUID -DHAVE_PIPE2 $(X64)
   # Check for Linux capability API (Install package: libcap-devel)
   ifneq ($(wildcard $(SYSROOT)/usr/include/sys/capability.h),)
     CXXFLAGS += -DHAVE_CAP
