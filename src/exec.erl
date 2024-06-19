@@ -303,7 +303,7 @@
 %% </dl>
 -export_type([cmd_option/0, cmd_options/0]).
 
--type output_dev_opt() :: null | close | print | string() | pid()
+-type output_dev_opt() :: null | close | print | string() | binary() | pid()
     | fun((stdout | stderr, integer(), binary()) -> none()).
 %% Output device option:
 %% <dl>
