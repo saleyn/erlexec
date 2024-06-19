@@ -136,28 +136,28 @@ Copyright (c) 2003 Serge Aleynikov
 
 ## Architecture
 ```
-  *---------------------------*
-  |   +----+ +----+ +----+    |
-  |   |Pid1| |Pid2| |PidN|    |   Erlang light-weight Pids associated
-  |   +----+ +----+ +----+    |   one-to-one with managed OsPids
-  |         \   |   /         |
-  |          \  |  /          |
-  |           \ | / (links)   |
-  |         +------+          |
-  |         | exec |          |   Exec application running in Erlang VM
-  |         +------+          |
-  | Erlang VM   |             |
-  *-------------+-------------*
-                |
-          +-----------+
-          | exec-port |           Port program (separate OS process)
-          +-----------+
-           /    |    \
+  ┌───────────────────────────┐
+  │   ┌────┐ ┌────┐ ┌────┐    │
+  │   │Pid1│ │Pid2│ │PidN│    │   Erlang light-weight Pids associated
+  │   └────┘ └────┘ └────┘    │   one-to-one with managed OsPids
+  │         ╲   │   ╱         │
+  │          ╲  │  ╱          │
+  │           ╲ │ ╱ (links)   │
+  │         ┌──────┐          │
+  │         │ exec │          │   Exec application running in Erlang VM
+  │         └──────┘          │
+  │ Erlang VM   │             │
+  └─────────────┼─────────────┘
+                │
+          ┌───────────┐
+          │ exec-port │           Port program (separate OS process)
+          └───────────┘
+           ╱    │    ╲
  (optional stdin/stdout/stderr pipes)
-         /      |      \
-    +------+ +------+ +------+
-    |OsPid1| |OsPid2| |OsPidN|    Managed Child OS processes
-    +------+ +------+ +------+
+         ╱      │      ╲
+    ┌──────┐ ┌──────┐ ┌──────┐
+    │OsPid1│ │OsPid2│ │OsPidN│    Managed Child OS processes
+    └──────┘ └──────┘ └──────┘
 ```
 
 ## Configuration Options
@@ -446,6 +446,13 @@ ok
 ```
 
 ### Communicating with an OS process via STDIN and sending end-of-file
+
+Sometimes a spawned child OS process receiving stdin input needs to detect the
+end of input in order to process incoming data. When piping commands (e.g.
+`cat file | tac`) this is handled by detecting the EOF by the reading end of the
+pipe when the writing end of the pipe is closed.  In `erlexec` this is handled
+by explicitly sending the `eof` atom to the OS process that listens to STDIN:
+
 ```erlang
 2> Watcher = spawn(fun F() -> receive Msg -> io:format("Got: ~p\n", [Msg]), F() after 60000 -> ok end end).
 <0.112.0>
@@ -457,7 +464,7 @@ ok
 ok
 6> exec:send(Pid, <<"baz\n">>).
 ok
-7> exec:send(Pid, eof).
+7> exec:send(Pid, eof).   %% <--- sending the EOF command to the STDIN
 ok
 Got: {stdout,26143,<<"baz\nbar\nfoo\n">>}
 ```
