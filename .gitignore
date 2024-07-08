@@ -3,6 +3,7 @@
 *.d
 *.swp
 *.tgz
+*.dump
 doc
 priv
 ebin

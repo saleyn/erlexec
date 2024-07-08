@@ -2,9 +2,10 @@ CURDIR		:= $(shell pwd)
 BASEDIR		:= $(abspath $(dir $(CURDIR)))
 PROJECT		?= erlexec
 PROJECT		:= $(strip $(PROJECT))
+CXX       ?= g++
 
-ERL_CXXFLAGS ?= $(shell erl -noshell -noinput -eval "io:format(\"-I~ts/erts-~ts/include -I~ts\", [code:root_dir(), erlang:system_info(version), code:lib_dir(erl_interface, include)]), halt(0).")
-ERL_LDFLAGS  ?= $(shell erl -noshell -noinput -eval "io:format(\"-L~ts\", [code:lib_dir(erl_interface, lib)]), halt(0).")
+ERL_CXXFLAGS ?= $(shell erl -noshell -noinput -eval 'io:format("-I~ts/erts-~ts/include -I~ts", [code:root_dir(), erlang:system_info(version), code:lib_dir(erl_interface, include)]), halt(0).')
+ERL_LDFLAGS  ?= $(shell erl -noshell -noinput -eval 'io:format("-L~ts", [code:lib_dir(erl_interface, lib)]), halt(0).')
 
 CXXFLAGS  += -g -std=c++11 -finline-functions -Wall -DHAVE_PTRACE -MMD
 USE_POLL  ?= 1
@@ -15,10 +16,11 @@ UNAME_SYS := $(shell uname -s | tr 'A-Z' 'a-z')
 
 # For cross building using erlang:system_info() does not work as rebar runs
 # using the build hosts Erlang runtime.
-# If CXX environment variable is defined we are most likely running in a cross environment.
-ifeq ($(CXX),)
-  CXX     := g++
-  TARGET  := $(shell erl -noshell -noinput -eval "io:format("~s\n", [erlang:system_info(system_architecture)]), halt(0).")
+# If CROSS_COMPILE environment variable is defined we are most likely running
+# in a cross environment. In this case use the architecture name reported by
+# the C++ compiler.
+ifeq ($(CROSS_COMPILE),)
+  TARGET  := $(shell erl -noshell -noinput -eval 'io:format("~s\n", [erlang:system_info(system_architecture)]), halt(0).')
 else
   TARGET  := $(shell $(CXX) -dumpmachine)
 endif
@@ -118,6 +120,7 @@ clean:
 info:
 	@echo "SOURCES: $(SOURCES)"
 	@echo "OBJECTS: $(OBJECTS)"
+	@echo "TARGET:  $(TARGET)"
 	@echo "OUTPUT:  $(EXE_OUTPUT)"
 	@echo "OUT_DIR: $(EXE_DIR)"
 
