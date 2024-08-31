@@ -135,30 +135,31 @@ The program is distributed under BSD license.
 Copyright (c) 2003 Serge Aleynikov
 
 ## Architecture
-```
-  ┌───────────────────────────┐
-  │   ┌────┐ ┌────┐ ┌────┐    │
-  │   │Pid1│ │Pid2│ │PidN│    │   Erlang light-weight Pids associated
-  │   └────┘ └────┘ └────┘    │   one-to-one with managed OsPids
-  │         ╲   │   ╱         │
-  │          ╲  │  ╱          │
-  │           ╲ │ ╱ (links)   │
-  │         ┌──────┐          │
-  │         │ exec │          │   Exec application running in Erlang VM
-  │         └──────┘          │
-  │ Erlang VM   │             │
-  └─────────────┼─────────────┘
-                │
-          ┌───────────┐
-          │ exec-port │           Port program (separate OS process)
-          └───────────┘
-           ╱    │    ╲
- (optional stdin/stdout/stderr pipes)
-         ╱      │      ╲
-    ┌──────┐ ┌──────┐ ┌──────┐
-    │OsPid1│ │OsPid2│ │OsPidN│    Managed Child OS processes
-    └──────┘ └──────┘ └──────┘
-```
+
+<pre>
+┌───────────────────────────┐
+│   ┌────┐ ┌────┐ ┌────┐    │
+│   │Pid1│ │Pid2│ │PidN│    │   Erlang light-weight Pids associated
+│   └────┘ └────┘ └────┘    │   one-to-one with managed OsPids
+│         ╲   │   ╱         │
+│          ╲  │  ╱          │
+│           ╲ │ ╱ (links)   │
+│         ┌──────┐          │
+│         │ exec │          │   Exec application running in Erlang VM
+│         └──────┘          │
+│ Erlang VM   │             │
+└─────────────┼─────────────┘
+              │
+        ┌───────────┐
+        │ exec-port │           Port program (separate OS process)
+        └───────────┘
+         ╱    │    ╲
+(optional stdin/stdout/stderr pipes)
+       ╱      │      ╲
+  ┌──────┐ ┌──────┐ ┌──────┐
+  │OsPid1│ │OsPid2│ │OsPidN│    Managed Child OS processes
+  └──────┘ └──────┘ └──────┘
+</pre>
 
 ## Configuration Options
 
