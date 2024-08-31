@@ -1,59 +1,50 @@
 %%% vim:ts=4:sw=4:et
-%%%------------------------------------------------------------------------
-%%% File: $Id$
-%%%------------------------------------------------------------------------
-%%% @doc OS shell command runner.
-%%%      It communicates with a separate C++ port process `exec-port'
-%%%      spawned by this module, which is responsible
-%%%      for starting, killing, listing, terminating, and notifying of
-%%%      state changes.
-%%%
-%%%      The port program serves as a middle-man between
-%%%      the OS and the virtual machine to carry out OS-specific low-level
-%%%      process control.  The Erlang/C++ protocol is described in the
-%%%      `exec.cpp' file.  The `exec' application can execute tasks by
-%%%      impersonating as a different effective user.  This impersonation
-%%%      can be accomplished in one of the following two ways (assuming
-%%%      that the emulator is not running as `root':
-%%%      <ul>
-%%%      <li>Having the user account running the erlang emulator added to
-%%%          the `/etc/sudoers' file, so that it can execute `exec-port'
-%%%          task as `root'. (Preferred option)</li>
-%%%      <li>Setting `root' ownership on `exec-port', and setting the
-%%%          SUID bit: `chown root:root exec-port; chmod 4755 exec-port'.
-%%%          (This option is discouraged as it's less secure).</li>
-%%%      </ul>
-%%%      In either of these two cases, `exec:start_link/2' must be started
-%%%      with options `[root, {user, User}, {limit_users, Users}]',
-%%%      so that `exec-port' process will not actually run as
-%%%      root but will switch to the effective `User', and set the kernel
-%%%      capabilities so that it's able to start processes as other
-%%%      effective users given in the `Users' list and adjust process
-%%%      priorities.
-%%%
-%%%      Though, in the initial design, `exec' prohibited such use, upon
-%%%      user requests a feature was added (in order to support `docker'
-%%%      deployment and CI testing) to be able to execute `exec-port' as
-%%%      `root' without switching the effective user to anying other than
-%%%      `root'. To accomplish this use the following options to start
-%%%      `exec': `[root, {user, "root"}, {limit_users, ["root"]}]'.
-%%%
-%%%      At exit the port program makes its best effort to perform
-%%%      clean shutdown of all child OS processes.
-%%%      Every started OS process is linked to a spawned light-weight
-%%%      Erlang process returned by the run/2, run_link/2 command.
-%%%      The application ensures that termination of spawned OsPid
-%%%      leads to termination of the associated Erlang Pid, and vice
-%%%      versa.
-%%%
-%%% @author Serge Aleynikov <saleyn@gmail.com>
-%%% @version {@vsn}
-%%% @end
-%%%------------------------------------------------------------------------
-%%% Created: 2003-06-10 by Serge Aleynikov <saleyn@gmail.com>
-%%% $Header$
-%%%------------------------------------------------------------------------
 -module(exec).
+-moduledoc """
+OS shell command runner.
+It communicates with a separate C++ port process `exec-port`
+spawned by this module, which is responsible
+for starting, killing, listing, terminating, and notifying of
+state changes.
+
+The port program serves as a middle-man between
+the OS and the virtual machine to carry out OS-specific low-level
+process control.  The Erlang/C++ protocol is described in the
+`exec.cpp` file.  The `exec` application can execute tasks by
+impersonating as a different effective user.  This impersonation
+can be accomplished in one of the following two ways (assuming
+that the emulator is not running as `root`:
+
+- Having the user account running the erlang emulator added to
+  the `/etc/sudoers` file, so that it can execute `exec-port`
+  task as `root`. (Preferred option)
+- Setting `root` ownership on `exec-port`, and setting the
+  SUID bit: `chown root:root exec-port; chmod 4755 exec-port`.
+  (This option is discouraged as it's less secure).
+
+In either of these two cases, `exec:start_link/2` must be started
+with options `[root, {user, User}, {limit_users, Users}]`,
+so that `exec-port` process will not actually run as
+root but will switch to the effective `User`, and set the kernel
+capabilities so that it's able to start processes as other
+effective users given in the `Users` list and adjust process
+priorities.
+
+Though, in the initial design, `exec` prohibited such use, upon
+user requests a feature was added (in order to support `docker`
+deployment and CI testing) to be able to execute `exec-port` as
+`root` without switching the effective user to anying other than
+`root`. To accomplish this use the following options to start
+`exec`: `[root, {user, "root"}, {limit_users, ["root"]}]`.
+
+At exit the port program makes its best effort to perform
+clean shutdown of all child OS processes.
+Every started OS process is linked to a spawned light-weight
+Erlang process returned by the run/2, run_link/2 command.
+The application ensures that termination of spawned OsPid
+leads to termination of the associated Erlang Pid, and vice
+versa.
+""".
 -author('saleyn@gmail.com').
 
 -behaviour(gen_server).
@@ -94,6 +85,46 @@
 }).
 
 -type exec_options() :: [exec_option()].
+-doc """
+Options passed to the exec process at startup. They can be specified in the
+`sys.config` file for the `erlexec` application to customize application
+startup.
+- `debug`
+  : Same as `{debug, 1}`
+- `{debug, Level}`
+  : Enable port-programs debug trace at `Level`.
+- `verbose`
+  : Enable verbose prints of the Erlang process.
+- `root | {root, Boolean}`
+  : Allow running child processes as root.
+- `{args, Args}`
+  : Append `Args` to the port command.
+- `{alarm, Secs}`
+  : Give `Secs` deadline for the port program to clean up
+    child pids before exiting
+- `{user, User}`
+  : When the port program was compiled with capability (Linux)
+    support enabled, and is owned by root with a a suid bit set,
+    this option must be specified so that upon startup the port
+    program is running under the effective user different from root.
+    This is a security measure that will also prevent the port program
+    to execute root commands.
+- `{limit_users, LimitUsers}`
+  : Limit execution of external commands to these set of users.
+    This option is only valid when the port program is owned
+    by root.
+- `{portexe, Exe}`
+  : Provide an alternative location of the port program.
+    This option is useful when this application is stored
+    on NFS and the port program needs to be copied locally
+    so that root suid bit can be set.
+- `{env, Env}`
+  : Extend environment of the port program by using `Env` specification.
+    `Env` should be a list of tuples `{Name, Val}`, where Name is the
+    name of an environment variable, and Val is the value it is to have
+    in the spawned port process. If Val is `false`, then the `Name`
+    environment variable is unset.
+""".
 -type exec_option()  ::
       debug
     | {debug, integer()}
@@ -105,85 +136,144 @@
     | {limit_users, [string()|binary(), ...]}
     | {portexe, string()|binary()}
     | {env, [{string()|binary(), string()|binary()|false}, ...]}.
-%% Options passed to the exec process at startup. They can be specified in the
-%% `sys.config' file for the `erlexec' application to customize application
-%% startup.
-%% <dl>
-%% <dt>debug</dt><dd>Same as {debug, 1}</dd>
-%% <dt>{debug, Level}</dt><dd>Enable port-programs debug trace at `Level'.</dd>
-%% <dt>verbose</dt><dd>Enable verbose prints of the Erlang process.</dd>
-%% <dt>root | {root, Boolean}</dt><dd>Allow running child processes as root.</dd>
-%% <dt>{args, Args}</dt><dd>Append `Args' to the port command.</dd>
-%% <dt>{alarm, Secs}</dt>
-%%     <dd>Give `Secs' deadline for the port program to clean up
-%%         child pids before exiting</dd>
-%% <dt>{user, User}</dt>
-%%     <dd>When the port program was compiled with capability (Linux)
-%%         support enabled, and is owned by root with a a suid bit set,
-%%         this option must be specified so that upon startup the port
-%%         program is running under the effective user different from root.
-%%         This is a security measure that will also prevent the port program
-%%         to execute root commands.</dd>
-%% <dt>{limit_users, LimitUsers}</dt>
-%%     <dd>Limit execution of external commands to these set of users.
-%%         This option is only valid when the port program is owned
-%%         by root.</dd>
-%% <dt>{portexe, Exe}</dt>
-%%     <dd>Provide an alternative location of the port program.
-%%         This option is useful when this application is stored
-%%         on NFS and the port program needs to be copied locally
-%%         so that root suid bit can be set.</dd>
-%% <dt>{env, Env}</dt>
-%%     <dd>Extend environment of the port program by using `Env' specification.
-%%         `Env' should be a list of tuples `{Name, Val}', where Name is the
-%%         name of an environment variable, and Val is the value it is to have
-%%         in the spawned port process. If Val is `false', then the `Name'
-%%         environment variable is unset.</dd>
-%% </dl>
 -export_type([exec_option/0, exec_options/0]).
 
+-doc """
+Command to be executed. If specified as a string, the specified command
+will be executed through the shell. The current shell is obtained
+from environment variable `SHELL`. This can be useful if you
+are using Erlang primarily for the enhanced control flow it
+offers over most system shells and still want convenient
+access to other shell features such as shell pipes, filename
+wildcards, environment variable expansion, and expansion of
+`~` to a user's home directory.  All command arguments must
+be properly escaped including whitespace and shell
+metacharacters.
+
+Any part of the command string can contain unicode characters.
+
+**Warning:** Executing shell commands that
+incorporate unsanitized input from an untrusted source makes
+a program vulnerable to
+[shell injection](http://en.wikipedia.org/wiki/Shell_injection#Shell_injection),
+a serious security flaw which can result in arbitrary command
+execution. For this reason, the use of `shell` is strongly
+discouraged in cases where the command string is constructed
+from external input:
+
+```
+ 1> {ok, Filename} = io:read("Enter filename: ").
+ Enter filename: "non_existent; rm -rf / #".
+ {ok, "non_existent; rm -rf / #"}
+ 2> exec(Filename, []) % Argh!!! This is not good!
+```
+
+When command is given in the form of a list of strings,
+it is passed to `execve(3)` library call directly without
+involving the shell process, so the list of strings
+represents the program to be executed given with a full path,
+followed by the list of arguments (e.g. `["/bin/echo", "ok"]`).
+In this case all shell-based features are disabled
+and there's no shell injection vulnerability.
+""".
 -type cmd() :: binary() | string() | [string()].
-%% Command to be executed. If specified as a string, the specified command
-%% will be executed through the shell. The current shell is obtained
-%% from environment variable `SHELL'. This can be useful if you
-%% are using Erlang primarily for the enhanced control flow it
-%% offers over most system shells and still want convenient
-%% access to other shell features such as shell pipes, filename
-%% wildcards, environment variable expansion, and expansion of
-%% `~' to a user's home directory.  All command arguments must
-%% be properly escaped including whitespace and shell
-%% metacharacters.
-%%
-%% Any part of the command string can contain unicode characters.
-%%
-%% <ul>
-%% <b><u>Warning:</u></b> Executing shell commands that
-%%  incorporate unsanitized input from an untrusted source makes
-%%  a program vulnerable to
-%%  [http://en.wikipedia.org/wiki/Shell_injection#Shell_injection shell injection],
-%%  a serious security flaw which can result in arbitrary command
-%%  execution. For this reason, the use of `shell' is strongly
-%%  discouraged in cases where the command string is constructed
-%%  from external input:
-%% </ul>
-%%
-%% ```
-%%  1> {ok, Filename} = io:read("Enter filename: ").
-%%  Enter filename: "non_existent; rm -rf / #".
-%%  {ok, "non_existent; rm -rf / #"}
-%%  2> exec(Filename, []) % Argh!!! This is not good!
-%% '''
-%%
-%% When command is given in the form of a list of strings,
-%% it is passed to `execve(3)' library call directly without
-%% involving the shell process, so the list of strings
-%% represents the program to be executed given with a full path,
-%% followed by the list of arguments (e.g. `["/bin/echo", "ok"]').
-%% In this case all shell-based features are disabled
-%% and there's no shell injection vulnerability.
 -export_type([cmd/0]).
 
 -type cmd_options() :: [cmd_option()].
+-doc """
+Command options:
+- `monitor`
+  : Set up a monitor for the spawned process. The monitor is not
+    a standard `erlang:montior/2` function call, but it's emulated
+    by ensuring that the monitoring process receives notification
+    in the form:
+    `{'DOWN', OsPid::integer(), process, Pid::pid(), Reason}`.
+    If the `Reason` is `normal`, then process exited with status `0`,
+    otherwise there was an error. If the Reason is `{status, Status}`
+    the returned `Status` can be decoded with `status/1` to determine
+    the exit code of the process and if it was killed by signal.
+- `sync`
+  : Block the caller until the OS command exits
+- `{executable, Executable::string()}`
+  : Specifies a replacement program to execute. It is very seldom
+    needed. When the port program executes a child process using
+    `execve(3)` call, the call takes the following arguments:
+    `(Executable, Args, Env)`. When `Cmd` argument passed to the
+    `run/2` function is specified as the list of strings,
+    the executable replaces the first parameter in the call, and
+    the original args provided in the `Cmd` parameter are passed as
+    as the second parameter. Most programs treat the program
+    specified by args as the command name, which can then be different
+    from the program actually executed. On Unix, the args name becomes
+    the display name for the executable in utilities such as `ps`.
+
+    If `Cmd` argument passed to the `run/2` function is given as a
+    string, on Unix the `Executable` specifies a replacement shell
+    for the default `/bin/sh`.
+- `{cd, WorkDir}`
+  : Working directory
+- `{env, Env :: [{Name,Value}|string()|clear]}`
+  : List of "VAR=VALUE" environment variables or
+    list of {Name, Value} tuples or strings (like "NAME=VALUE") or `clear`.
+    `clear` will clear environment of a spawned child OS process
+    (so that it doesn't inherit parent's environment).
+    If `Value` is `false` then the `Var` env variable is unset.
+- `{kill, KillCmd}`
+  : This command will be used for killing the process. After
+    a 5-sec timeout if the process is still alive, it'll be
+    killed with SIGKILL. The kill command will have a `CHILD_PID`
+    environment variable set to the pid of the process it is
+    expected to kill.  If the `kill` option is not specified,
+    by default first the command is sent a `SIGTERM` signal,
+    followed by `SIGKILL` after a default timeout.
+- `{kill_timeout, Sec::integer()}`
+  : Number of seconds to wait after issuing a SIGTERM or
+    executing the custom `kill` command (if specified) before
+    killing the process with the `SIGKILL` signal
+- `kill_group`
+  : At process exit kill the whole process group associated with this pid.
+    The process group is obtained by the call to getpgid(3).
+- `{group, GID}`
+  : Sets the effective group ID of the spawned process. The value 0
+    means to create a new group ID equal to the OS pid of the process.
+- `{user, RunAsUser}`
+  : When exec-port was compiled with capability (Linux) support
+    enabled and has a suid bit set, it's capable of running
+    commands with a different RunAsUser effective user. Passing
+    "root" value of `RunAsUser` is prohibited.
+- `{success_exit_code, IntExitCode}`
+  : On success use `IntExitCode` return value instead of default 0.
+- `{nice, Priority}`
+  : Set process priority between -20 and 20. Note that
+    negative values can be specified only when `exec-port`
+    is started with a root suid bit set.
+- `stdin | {stdin, null | close | Filename}`
+  : Enable communication with an OS process via its `stdin`. The
+    input to the process is sent by `exec:send(OsPid, Data)`.
+    When specified as a tuple, `null` means redirection from `/dev/null`,
+    `close` means to close `stdin` stream, and `Filename` means to
+    take input from file.
+- `stdout`
+  : Same as `{stdout, self()}`.
+- `stderr`
+  : Same as `{stderr, self()}`.
+- `{stdout, output_device()}`
+  : Redirect process's standard output stream
+- `{stderr, output_device()}`
+  : Redirect process's standard error stream
+- `{stdout | stderr, Filename::string(), [output_dev_opt()]}`
+  : Redirect process's stdout/stderr stream to file
+- `{winsz, {Rows, Cols}}`
+  : Set the (psudo) terminal's dimensions of rows and columns
+- `pty`
+  : Use pseudo terminal for the process's stdin, stdout and stderr
+- `pty_echo`
+  : Allow the pty to run in echo mode, disabled by default
+- `debug`
+  : Same as `{debug, 1}`
+- `{debug, Level::integer()}`
+  : Enable debug printing in port program for this command
+""".
 -type cmd_option()  ::
       monitor
     | sync
@@ -207,131 +297,42 @@
     | pty | {pty, pty_opts()}
     | pty_echo
     | debug | {debug, integer()}.
-%% Command options:
-%% <dl>
-%% <dt>monitor</dt>
-%%     <dd>Set up a monitor for the spawned process. The monitor is not
-%%         a standard `erlang:montior/2' function call, but it's emulated
-%%         by ensuring that the monitoring process receives notification
-%%         in the form:
-%%          ``{'DOWN', OsPid::integer(), process, Pid::pid(), Reason}''.
-%%         If the `Reason' is `normal', then process exited with status `0',
-%%         otherwise there was an error. If the Reason is `{status, Status}'
-%%         the returned `Status' can be decoded with `status/1' to determine
-%%         the exit code of the process and if it was killed by signal.
-%%     </dd>
-%% <dt>sync</dt><dd>Block the caller until the OS command exits</dd>
-%% <dt>{executable, Executable::string()}</dt>
-%%     <dd>Specifies a replacement program to execute. It is very seldom
-%%         needed. When the port program executes a child process using
-%%         `execve(3)' call, the call takes the following arguments:
-%%         `(Executable, Args, Env)'. When `Cmd' argument passed to the
-%%         `run/2' function is specified as the list of strings,
-%%         the executable replaces the first parameter in the call, and
-%%         the original args provided in the `Cmd' parameter are passed as
-%%         as the second parameter. Most programs treat the program
-%%         specified by args as the command name, which can then be different
-%%         from the program actually executed. On Unix, the args name becomes
-%%         the display name for the executable in utilities such as `ps'.
-%%
-%%         If `Cmd' argument passed to the `run/2' function is given as a
-%%         string, on Unix the `Executable' specifies a replacement shell
-%%         for the default `/bin/sh'.</dd>
-%% <dt>{cd, WorkDir}</dt><dd>Working directory</dd>
-%% <dt>{env, Env :: [{Name,Value}|string()|clear]}</dt>
-%%     <dd>List of "VAR=VALUE" environment variables or
-%%         list of {Name, Value} tuples or strings (like "NAME=VALUE") or `clear'.
-%%         `clear' will clear environment of a spawned child OS process
-%%         (so that it doesn't inherit parent's environment).
-%%         If `Value' is `false' then the `Var' env variable is unset.
-%%     </dd>
-%% <dt>{kill, KillCmd}</dt>
-%%     <dd>This command will be used for killing the process. After
-%%         a 5-sec timeout if the process is still alive, it'll be
-%%         killed with SIGKILL. The kill command will have a `CHILD_PID'
-%%         environment variable set to the pid of the process it is
-%%         expected to kill.  If the `kill' option is not specified,
-%%         by default first the command is sent a `SIGTERM' signal,
-%%         followed by `SIGKILL' after a default timeout.</dd>
-%% <dt>{kill_timeout, Sec::integer()}</dt>
-%%     <dd>Number of seconds to wait after issuing a SIGTERM or
-%%         executing the custom `kill' command (if specified) before
-%%         killing the process with the `SIGKILL' signal</dd>
-%% <dt>kill_group</dt>
-%%     <dd>At process exit kill the whole process group associated with this pid.
-%%         The process group is obtained by the call to getpgid(3).</dd>
-%% <dt>{group, GID}</dt>
-%%     <dd>Sets the effective group ID of the spawned process. The value 0
-%%         means to create a new group ID equal to the OS pid of the process.</dd>
-%% <dt>{user, RunAsUser}</dt>
-%%     <dd>When exec-port was compiled with capability (Linux) support
-%%         enabled and has a suid bit set, it's capable of running
-%%         commands with a different RunAsUser effective user. Passing
-%%         "root" value of `RunAsUser' is prohibited.</dd>
-%% <dt>{success_exit_code, IntExitCode}</dt>
-%%     <dd>On success use `IntExitCode' return value instead of default 0.</dd>
-%% <dt>{nice, Priority}</dt>
-%%     <dd>Set process priority between -20 and 20. Note that
-%%         negative values can be specified only when `exec-port'
-%%         is started with a root suid bit set.</dd>
-%% <dt>stdin | {stdin, null | close | Filename}</dt>
-%%     <dd>Enable communication with an OS process via its `stdin'. The
-%%         input to the process is sent by `exec:send(OsPid, Data)'.
-%%         When specified as a tuple, `null' means redirection from `/dev/null',
-%%         `close' means to close `stdin' stream, and `Filename' means to
-%%         take input from file.</dd>
-%% <dt>stdout</dt>
-%%     <dd>Same as `{stdout, self()}'.</dd>
-%% <dt>stderr</dt>
-%%     <dd>Same as `{stderr, self()}'.</dd>
-%% <dt>{stdout, output_device()}</dt>
-%%     <dd>Redirect process's standard output stream</dd>
-%% <dt>{stderr, output_device()}</dt>
-%%     <dd>Redirect process's standard error stream</dd>
-%% <dt>{stdout | stderr, Filename::string(), [output_dev_opt()]}</dt>
-%%     <dd>Redirect process's stdout/stderr stream to file</dd>
-%% <dt>{winsz, {Rows, Cols}}</dt>
-%%     <dd>Set the (psudo) terminal's dimensions of rows and columns</dd>
-%% <dt>pty</dt>
-%%     <dd>Use pseudo terminal for the process's stdin, stdout and stderr</dd>
-%% <dt>pty_echo</dt>
-%%     <dd>Allow the pty to run in echo mode, disabled by default</dd>
-%% <dt>debug</dt>
-%%     <dd>Same as `{debug, 1}'</dd>
-%% <dt>{debug, Level::integer()}</dt>
-%%     <dd>Enable debug printing in port program for this command</dd>
-%% </dl>
 -export_type([cmd_option/0, cmd_options/0]).
 
+-doc """
+Output device option:
+- `null`
+  : Suppress output.
+- `close`
+  : Close file descriptor for writing.
+- `print`
+  : A debugging convenience device that prints the output to the
+    console shell
+- `Filename`
+  : Save output to file by overwriting it.
+- `pid()`
+  : Redirect output to this pid.
+- `fun((Stream, OsPid, Data) -> none())`
+  : Execute this callback on receiving output data
+""".
 -type output_dev_opt() :: null | close | print | string() | binary() | pid()
     | fun((stdout | stderr, integer(), binary()) -> none()).
-%% Output device option:
-%% <dl>
-%% <dt>null</dt><dd>Suppress output.</dd>
-%% <dt>close</dt><dd>Close file descriptor for writing.</dd>
-%% <dt>print</dt>
-%%     <dd>A debugging convenience device that prints the output to the
-%%         console shell</dd>
-%% <dt>Filename</dt><dd>Save output to file by overwriting it.</dd>
-%% <dt>pid()</dt><dd>Redirect output to this pid.</dd>
-%% <dt>fun((Stream, OsPid, Data) -> none())</dt>
-%%     <dd>Execute this callback on receiving output data</dd>
-%% </dl>
 -export_type([output_dev_opt/0]).
 
+-doc """
+Defines file opening attributes:
+- `append`
+  : Open the file in `append` mode
+- `{mode, Mode}`
+  : File creation access mode <b>specified in base 8</b> (e.g. 8#0644)
+""".
 -type output_file_opt() :: append | {mode, Mode::integer()}.
-%% Defines file opening attributes:
-%% <dl>
-%% <dt>append</dt><dd>Open the file in `append' mode</dd>
-%% <dt>{mode, Mode}</dt>
-%%      <dd>File creation access mode <b>specified in base 8</b> (e.g. 8#0644)</dd>
-%% </dl>
 -export_type([output_file_opt/0]).
 
+-doc "Representation of OS process ID".
 -type ospid() :: integer().
-%% Representation of OS process ID.
+-doc "Representation of OS group ID".
 -type osgid() :: integer().
-%% Representation of OS group ID.
 -export_type([ospid/0, osgid/0]).
 
 -type tty_char() ::
@@ -345,47 +346,48 @@
     echoke | pendin | opost  | olcuc  | onlcr   | ocrnl  | onocr  | onlret  |
     cs7    | cs8    | parenb | parodd.
 -type tty_speed() :: tty_op_ispeed | tty_op_ospeed.
+
+-doc """
+Pty options.
+
+See [termios(3)](https://man7.org/linux/man-pages/man3/termios.3.html).
+See [RFC4254](https://datatracker.ietf.org/doc/html/rfc4254#section-8).
+
+- `{tty_char(), Byte}`
+  : A special character with value from 0 to 255
+- `{tty_mode(), Enable}`
+  : Enable/disable a tty mode
+- `{tty_speed(), Speed}`
+  : Specify input or output baud rate. Provided for
+    completeness. Not useful for pseudo terminals.
+""".
 -type pty_opt()   :: {tty_char(), byte()}
     | {tty_mode(),  boolean()|0|1}
     | {tty_speed(), non_neg_integer()}.
-%% Pty options, see:
-%% <ul>
-%%      <li>[https://man7.org/linux/man-pages/man3/termios.3.html]</li>
-%%      <li>[https://datatracker.ietf.org/doc/html/rfc4254#section-8]</li>
-%% </ul>
-%% <dl>
-%% <dt>{tty_char(), Byte}</dt>
-%%      <dd>A special character with value from 0 to 255</dd>
-%% <dt>{tty_mode(), Enable}</dt>
-%%      <dd>Enable/disable a tty mode</dd>
-%% <dt>{tty_speed(), Speed}</dt>
-%%      <dd>Specify input or output baud rate. Provided for
-%%          completeness. Not useful for pseudo terminals.</dd>
-%% </dl>
 
+-doc "List of pty options".
 -type pty_opts() :: list(pty_opt()).
-%% List of pty options.
 
 -export_type([pty_opt/0, pty_opts/0]).
 
 %%-------------------------------------------------------------------------
-%% @doc Supervised start an external program manager.
-%%      Note that the port program requires `SHELL' environment variable to
-%%      be set.
-%% @end
-%%-------------------------------------------------------------------------
+-doc """
+Supervised start an external program manager.
+
+Note that the port program requires `SHELL` environment variable to be set.
+""".
 -spec start_link(exec_options()) -> {ok, pid()} | {error, any()}.
 start_link(Options) when is_list(Options) ->
     % Debug = {debug, [trace, log, statistics, {log_to_file, "./execserver.log"}]},
     gen_server:start_link({local, ?MODULE}, ?MODULE, [Options], []). % , [Debug]).
 
 %%-------------------------------------------------------------------------
-%% @equiv start_link/1
-%% @doc Start of an external program manager without supervision.
-%%      Note that the port program requires `SHELL' environment variable to
-%%      be set.
-%% @end
-%%-------------------------------------------------------------------------
+-doc #{equiv => start_link/1}.
+-doc """
+Start of an external program manager without supervision.
+Note that the port program requires `SHELL` environment variable to
+be set.
+""".
 -spec start() -> {ok, pid()} | {error, any()}.
 start() ->
     start([]).
@@ -400,13 +402,13 @@ start(Options) when is_list(Options) ->
     end.
 
 %%-------------------------------------------------------------------------
-%% @doc Run an external program. `OsPid' is the OS process identifier of
-%%      the new process. If `sync' is specified in `Options' the return
-%%      value is `{ok, Status}' where `Status' is OS process exit status.
-%%      The `Status' can be decoded with `status/1' to determine the
-%%      process's exit code and if it was killed by signal.
-%% @end
-%%-------------------------------------------------------------------------
+-doc """
+Run an external program. `OsPid` is the OS process identifier of
+the new process. If `sync` is specified in `Options` the return
+value is `{ok, Status}` where `Status` is OS process exit status.
+The `Status` can be decoded with `status/1` to determine the
+process's exit code and if it was killed by signal.
+""".
 -spec run(cmd(), cmd_options(), integer()) ->
     {ok, pid(), ospid()} | {ok, [{stdout | stderr, [binary()]}]} | {error, any()}.
 run(Exe, Options, Timeout) when (is_binary(Exe)  orelse  is_list(Exe))
@@ -416,15 +418,15 @@ run(Exe, Options) ->
     run(Exe, Options, ?TIMEOUT).
 
 %%-------------------------------------------------------------------------
-%% @equiv run/2
-%% @doc Run an external program and link to the OsPid. If OsPid exits,
-%%      the calling process will be killed or if it's trapping exits,
-%%      it'll get {'EXIT', OsPid, Status} message.  If the calling process
-%%      dies the OsPid will be killed.
-%%      The `Status' can be decoded with `status/1' to determine the
-%%      process's exit code and if it was killed by signal.
-%% @end
-%%-------------------------------------------------------------------------
+-doc #{equiv => run/2}.
+-doc """
+Run an external program and link to the OsPid. If OsPid exits,
+the calling process will be killed or if it's trapping exits,
+it'll get {'EXIT', OsPid, Status} message.  If the calling process
+dies the OsPid will be killed.
+The `Status` can be decoded with `status/1` to determine the
+process's exit code and if it was killed by signal.
+""".
 -spec run_link(cmd(), cmd_options(), integer()) ->
     {ok, pid(), ospid()} | {ok, [{stdout | stderr, [binary()]}]} | {error, any()}.
 run_link(Exe, Options, Timeout) when (is_binary(Exe)  orelse  is_list(Exe))
@@ -434,11 +436,11 @@ run_link(Exe, Options) ->
     run_link(Exe, Options, ?TIMEOUT).
 
 %%-------------------------------------------------------------------------
-%% @doc Manage an existing external process. `OsPid' is the OS process
-%%      identifier of the external OS process or an Erlang `Port' that
-%%      would be managed by erlexec.
-%% @end
-%%-------------------------------------------------------------------------
+-doc """
+Manage an existing external process. `OsPid` is the OS process
+identifier of the external OS process or an Erlang `Port` that
+would be managed by erlexec.
+""".
 -spec manage(ospid() | port(), Options::cmd_options(), Timeout::integer()) ->
     {ok, pid(), ospid()} | {error, any()}.
 manage(Pid, Options, Timeout) when is_integer(Pid), is_integer(Timeout) ->
@@ -450,17 +452,13 @@ manage(Port, Options) ->
     manage(Port, Options, ?TIMEOUT).
 
 %%-------------------------------------------------------------------------
-%% @doc Get a list of children managed by port program.
-%% @end
-%%-------------------------------------------------------------------------
+-doc "Get a list of children managed by port program".
 -spec which_children() -> [ospid(), ...].
 which_children() ->
     gen_server:call(?MODULE, {port, {list}}).
 
 %%-------------------------------------------------------------------------
-%% @doc Send a `Signal' to a child `Pid', `OsPid' or an Erlang `Port'.
-%% @end
-%%-------------------------------------------------------------------------
+-doc "Send a `Signal` to a child `Pid`, `OsPid` or an Erlang `Port`".
 -spec kill(pid() | ospid(), atom()|integer()) -> ok | {error, any()}.
 kill(Pid, Signal) when is_atom(Signal) ->
     kill(Pid, signal_to_int(Signal));
@@ -472,23 +470,21 @@ kill(Port, Signal) when is_port(Port) ->
     kill(Pid, Signal).
 
 %%-------------------------------------------------------------------------
-%% @doc Change group ID of a given `OsPid' to `Gid'.
-%% @end
-%%-------------------------------------------------------------------------
+-doc "Change group ID of a given `OsPid` to `Gid`".
 -spec setpgid(ospid(), osgid()) -> ok | {error, any()}.
 setpgid(OsPid, Gid) when is_integer(OsPid), is_integer(Gid) ->
     gen_server:call(?MODULE, {port, {setpgid, OsPid, Gid}}).
 
 %%-------------------------------------------------------------------------
-%% @doc Terminate a managed `Pid', `OsPid', or `Port' process. The OS process is
-%%      terminated gracefully.  If it was given a `{kill, Cmd}' option at
-%%      startup, that command is executed and a timer is started.  If
-%%      the program doesn't exit, then the default termination is
-%%      performed.  Default termination implies sending a `SIGTERM' command
-%%      followed by `SIGKILL' in 5 seconds, if the program doesn't get
-%%      killed.
-%% @end
-%%-------------------------------------------------------------------------
+-doc """
+Terminate a managed `Pid`, `OsPid`, or `Port` process. The OS process is
+terminated gracefully.  If it was given a `{kill, Cmd}` option at
+startup, that command is executed and a timer is started.  If
+the program doesn't exit, then the default termination is
+performed.  Default termination implies sending a `SIGTERM` command
+followed by `SIGKILL` in 5 seconds, if the program doesn't get
+killed.
+""".
 -spec stop(pid() | ospid() | port()) -> ok | {error, any()}.
 stop(Pid) when is_pid(Pid); is_integer(Pid) ->
     gen_server:call(?MODULE, {port, {stop, Pid}}, 30000);
@@ -497,11 +493,10 @@ stop(Port) when is_port(Port) ->
     stop(Pid).
 
 %%-------------------------------------------------------------------------
-%% @doc Terminate a managed `Pid', `OsPid', or `Port' process, like
-%%      `stop/1', and wait for it to exit.
-%% @end
-%%-------------------------------------------------------------------------
-
+-doc """
+Terminate a managed `Pid`, `OsPid`, or `Port` process, like
+`stop/1`, and wait for it to exit.
+""".
 -spec stop_and_wait(pid() | ospid() | port(), integer()) -> term() | {error, any()}.
 stop_and_wait(Port, Timeout) when is_port(Port) ->
     {os_pid, OsPid} = erlang:port_info(Port, os_pid),
@@ -527,10 +522,10 @@ stop_and_wait(Port, Timeout) when is_port(Port) ->
     stop_and_wait(Pid, Timeout).
 
 %%-------------------------------------------------------------------------
-%% @doc Get `OsPid' of the given Erlang `Pid'.  The `Pid' must be created
-%%      previously by running the run/2 or run_link/2 commands.
-%% @end
-%%-------------------------------------------------------------------------
+-doc """
+Get `OsPid` of the given Erlang `Pid`.  The `Pid` must be created
+previously by running the run/2 or run_link/2 commands.
+""".
 -spec ospid(pid()) -> ospid() | {error, Reason::any()}.
 ospid(Pid) when is_pid(Pid) ->
     Ref = make_ref(),
@@ -542,22 +537,21 @@ ospid(Pid) when is_pid(Pid) ->
     end.
 
 %%-------------------------------------------------------------------------
-%% @doc Get `Pid' of the given `OsPid'.  The `OsPid' must be created
-%%      previously by running the run/2 or run_link/2 commands.
-%% @end
-%%-------------------------------------------------------------------------
+-doc """
+Get `Pid` of the given `OsPid`.  The `OsPid` must be created
+previously by running the run/2 or run_link/2 commands.
+""".
 -spec pid(OsPid::ospid()) -> pid() | undefined | {error, timeout}.
 pid(OsPid) when is_integer(OsPid) ->
     gen_server:call(?MODULE, {pid, OsPid}).
 
 %%-------------------------------------------------------------------------
-%% @doc Send `Data' to stdin of the OS process identified by `OsPid'.
-%%
-%% Sending eof instead of binary Data causes close of stdin of the
-%% corresponding process. Data sent to closed stdin is ignored.
-%%
-%% @end
-%%-------------------------------------------------------------------------
+-doc """
+Send `Data` to stdin of the OS process identified by `OsPid`.
+
+Sending eof instead of binary Data causes close of stdin of the
+corresponding process. Data sent to closed stdin is ignored.
+""".
 -spec send(OsPid :: ospid() | pid(), binary() | 'eof') -> ok.
 send(OsPid, Data)
   when (is_integer(OsPid) orelse is_pid(OsPid)),
@@ -565,12 +559,11 @@ send(OsPid, Data)
     gen_server:call(?MODULE, {port, {send, OsPid, Data}}).
 
 %%-------------------------------------------------------------------------
-%% @doc Set the pty terminal `Rows' and `Cols' of the OS process identified by `OsPid'.
-%%
-%% The process must have been created with the `pty' option.
-%%
-%% @end
-%%-------------------------------------------------------------------------
+-doc """
+Set the pty terminal `Rows` and `Cols` of the OS process identified by `OsPid`.
+
+The process must have been created with the `pty` option.
+""".
 -spec winsz(OsPid :: ospid() | pid(), integer(), integer()) -> ok | {error, Reason::any()}.
 winsz(OsPid, Rows, Cols)
   when (is_integer(OsPid) orelse is_pid(OsPid)),
@@ -579,12 +572,11 @@ winsz(OsPid, Rows, Cols)
     gen_server:call(?MODULE, {port, {winsz, OsPid, Rows, Cols}}).
 
 %%-------------------------------------------------------------------------
-%% @doc Set the pty terminal options of the OS process identified by `OsPid'.
-%%
-%% The process must have been created with the `pty' option.
-%%
-%% @end
-%%-------------------------------------------------------------------------
+-doc """
+Set the pty terminal options of the OS process identified by `OsPid`.
+
+The process must have been created with the `pty` option.
+""".
 -spec pty_opts(OsPid :: ospid() | pid(), pty_opts()) -> ok | {error, Reason::any()}.
 pty_opts(OsPid, Opts)
   when (is_integer(OsPid) orelse is_pid(OsPid)),
@@ -592,20 +584,18 @@ pty_opts(OsPid, Opts)
     gen_server:call(?MODULE, {port, {pty_opts, OsPid, Opts}}).
 
 %%-------------------------------------------------------------------------
-%% @doc Set debug level of the port process.
-%% @end
-%%-------------------------------------------------------------------------
+-doc "Set debug level of the port process".
 -spec debug(Level::integer()) -> {ok, OldLevel::integer()} | {error, timeout}.
 debug(Level) when is_integer(Level), Level >= 0, Level =< 10 ->
     gen_server:call(?MODULE, {port, {debug, Level}}).
 
 %%-------------------------------------------------------------------------
-%% @doc Decode the program's exit_status.  If the program exited by signal
-%%      the function returns `{signal, Signal, Core}' where the `Signal'
-%%      is the signal number or atom, and `Core' indicates if the core file
-%%      was generated.
-%% @end
-%%-------------------------------------------------------------------------
+-doc """
+Decode the program's exit_status.  If the program exited by signal
+the function returns `{signal, Signal, Core}` where the `Signal`
+is the signal number or atom, and `Core` indicates if the core file
+was generated.
+""".
 -spec status(integer()) ->
         {status, ExitStatus :: integer()} |
         {signal, Signal :: integer() | atom(), Core :: boolean()}.
@@ -622,9 +612,7 @@ status(Status) when is_integer(Status) ->
     end.
 
 %%-------------------------------------------------------------------------
-%% @doc Convert a signal number to atom
-%% @end
-%%-------------------------------------------------------------------------
+-doc "Convert a signal number to atom".
 -spec signal(integer()) -> atom() | integer().
 signal( 1) -> sighup;
 signal( 2) -> sigint;
@@ -692,9 +680,7 @@ signal_to_int(sigrtmin)   -> 34;
 signal_to_int(sigrtmax)   -> 64.
 
 %%-------------------------------------------------------------------------
-%% @private
-%% @doc Provide default value of a given option.
-%% @end
+%% Provide default value of a given option.
 %%-------------------------------------------------------------------------
 -spec default() -> [{atom(), term()}].
 default() ->
@@ -1009,13 +995,11 @@ maybe_add_monitor(Reply, _Pid, _MonType, _Sync, _PidOpts, _Debug) ->
     Reply.
 
 %%----------------------------------------------------------------------
-%% @doc Every OsPid is associated with an Erlang process started with
-%%      this function. The `Parent' is the ?MODULE port manager that
-%%      spawned this process and linked to it. `Pid' is the process
-%%      that ran an OS command associated with OsPid. If that process
-%%      requested a link (LinkType = 'link') we'll link to it.
-%% @end
-%% @private
+%% Every OsPid is associated with an Erlang process started with
+%% this function. The `Parent` is the ?MODULE port manager that
+%% spawned this process and linked to it. `Pid` is the process
+%% that ran an OS command associated with OsPid. If that process
+%% requested a link (LinkType = 'link') we'll link to it.
 %%----------------------------------------------------------------------
 -spec ospid_init(Pid::pid(), OsPid::integer(), link | monitor | undefined,
                  Sync::boolean(), Parent::pid(), list(), Debug::boolean()) ->
@@ -1145,9 +1129,8 @@ check_options(Options) when is_list(Options) ->
     end.
 
 %%----------------------------------------------------------------------
-%% @doc Pid died or requested to unlink - remove linked Pid records and
+%% Pid died or requested to unlink - remove linked Pid records and
 %% optionally kill all OsPids linked to the Pid.
-%% @end
 %%----------------------------------------------------------------------
 -spec do_unlink_ospid(Pid::pid(), term(), State::#state{}) ->
         ok | true.
