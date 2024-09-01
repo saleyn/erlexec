@@ -364,6 +364,7 @@ static int getpty(int& fdmp, ei::StringBuffer<128>& err) {
     return 0;
 }
 
+#ifdef HAVE_CAP
 struct Caps {
     Caps() : m_caps(cap_get_proc()) {}
     ~Caps() { if (m_caps) cap_free(m_caps); }
@@ -377,6 +378,7 @@ private:
     cap_t m_caps;
     std::vector<cap_value_t> m_cap_list;
 };
+#endif
 
 //------------------------------------------------------------------------------
 bool propagate_caps(ei::StringBuffer<128>& err)
