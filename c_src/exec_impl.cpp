@@ -364,53 +364,64 @@ static int getpty(int& fdmp, ei::StringBuffer<128>& err) {
     return 0;
 }
 
+struct Caps {
+    Caps() : m_caps(cap_get_proc()) {}
+    ~Caps() { if (m_caps) cap_free(m_caps); }
+
+    bool         valid()        const { return !!m_caps;           }
+    cap_t        value()              { return m_caps;             }
+    void         add(cap_value_t cap) { m_cap_list.push_back(cap); }
+    cap_value_t* list()               { return m_cap_list.data();  }
+    size_t       size()         const { return m_cap_list.size();  }
+private:
+    cap_t m_caps;
+    std::vector<cap_value_t> m_cap_list;
+};
+
 //------------------------------------------------------------------------------
-void propagate_caps(ei::StringBuffer<128>& err)
+bool propagate_caps(ei::StringBuffer<128>& err)
 {
 #ifdef HAVE_CAP
-    cap_t caps;
-    cap_value_t cap_list[CAP_LAST_CAP + 1];
-    int num_caps=0;
+    Caps caps;
 
     // Get the current process capabilities
-    caps = cap_get_proc();
-    if (caps == NULL) {
+    if (!caps.valid()) {
         err.write("error %d on cap_get_proc: %s\n", errno, strerror(errno));
+        return false;
     }
 
     // Get the bounding set of capabilities
     cap_flag_value_t cap_value;
     for (cap_value_t i = 0; i <= CAP_LAST_CAP; ++i) {
-        if (cap_get_flag(caps, i, CAP_PERMITTED, &cap_value) == -1) {
+        if (cap_get_flag(caps.value(), i, CAP_PERMITTED, &cap_value) < 0) {
             err.write("error %d on cap_get_flag: %s\n", errno, strerror(errno));
+            return false;
         }
-        if (cap_value == CAP_SET) {
-            cap_list[num_caps++] = i;
-        }
+        if (cap_value == CAP_SET)
+            cap_list.add(i);
     }
 
     // Set inheritable capabilities to all permitted capabilities
-    if (cap_set_flag(caps, CAP_INHERITABLE, num_caps, cap_list, CAP_SET) == -1) {
+    if (cap_set_flag(caps.value(), CAP_INHERITABLE, caps.size(), caps.list(), CAP_SET) < 0) {
         err.write("error %d on cap_set_flag: %s\n", errno, strerror(errno));
+        return false;
     }
 
     // Apply inheritable capabilities
-    if (cap_set_proc(caps) == -1) {
+    if (cap_set_proc(caps.value()) < 0) {
         err.write("error %d on cap_set_proc: %s\n", errno, strerror(errno));
+        return false;
     }
 
     // Set ambient capabilities
-    for (size_t i = 0; i < num_caps; i++) {
-        if (prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE, cap_list[i], 0, 0) == -1) {
-            err.write("error %d on PR_CAP_AMBIENT_RAISE: %s\n", errno, strerror(errno));
+    for (size_t i = 0; i < caps.size(); i++) {
+        if (prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE, caps.list()[i], 0, 0) < 0) {
+            err.write("error %d on PR_CAP_AMBIENT_RAISE[%d]: %s\n", errno, i, strerror(errno));
+            return false;
         }
     }
-
-    // Free the capability state
-    if (cap_free(caps) == -1) {
-        err.write("error %d on cap_free: %s\n", errno, strerror(errno));
-    }
 #endif
+    return true;
 }
 
 //------------------------------------------------------------------------------
@@ -695,7 +706,10 @@ pid_t start_child(CmdOptions& op, std::string& error)
         }
         */
 
-        propagate_caps(err);
+        if (!propagate_caps(err)) {
+	    perror(err.c_str());
+	    exit(EXIT_FAILURE);
+	}
 
         const char* executable = op.executable().empty()
             ? argv[0] : op.executable().c_str();
