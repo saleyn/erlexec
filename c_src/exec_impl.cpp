@@ -365,6 +365,47 @@ static int getpty(int& fdmp, ei::StringBuffer<128>& err) {
 }
 
 #ifdef HAVE_CAP
+// Placeholder for atom declaration
+// sed -n 's/^#define \(CAP_.*\) .*/\1/p' /usr/include/linux/capability.h | tr A-Z a-z | sed 's/cap_//'
+//
+const char *cap_name[CAP_LAST_CAP+1] = {
+    "chown",
+    "dac_override",
+    "dac_read_search",
+    "fowner",
+    "fsetid",
+    "kill",
+    "setgid",
+    "setuid",
+    "setpcap",
+    "linux_immutable",
+    "net_bind_service",
+    "net_broadcast",
+    "net_admin",
+    "net_raw",
+    "ipc_lock",
+    "ipc_owner",
+    "sys_module",
+    "sys_rawio",
+    "sys_chroot",
+    "sys_ptrace",
+    "sys_pacct",
+    "sys_admin",
+    "sys_boot",
+    "sys_nice",
+    "sys_resource",
+    "sys_time",
+    "sys_tty_config",
+    "mknod",
+    "lease",
+    "audit_write",
+    "audit_control",
+    "setfcap",
+    "mac_override",
+    "mac_admin",
+    "syslog"
+};
+
 struct Caps {
     Caps() : m_caps(cap_get_proc()) {}
     ~Caps() { if (m_caps) cap_free(m_caps); }
