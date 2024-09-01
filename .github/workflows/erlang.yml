@@ -22,7 +22,7 @@ jobs:
           - { compiler: GNU-11,  CC: gcc-11,   CXX: g++-11 }
           - { compiler: LLVM-12, CC: clang-12, CXX: clang++-12 }
           - { compiler: LLVM-11, CC: clang-11, CXX: clang++-11 }
-        otp: [25, 26]
+        otp: [27]
 
     steps:
       - uses: actions/checkout@v2
