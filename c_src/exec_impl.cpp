@@ -366,67 +366,64 @@ static int getpty(int& fdmp, ei::StringBuffer<128>& err) {
 
 #ifdef HAVE_CAP
 // Placeholder for decoding capability names passed in the "run child" command
-// sed -n 's/^#define \(CAP_.*\) .*/\1/p' /usr/include/linux/capability.h | tr A-Z a-z | sed 's/cap_//'
+// awk '/^#define +CAP_LAST_CAP/{exit} /^#define +CAP_.*/{gsub("CAP_", "", $2); printf("\"%-20s // %d\n", tolower($2)"\",",$3)}' /usr/include/linux/capability.h
 //
-const char *cap_name[CAP_LAST_CAP+1] = {
-    "chown",
-    "dac_override",
-    "dac_read_search",
-    "fowner",
-    "fsetid",
-    "kill",
-    "setgid",
-    "setuid",
-    "setpcap",
-    "linux_immutable",
-    "net_bind_service",
-    "net_broadcast",
-    "net_admin",
-    "net_raw",
-    "ipc_lock",
-    "ipc_owner",
-    "sys_module",
-    "sys_rawio",
-    "sys_chroot",
-    "sys_ptrace",
-    "sys_pacct",
-    "sys_admin",
-    "sys_boot",
-    "sys_nice",
-    "sys_resource",
-    "sys_time",
-    "sys_tty_config",
-    "mknod",
-    "lease",
-    "audit_write",
-    "audit_control",
-    "setfcap",
-    "mac_override",
-    "mac_admin",
-    "syslog",
-    "wake_alarm",
-    "block_suspend",
+const char* Caps::s_cap_name[] = {
+    "chown",              // 0
+    "dac_override",       // 1
+    "dac_read_search",    // 2
+    "fowner",             // 3
+    "fsetid",             // 4
+    "kill",               // 5
+    "setgid",             // 6
+    "setuid",             // 7
+    "setpcap",            // 8
+    "linux_immutable",    // 9
+    "net_bind_service",   // 10
+    "net_broadcast",      // 11
+    "net_admin",          // 12
+    "net_raw",            // 13
+    "ipc_lock",           // 14
+    "ipc_owner",          // 15
+    "sys_module",         // 16
+    "sys_rawio",          // 17
+    "sys_chroot",         // 18
+    "sys_ptrace",         // 19
+    "sys_pacct",          // 20
+    "sys_admin",          // 21
+    "sys_boot",           // 22
+    "sys_nice",           // 23
+    "sys_resource",       // 24
+    "sys_time",           // 25
+    "sys_tty_config",     // 26
+    "mknod",              // 27
+    "lease",              // 28
+    "audit_write",        // 29
+    "audit_control",      // 30
+    "setfcap",            // 31
+    "mac_override",       // 32
+    "mac_admin",          // 33
+    "syslog",             // 34
+    "wake_alarm",         // 35
+    "block_suspend",      // 36
+    "audit_read",         // 37
+    "perfmon",            // 38
+    "bpf",                // 39
+    "checkpoint_restore", // 40
 };
 
-struct Caps {
-    Caps() : m_caps(cap_get_proc()) {}
-    ~Caps() { if (m_caps) cap_free(m_caps); }
+std::unordered_map<std::string, cap_value_t> Caps::s_cap_s2i;
+std::unordered_map<cap_value_t, std::string> Caps::s_cap_i2s;
 
-    bool         valid()        const { return !!m_caps;           }
-    cap_t        value()              { return m_caps;             }
-    void         add(cap_value_t cap) { m_cap_list.push_back(cap); }
-    cap_value_t* list()               { return m_cap_list.data();  }
-    size_t       size()         const { return m_cap_list.size();  }
-private:
-    cap_t m_caps;
-    std::vector<cap_value_t> m_cap_list;
-};
 #endif
 
 //------------------------------------------------------------------------------
-bool propagate_caps(ei::StringBuffer<128>& err)
+bool propagate_caps(CmdOptions const& op, ei::StringBuffer<128>& err)
 {
 #ifdef HAVE_CAP
+    if (!op.has_caps())
+        return true;
+
     Caps caps;
 
     // Get the current process capabilities
@@ -435,35 +432,50 @@ bool propagate_caps(ei::StringBuffer<128>& err)
         return false;
     }
 
+    DEBUG(debug > 1, "PID (%d) requested caps: %s", getpid(), op.caps_to_string().c_str());
+
     // Get the bounding set of capabilities
     cap_flag_value_t cap_value;
-    for (cap_value_t i = 0; i <= CAP_LAST_CAP; ++i) {
+    for (cap_value_t i = 0; i < Caps::TOTAL_CAP_COUNT; ++i) {
+        // Check if the user requested this process to inherit capabilities
+        if (!op.has_cap(i)) {
+            DEBUG(debug > 1, "PID (%d) capability %s not set", getpid(), Caps::value_to_string(i).c_str());
+            continue;
+        }
+
         if (cap_get_flag(caps.value(), i, CAP_PERMITTED, &cap_value) < 0) {
-            err.write("error %d on cap_get_flag: %s\n", errno, strerror(errno));
+            err.write("cap_get_flag(%s) error(%d): %s", Caps::value_to_string(i).c_str(), errno, strerror(errno));
             return false;
         }
+
         if (cap_value == CAP_SET)
-            cap_list.add(i);
+            caps.add(i);
+        else {
+            DEBUG(debug > 1, "PID (%d) value of capability %s not set!", getpid(), Caps::value_to_string(i).c_str());
+        }
     }
 
     // Set inheritable capabilities to all permitted capabilities
-    if (cap_set_flag(caps.value(), CAP_INHERITABLE, caps.size(), caps.list(), CAP_SET) < 0) {
-        err.write("error %d on cap_set_flag: %s\n", errno, strerror(errno));
-        return false;
-    }
-
-    // Apply inheritable capabilities
-    if (cap_set_proc(caps.value()) < 0) {
-        err.write("error %d on cap_set_proc: %s\n", errno, strerror(errno));
-        return false;
-    }
-
-    // Set ambient capabilities
-    for (size_t i = 0; i < caps.size(); i++) {
-        if (prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE, caps.list()[i], 0, 0) < 0) {
-            err.write("error %d on PR_CAP_AMBIENT_RAISE[%d]: %s\n", errno, i, strerror(errno));
+    if (caps.size()) {
+        if (cap_set_flag(caps.value(), CAP_INHERITABLE, caps.size(), caps.list(), CAP_SET) < 0) {
+            err.write("cap_set_flag([%s]) error(%d): %s", caps.to_string().c_str(), errno, strerror(errno));
             return false;
         }
+
+        // Apply inheritable capabilities
+        if (cap_set_proc(caps.value()) < 0) {
+            err.write("cap_set_proc error(%d): %s", errno, strerror(errno));
+            return false;
+        }
+
+        DEBUG(debug > 1, "PID(%d) setting capabilities: %s", getpid(), caps.to_string().c_str());
+
+        // Set ambient capabilities
+        for (size_t i = 0; i < caps.size(); i++)
+            if (prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE, caps.list()[i], 0, 0) < 0) {
+                err.write("PR_CAP_AMBIENT_RAISE[%d] error(%d): %s\n", i, errno, strerror(errno));
+                return false;
+            }
     }
 #endif
     return true;
@@ -751,10 +763,10 @@ pid_t start_child(CmdOptions& op, std::string& error)
         }
         */
 
-        if (!propagate_caps(err)) {
-	    perror(err.c_str());
-	    exit(EXIT_FAILURE);
-	}
+        if (!propagate_caps(op, err)) {
+            perror(err.c_str());
+            exit(EXIT_FAILURE);
+        }
 
         const char* executable = op.executable().empty()
             ? argv[0] : op.executable().c_str();
@@ -1316,6 +1328,20 @@ int set_nonblock_flag(pid_t pid, int fd, bool value)
 }
 
 //------------------------------------------------------------------------------
+#ifdef HAVE_CAP
+std::string CmdOptions::caps_to_string() const {
+    ei::StringBuffer<256> s;
+    s.append("[");
+    for (auto c : m_caps) {
+        if (!s.empty()) s.append("|");
+        s.append(Caps::value_to_string(c));
+    }
+    s.append("]");
+    return s.c_str();
+}
+#endif
+
+//------------------------------------------------------------------------------
 int CmdOptions::ei_decode(bool getcmd)
 {
     // {Cmd::string()|binary()|[string()|binary()], [Option]}
@@ -1365,15 +1391,15 @@ int CmdOptions::ei_decode(bool getcmd)
         STDIN,      STDOUT,            STDERR,
         PTY,        SUCCESS_EXIT_CODE, CD,     ENV,
         EXECUTABLE, KILL,              KILL_TIMEOUT,
-        KILL_GROUP, NICE,              USER,    GROUP,
-        DEBUG_OPT,  PTY_ECHO,          WINSZ
+        KILL_GROUP, NICE,              USER,   GROUP,
+        DEBUG_OPT,  PTY_ECHO,          WINSZ,  CAPABILITIES 
     } opt;
     const char* opts[] = {
         "stdin",      "stdout",            "stderr",
-        "pty",        "success_exit_code", "cd", "env",
+        "pty",        "success_exit_code", "cd",    "env",
         "executable", "kill",              "kill_timeout",
         "kill_group", "nice",              "user",  "group",
-        "debug",      "pty_echo",          "winsz"
+        "debug",      "pty_echo",          "winsz", "capabilities"
     };
 
     bool seen_opt[sizeof(opts) / sizeof(char*)] = {false};
@@ -1578,13 +1604,44 @@ int CmdOptions::ei_decode(bool getcmd)
             case WINSZ:
                 if (eis.decodeType(arity) != etTuple ||
                     eis.decodeTupleSize() != 2       ||
-		    eis.decodeInt(m_winsz_rows) < 0  ||
-		    eis.decodeInt(m_winsz_cols) < 0)
-		{
+                    eis.decodeInt(m_winsz_rows) < 0  ||
+                    eis.decodeInt(m_winsz_cols) < 0)
+                {
                     m_err << op << " - invalid winsz";
                     return -1;
                 }
                 break;
+
+            #ifdef HAVE_CAP
+            case CAPABILITIES: {
+                std::string all;
+                int caps_list_size = -1;
+                if ((eis.decodeAtom(all) > -1) && (all == "all"))
+                    m_caps_all = true;
+                else if ((caps_list_size = eis.decodeListSize()) < 0) {
+                    m_err << op << " must be a list of atoms or 'all'";
+                    return -1;
+                }
+
+                if (caps_list_size > -1) {
+                    for (int i=0; i < caps_list_size; i++) {
+                        std::string s;
+                        if (eis.decodeAtom(s) < 0) {
+                            m_err << "badarg: capability#" << i << " name not an atom";
+                            return -1;
+                        }
+                        auto cap = Caps::string_to_value(s);
+                        if  (cap < 0) {
+                            m_err << "badarg: capability '" << s << "' is invalid";
+                            return -1;
+                        }
+                        m_caps.insert(cap);
+                    }
+                    eis.decodeListEnd();
+                }
+                break;
+            }
+            #endif
 
             case SUCCESS_EXIT_CODE:
                 if (eis.decodeInt(m_success_exit_code) < 0 ||

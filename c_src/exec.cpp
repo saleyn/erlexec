@@ -615,8 +615,8 @@ void initialize(int userid, bool use_alt_fds, bool is_root, bool requested_root)
         exit(4);
     }
 
-    DEBUG(debug, "Initializing: uid=%d, userid=%d%s%s%s",
-            getuid(), userid, is_root ? " is-root":"",
+    DEBUG(debug, "Initializing: pid=%d, uid=%d, userid=%d%s%s%s",
+            getpid(), getuid(), userid, is_root ? " is-root":"",
             requested_root ? " requested-root":"",
             #if defined(USE_POLL) && USE_POLL
             ", use-poll=1"
@@ -690,6 +690,8 @@ void initialize(int userid, bool use_alt_fds, bool is_root, bool requested_root)
     // Close fd's on fork, as they are not needed by child processes
     set_cloexec_flag(eis.read_handle(),  true);
     set_cloexec_flag(eis.write_handle(), true);
+
+    Caps::init_maps();
 }
 
 int finalize()

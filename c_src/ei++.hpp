@@ -124,6 +124,7 @@ namespace ei {
         size_t capacity()   const               { return m_size - m_headerSize; }
         size_t length()     const               { return strlen(base()); }
         void   clear()                          { m_buffer[m_headerSize] = '\0'; }
+        bool   empty()      const               { return m_buffer[m_headerSize] == '\0'; }
         /// Free heap allocated memory and shrink buffer to original statically allocated size.
         void   reset()                          { if (allocated()) m_alloc.deallocate(m_buffer, m_size); m_buffer = m_buff; clear(); }
         /// Pointer to a mutable char string of size <capacity()>.
@@ -131,7 +132,7 @@ namespace ei {
         char*  c_str()                          { return base(); }
         char*  append( const char* s )          { return copy( s, length() ); }
         char*  append( const std::string& s )   { return copy( s.c_str(), length() ); }
-        char*  append( const char* fmt, ... ) {
+        char*  appendv( const char* fmt, ... )  {
             va_list vargs;
             va_start (vargs, fmt);
             char* ret = write(length(), fmt, vargs);

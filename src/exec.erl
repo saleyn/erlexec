@@ -269,6 +269,9 @@ Command options:
   : Use pseudo terminal for the process's stdin, stdout and stderr
 - `pty_echo`
   : Allow the pty to run in echo mode, disabled by default
+- `{capabilities, all | [capability()]}`
+  : Capability names to inherit from the parent `exec-port` process.
+    See [capability()](#t:capability/0).
 - `debug`
   : Same as `{debug, 1}`
 - `{debug, Level::integer()}`
@@ -346,6 +349,71 @@ Defines file opening attributes:
     echoke | pendin | opost  | olcuc  | onlcr   | ocrnl  | onocr  | onlret  |
     cs7    | cs8    | parenb | parodd.
 -type tty_speed() :: tty_op_ispeed | tty_op_ospeed.
+
+-doc """
+For Linux platform that supports capabilities this type defines permissible
+capability options.
+* `chown`: Make arbitrary changes to file UIDs and GIDs.      
+* `dac_override`: Bypass file read, write, and execute permission checks.
+* `dac_read_search`: Bypass file read permission checks and directory read and
+execute permission checks.
+* `fowner`: Bypass permission checks on operations that normally require the file 
+system UID of the process to match the UID of the file.
+* `fsetid`: Don't clear set-user-ID and set-group-ID permission bits when a file is 
+modified; set the set-group-ID bit for a file whose GID does not match the file 
+system or any of the supplementary GIDs of the calling process.
+* `ipc_lock`: Lock memory.                                    
+* `ipc_owner`: Bypass permission checks for operations on System V IPC objects.
+* `kill`: Bypass permission checks for sending signals.       
+* `lease`: Establish leases on arbitrary files.               
+* `linux_immutable`: Set the FS_APPEND_FL and FS_IMMUTABLE_FL i-node flags.
+* `mac_admin`: Override Mandatory Access Control.             
+* `mac_override`: Allow MAC configuration or state changes.   
+* `mknod`: Create special files using.                        
+* `net_admin`: Perform various network-related operations.    
+* `net_bind_service`: Bind a socket to Internet domain privileged ports.
+* `net_broadcast`: (Unused) Make socket broadcasts, and listen to multicasts.
+* `net_raw`: Use RAW and PACKET sockets                   
+* `setgid`: Make arbitrary manipulations of process GIDs and supplementary GID list;
+forge GID when passing socket credentials via UNIX domain sockets.
+* `setfcap`: Set file capabilities.                           
+* `setpcap`: If file capabilities are not supported: grant or remove any capability
+in the caller's permitted capability set to or from any other process.
+* `setuid`: Make arbitrary manipulations of process UIDs; make forged UID when
+passing socket credentials via UNIX domain sockets.
+* `sys_admin`: Perform a range of system administration operations including:
+`quotactl(2)`, `mount(2)`, `umount(2)`, `swapon(2)`, `swapoff(2)`, `sethostname(2)`,
+and `setdomainname(2)`.
+* `sys_boot`: Use `reboot(2)` and `kexec_load(2)`.            
+* `sys_chroot`: Use `chroot(2)`.                              
+* `sys_module`: Load and unload kernel modules; in kernels before 2.6.25: drop
+capabilities from the system-wide capability bounding set.
+* `sys_nice`: Raise process nice value (`nice(2)`, `setpriority(2)`) and change the
+nice value for arbitrary processes.
+* `sys_pacct`: Use `acct(2)`.                                 
+* `sys_ptrace`: Trace arbitrary processes using `ptrace(2)`;
+apply `get_robust_list(2)` to arbitrary processes; inspect processes using `kcmp(2)`.
+* `sys_rawio`: Perform I/O port operations (`iopl(2)` and `ioperm(2)`).
+* `sys_resource`: Use reserved space on ext2 file systems.    
+* `sys_time`: Set system clock.                               
+* `sys_tty_config`: Use `vhangup(2)`; employ various privileged `ioctl(2)` operations
+on virtual terminals.
+* `syslog`: Perform privileged `syslog(2)` operations. See `syslog(2)` for
+information on which operations require privilege.
+* `wake_alarm`: Trigger something that will wake up the system.
+
+""".
+-type capability() ::
+    chown | dac_override | dac_read_search | fowner |
+    fsetid | kill | setgid | setuid | setpcap | 
+    linux_immutable | net_bind_service | net_broadcast |
+    net_admin | net_raw | ipc_lock | ipc_owner | sys_module |
+    sys_rawio | sys_chroot | sys_ptrace | sys_pacct | 
+    sys_admin | sys_boot | sys_nice | sys_resource | sys_time | 
+    sys_tty_config | mknod | lease | audit_write | audit_control |
+    setfcap | mac_override | mac_admin | syslog | wake_alarm |
+    block_suspend.
+-export_type([capability/0]).
 
 -doc """
 Pty options.
@@ -1278,6 +1346,11 @@ check_cmd_options([{winsz, {Rows, Cols}}=H|T], Pid, State, PortOpts, OtherOpts)
 check_cmd_options([{pty, Pty}=H|T], Pid, State, PortOpts, OtherOpts) when is_list(Pty) ->
     ok = check_pty_opts(Pty),
     check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+check_cmd_options([{capabilities, all}=H|T], Pid, State, PortOpts, OtherOpts) ->
+    check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+check_cmd_options([{capabilities, Caps}=H|T], Pid, State, PortOpts, OtherOpts) when is_list(Caps) ->
+    [check_capability(C) || C <- Caps],
+    check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
 check_cmd_options([{stdin, I}=H|T], Pid, State, PortOpts, OtherOpts)
         when I=:=null; I=:=close; is_list(I); is_binary(I) ->
     check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
@@ -1329,6 +1402,45 @@ check_pty_opts(Pty) when is_list(Pty) ->
     [] -> ok;
     L  -> throw({error, {invalid_pty_value, L}})
     end.
+
+check_capability(chown)            -> ok;
+check_capability(dac_override)     -> ok;
+check_capability(dac_read_search)  -> ok;
+check_capability(fowner)           -> ok;
+check_capability(fsetid)           -> ok;
+check_capability(kill)             -> ok;
+check_capability(setgid)           -> ok;
+check_capability(setuid)           -> ok;
+check_capability(setpcap)          -> ok;
+check_capability(linux_immutable)  -> ok;
+check_capability(net_bind_service) -> ok;
+check_capability(net_broadcast)    -> ok;
+check_capability(net_admin)        -> ok;
+check_capability(net_raw)          -> ok;
+check_capability(ipc_lock)         -> ok;
+check_capability(ipc_owner)        -> ok;
+check_capability(sys_module)       -> ok;
+check_capability(sys_rawio)        -> ok;
+check_capability(sys_chroot)       -> ok;
+check_capability(sys_ptrace)       -> ok;
+check_capability(sys_pacct)        -> ok;
+check_capability(sys_admin)        -> ok;
+check_capability(sys_boot)         -> ok;
+check_capability(sys_nice)         -> ok;
+check_capability(sys_resource)     -> ok;
+check_capability(sys_time)         -> ok;
+check_capability(sys_tty_config)   -> ok;
+check_capability(mknod)            -> ok;
+check_capability(lease)            -> ok;
+check_capability(audit_write)      -> ok;
+check_capability(audit_control)    -> ok;
+check_capability(setfcap)          -> ok;
+check_capability(mac_override)     -> ok;
+check_capability(mac_admin)        -> ok;
+check_capability(syslog)           -> ok;
+check_capability(wake_alarm)       -> ok;
+check_capability(block_suspend)    -> ok;
+check_capability(Other)            -> throw({error, ?FMT("Invalid capability: ~s", [Other])}).
 
 %% special characters
 check_pty_opt(vintr,    V) -> is_byte(V);

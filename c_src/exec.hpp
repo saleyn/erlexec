@@ -20,6 +20,7 @@ Date:   2016-11-14
 #ifdef HAVE_CAP
 #include <sys/prctl.h>
 #include <sys/capability.h>
+#include <unordered_map>
 #endif
 
 enum class FdType {
@@ -206,6 +207,10 @@ private:
     int                     m_debug = 0;
     int                     m_winsz_rows;
     int                     m_winsz_cols;
+    #ifdef HAVE_CAP
+    bool                    m_caps_all;  // Inherit all capabilities
+    std::set<cap_value_t>   m_caps;
+    #endif
 
     void init_streams() {
         for (int i=STDIN_FILENO; i <= STDERR_FILENO; i++) {
@@ -222,6 +227,7 @@ public:
         , m_is_kill_cmd(false)
         , m_nice(std::numeric_limits<int>::max())
         , m_group(std::numeric_limits<int>::max()), m_user(def_user)
+        , m_caps_all(false)
     {
         init_streams();
     }
@@ -232,6 +238,7 @@ public:
         , m_env(env)
         , m_nice(nice)
         , m_group(group), m_user(user)
+        , m_caps_all(false)
     {
         init_streams();
     }
@@ -271,6 +278,16 @@ public:
     int           stream_fd(int i)      const { return m_std_stream_fd[i]; }
     int&          stream_fd(int i)            { return m_std_stream_fd[i]; }
     std::string   stream_fd_type(int i) const { return fd_type(stream_fd(i)); }
+
+    #ifdef HAVE_CAP
+    bool                         caps_all() const { return m_caps_all; }
+    std::set<cap_value_t> const& caps()     const { return m_caps; }
+    bool                         has_caps() const { return m_caps_all || m_caps.size() > 0; }
+    bool                         has_cap(cap_value_t v) const {
+        return m_caps_all || m_caps.find(v) != m_caps.end();
+    }
+    std::string caps_to_string() const;
+    #endif
 
     void executable(const std::string& s) { m_executable = s; }
 
@@ -363,6 +380,67 @@ struct CmdInfo {
     void include_stream_fd(FdHandler &fdhandler);
     void process_stream_data(FdHandler &fdhandler);
 };
+
+#ifdef HAVE_CAP
+struct Caps {
+    Caps() : m_caps(cap_get_proc()) {}
+    ~Caps() { if (m_caps) cap_free(m_caps); }
+
+    bool         valid()        const { return !!m_caps;           }
+    cap_t        value()              { return m_caps;             }
+    void         add(cap_value_t cap) { m_cap_list.push_back(cap); }
+    cap_value_t* list()               { return m_cap_list.data();  }
+    size_t       size()         const { return m_cap_list.size();  }
+
+    static const std::string& value_to_string(cap_value_t v) {
+        static const std::string s_empty;
+        auto it = s_cap_i2s.find(v);
+        return it == s_cap_i2s.end() ? s_empty : it->second;
+    }
+
+    static const cap_value_t string_to_value(const std::string& cap) {
+        auto it = s_cap_s2i.find(cap);
+        return it == s_cap_s2i.end() ? -1 : it->second;
+    }
+
+    std::string to_string() {
+        ei::StringBuffer<256> s;
+        for (auto c : m_cap_list) {
+            if (!s.empty()) s.append("|");
+            s.append(value_to_string(c));
+        }
+        return s.c_str();
+    }
+
+    static void init_maps() {
+        for (cap_value_t i = 0; i < TOTAL_CAP_COUNT; ++i) {
+            s_cap_s2i.emplace(std::make_pair(s_cap_name[i], i));
+            s_cap_i2s.emplace(std::make_pair(i, s_cap_name[i]));
+        }
+    }
+
+    // In case on some platform the last capability name is less than CAP_BLOCK_SUSPEND,
+    // use that max cap name.  If it is greater than, we'd need to add them to the list above.
+    static constexpr const int TOTAL_CAP_COUNT = (CAP_LAST_CAP < CAP_CHECKPOINT_RESTORE ? CAP_LAST_CAP : CAP_CHECKPOINT_RESTORE) + 1;
+
+private:
+    std::vector<cap_value_t> m_cap_list;
+    cap_t                    m_caps;
+
+    // Placeholder for decoding capability names passed in the "run child" command
+    // awk '/^#define +CAP_LAST_CAP/{exit} /^#define +CAP_.*/{gsub("CAP_", "", $2); printf("\"%-20s // %d\n", tolower($2)"\",",$3)}' /usr/include/linux/capability.h
+    //
+    static const char* s_cap_name[];
+
+    static std::unordered_map<std::string, cap_value_t> s_cap_s2i;
+    static std::unordered_map<cap_value_t, std::string> s_cap_i2s;
+};
+
+#if CAP_LAST_CAP > CAP_CHECKPOINT_RESTORE
+#warning Capability names above CAP_BLOCK_SUSPEND are not supported!
+#endif
+
+#endif
 
 //-------------------------------------------------------------------------
 // Functions
