@@ -365,7 +365,7 @@ static int getpty(int& fdmp, ei::StringBuffer<128>& err) {
 }
 
 #ifdef HAVE_CAP
-// Placeholder for atom declaration
+// Placeholder for decoding capability names passed in the "run child" command
 // sed -n 's/^#define \(CAP_.*\) .*/\1/p' /usr/include/linux/capability.h | tr A-Z a-z | sed 's/cap_//'
 //
 const char *cap_name[CAP_LAST_CAP+1] = {
@@ -403,7 +403,9 @@ const char *cap_name[CAP_LAST_CAP+1] = {
     "setfcap",
     "mac_override",
     "mac_admin",
-    "syslog"
+    "syslog",
+    "wake_alarm",
+    "block_suspend",
 };
 
 struct Caps {
