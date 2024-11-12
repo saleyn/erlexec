@@ -7,7 +7,7 @@ CXX       ?= g++
 ERL_CXXFLAGS ?= $(shell erl -noshell -noinput -eval 'io:format("-I~ts/erts-~ts/include -I~ts", [code:root_dir(), erlang:system_info(version), code:lib_dir(erl_interface, include)]), halt(0).')
 ERL_LDFLAGS  ?= $(shell erl -noshell -noinput -eval 'io:format("-L~ts", [code:lib_dir(erl_interface, lib)]), halt(0).')
 
-CXXFLAGS  += -g -std=c++11 -finline-functions -Wall -DHAVE_PTRACE -MMD
+CXXFLAGS  += -std=c++11 -finline-functions -Wall -DHAVE_PTRACE -MMD
 USE_POLL  ?= 1
 
 UNAME_SYS := $(shell uname -s | tr 'A-Z' 'a-z')
