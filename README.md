@@ -169,6 +169,18 @@ The `exec-port` program requires the `SHELL` variable to be set. If you are
 running Erlang inside a docker container, you might need to ensure that `SHELL`
 is properly set prior to starting the emulator.
 
+## Debugging
+
+`exec` supports several debugging options passed to `exec:start/1`:
+
+* `{debug, Level}` - turns on debug verbosity in the port program.
+* `verbose`        - turns on verbosity in the Erlang code.
+* `valgrind`       - runs exec under the Valgrind tool, which needs
+  to be installed in the OS. This generates a local
+  `valgrind.YYYYMMDDhhmmss.log` file containing Valgrind's output.
+  If you need to customize the Valgrind command options, use
+  `{valgrind, "/path/to/valgrind Args ..."}` option.
+
 ## Examples
 
 ### Starting/stopping an OS process

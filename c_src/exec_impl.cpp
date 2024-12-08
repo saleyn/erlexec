@@ -557,7 +557,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
 
         if (op.pty()) {
             if (!op.pty_echo()) {
-                struct termios ios;
+                struct termios ios{};
                 tcgetattr(STDIN_FILENO, &ios);
                 // Disable the ECHO mode
                 // For the list of all modes see RFC4254:
@@ -575,9 +575,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
                     set_pty_opt(&ios, it->first, it->second);
                 tcsetattr(STDIN_FILENO, TCSANOW, &ios);
             }
-            std::tuple<int, int> winsz = op.winsz();
-            int rows = std::get<0>(winsz);
-            int cols = std::get<1>(winsz);
+            auto [rows, cols] = op.winsz();
             if (rows && cols)
                 set_winsz(STDIN_FILENO, rows, cols);
 
