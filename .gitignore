@@ -9,7 +9,9 @@ priv
 ebin
 .rebar/*
 .eunit
+.vscode
 _build
 *.crashdump
 compile_commands.json
 build-aux
+valgrind.*.log

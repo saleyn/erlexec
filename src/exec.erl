@@ -44,6 +44,18 @@ Erlang process returned by the run/2, run_link/2 command.
 The application ensures that termination of spawned OsPid
 leads to termination of the associated Erlang Pid, and vice
 versa.
+
+## Debugging
+
+`exec` supports several debugging options passed to `exec:start/1`:
+
+* `{debug, Level}` - turns on debug verbosity in the port program.
+* `verbose`        - turns on verbosity in the Erlang code.
+* `valgrind`       - runs exec under the Valgrind tool, which needs
+  to be installed in the OS. This generates a local 
+  `valgrind.YYYYMMDDhhmmss.log` file containing Valgrind's output.
+  If you need to customize the Valgrind command options, use
+  `{valgrind, "/path/to/valgrind Args ..."}` option.
 """.
 -author('saleyn@gmail.com').
 
@@ -124,6 +136,20 @@ startup.
     name of an environment variable, and Val is the value it is to have
     in the spawned port process. If Val is `false`, then the `Name`
     environment variable is unset.
+- `valgrind`
+  : Start port-exec by valgrind in order to check for memory and
+    resource leaks. This is only adviseable for testing. For Valgrind
+    support make sure that the tool is installed. Install with:
+```
+sudo apt install valgrind            # Ubuntu, Debian, etc.
+sudo yum install valgrind            # RHEL, CentOS, Fedora, etc.
+sudo pacman -Syu valgrind debuginfod # Arch, Manjaro, Garuda, etc.
+sudo pkg ins valgrind                # FreeBSD
+```
+    The Valgrind log will be written to the file `valgrind-YYYYMMDDhhmmss.log`
+- `{valgrind, Command}`
+  : Same as `valgrind`, but allows to specify the Valgrind command
+    and its options (e.g. "/path/to/valgrind --leak-check=full")
 """.
 -type exec_option()  ::
       debug
@@ -135,7 +161,10 @@ startup.
     | {user, string()|binary()}
     | {limit_users, [string()|binary(), ...]}
     | {portexe, string()|binary()}
-    | {env, [{string()|binary(), string()|binary()|false}, ...]}.
+    | {env, [{string()|binary(), string()|binary()|false}, ...]}
+    | valgrind
+    | {valgrind, string()}
+    .
 -export_type([exec_option/0, exec_options/0]).
 
 -doc """
@@ -711,6 +740,18 @@ default(portexe) ->
         % Join the priv/port path
         filename:join([Priv, Bin])
     end;
+default(valgrind) ->
+    {{Y,M,D},{H,Mi,S}} = {date(), time()},
+    Exe =
+        case os:find_executable("valgrind") of
+        false ->
+            error("ERROR: valgrind not found! Please use package manager to install it!");
+        Str ->
+            Str
+        end,
+    T = lists:flatten(io_lib:format("~w~.2.0w~.2.0w~.2.0w~.2.0w~.2.0w", [Y,M,D,H,Mi,S])),
+    Exe ++ " --leak-check=full --show-leak-kinds=all " ++
+    "--track-origins=yes --verbose --log-file=valgrind." ++ T ++ ".log ";
 default(Option) ->
     proplists:get_value(Option, default()).
 
@@ -732,7 +773,7 @@ init([Options]) ->
                               {root,    [{root, true}]},
                               {verbose, [{verbose, true}]}], Options),
     Opts1 = [T || T = {O,_} <- Opts0,
-                lists:member(O, [debug, verbose, root, args, alarm, user])],
+                lists:member(O, [debug, verbose, root, args, alarm, user, valgrind])],
     Opts  = proplists:normalize(Opts1, [{aliases, [{args, ''}]}]),
     Args0 = lists:foldl(
         fun
@@ -759,6 +800,12 @@ init([Options]) ->
     User  = to_list(proplists:get_value(user,Options)),
     Debug = proplists:get_value(verbose,     Options, default(verbose)),
     Root  = proplists:get_value(root,        Options, default(root)),
+    Valgr = case proplists:get_value(valgrind, Options) of
+            true                  -> default(valgrind);
+            Vg when is_list(Vg)   -> Vg ++ " ";
+            Vg when is_binary(Vg) -> binary_to_list(Vg) ++ " ";
+            undefined             -> []
+            end,
     Env   = case proplists:get_value(env, Options) of
             undefined -> [];
             Other     -> [{env, parse_env(Other)}]
@@ -769,10 +816,10 @@ init([Options]) ->
     EffUsr= os:getenv("USER"),
     IsRoot= EffUsr =:= "root",
     Exe   = if not Root ->
-                Exe1++Args;
+                Valgr++Exe1++Args;
             Root, IsRoot, User/=undefined, User/="", ((SUID     andalso Users/=[]) orelse
                                                       (not SUID andalso Users==[])) ->
-                Exe1++Args;
+                Valgr++Exe1++Args;
             %Root, not IsRoot, NeedSudo, User/=undefined, User/="" ->
                 % Asked to enable root, but running as non-root, and have no SUID: use sudo.
             %    lists:append(["/usr/bin/sudo -u ", to_list(User), " ", Exe1, Args]);
@@ -781,9 +828,9 @@ init([Options]) ->
                                                        andalso User/=root
                                                        andalso User/="root")) ->
                 % Asked to enable root, but running as non-root, and have SUID: use sudo.
-                lists:append(["/usr/bin/sudo ", Exe1, Args]);
+                lists:append(["/usr/bin/sudo ", Valgr, Exe1, Args]);
             true ->
-                Exe1++Args
+                Valgr++Exe1++Args
             end,
     debug(Debug, "exec: ~s~sport program: ~s\n~s",
         [if SUID -> "[SUID] "; true -> "" end,
