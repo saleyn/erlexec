@@ -121,6 +121,7 @@ info:
 	@echo "SOURCES: $(SOURCES)"
 	@echo "OBJECTS: $(OBJECTS)"
 	@echo "TARGET:  $(TARGET)"
+	@echo "MARCH:   $(MARCH)"
 	@echo "OUTPUT:  $(EXE_OUTPUT)"
 	@echo "OUT_DIR: $(EXE_DIR)"
 
