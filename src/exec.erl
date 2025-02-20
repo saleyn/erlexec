@@ -82,6 +82,7 @@
 -endif.
 
 -define(TIMEOUT, 30000).
+-define(MAX_PACKET_SIZE, 16#FFFF - 200). % UINT16, and keep some bytes for the header (24 should be enough).
 
 -record(state, {
     port,
@@ -559,6 +560,10 @@ pid(OsPid) when is_integer(OsPid) ->
 %% @end
 %%-------------------------------------------------------------------------
 -spec send(OsPid :: ospid() | pid(), binary() | 'eof') -> ok.
+send(OsPid, <<Chunk:(?MAX_PACKET_SIZE)/binary, Tail/binary>>)
+  when Tail =/= <<>> ->
+    ok = send(OsPid, Chunk),
+    send(OsPid, Tail);
 send(OsPid, Data)
   when (is_integer(OsPid) orelse is_pid(OsPid)),
        (is_binary(Data)   orelse Data =:= eof) ->
