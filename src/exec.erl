@@ -1573,6 +1573,7 @@ exec_test_() ->
             ?tt(test_sync()),
             ?tt(test_winsz()),
             ?tt(test_stdin()),
+            ?tt(test_large_stdin()),
             ?tt(test_stdin_eof()),
             ?tt(test_std(stdout)),
             ?tt(test_std(stderr)),
@@ -1662,6 +1663,11 @@ test_stdin() ->
     ok = exec:send(I, <<"Test data\n">>),
     ?receiveBytes({stdout,I,<<"Got: Test data\n">>}, 3000),
     ?receivePattern({'DOWN', _, process, P, normal}, 5000).
+
+test_large_stdin() ->
+    {ok, Pid, _} = exec:run("cat", [stdin, stdout, stderr]),
+    ?assertEqual(ok, exec:send(Pid, erlang:list_to_binary([A rem 250 || A <- lists:seq(1,65511)]))),
+    ?assertEqual(ok, exec:send(Pid, erlang:list_to_binary([A rem 250 || A <- lists:seq(1,256*1024)]))).
 
 test_stdin_eof() ->
     case os:find_executable("tac") of
@@ -1961,4 +1967,5 @@ test_dynamic_pty_opts() ->
     ok = exec:send(I, <<2>>),
     ?receiveBytes({stdout, I, <<"^B">>}, 5000),
     ?receivePattern({'DOWN', I, process, P, {exit_status, 2}}, 5000).
+
 -endif.
