@@ -57,7 +57,7 @@ If you find this project useful, please donate to:
 
 ## Supported Platforms
 
-Linux, Solaris, FreeBSD, OpenBSD, MacOS X
+Linux, Solaris, FreeBSD, DragonFly, OpenBSD, MacOS X
 
 ## DOCUMENTATION ##
 
