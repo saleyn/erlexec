@@ -91,7 +91,7 @@ else ifeq ($(UNAME_SYS),darwin)
 else ifeq ($(uname_sys),solaris)
   CXXFLAGS += -dhave_setreuid
   LDFLAGS  += -lrt $(x64)
-else ifneq ($(filter $(UNAME_SYS),freebsd openbsd dradonfly),)
+else ifneq ($(filter $(UNAME_SYS),freebsd openbsd dragonfly),)
   CXXFLAGS += -DHAVE_SETRESUID -DHAVE_PIPE2 $(X64)
   LDFLAGS  += $(X64)
 else
