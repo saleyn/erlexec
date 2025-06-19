@@ -1968,4 +1968,29 @@ test_dynamic_pty_opts() ->
     ?receiveBytes({stdout, I, <<"^B">>}, 5000),
     ?receivePattern({'DOWN', I, process, P, {exit_status, 2}}, 5000).
 
+% tests value returned by `exec:default(portexec)` when there is no priv dir
+default_portexe_no_priv_dir_test_() ->
+    Priv = code:priv_dir(erlexec),
+    Renamed = Priv ++ "_bak",
+    {setup,
+        fun() ->
+            case filelib:is_dir(Priv) of
+                true ->
+                    ok = file:rename(Priv, Renamed),
+                    renamed;
+                false -> no_priv_dir
+            end
+        end,
+        fun(renamed) ->
+            case filelib:is_dir(Renamed) of
+                true -> file:rename(Renamed, Priv);
+                false -> unexpected % these tests cannot run concurrently (check what affects renamed dir)
+            end
+        end,
+        fun() ->
+            ?assert(not filelib:is_dir(Priv)),
+            ?assert(filelib:is_dir(Renamed)),
+            ?assert(lists:suffix("/priv/false", exec:default(portexe)))
+        end}.
+
 -endif.
