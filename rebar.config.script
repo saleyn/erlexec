@@ -2,5 +2,23 @@
 
 Vsn = string:strip(os:cmd("git describe --always --tags --abbrev=0 | sed 's/^v//'"), right, $\n),
 
-maps:to_list(maps:merge(maps:from_list(CONFIG), #{edoc_opts => [{def, {vsn, Vsn}}]})).
+%% Determine optional target suffix
+ExtraTargets =
+  case os:getenv("ERLEXEC_REBAR_COMPILE_INFO") of
+    "1" -> " info all";
+    _   -> ""
+  end,
 
+CONFIG_FINAL = CONFIG ++ [
+  {edoc_opts, [{def, {vsn, Vsn}}]},
+  {pre_hooks, [
+    {"(freebsd|netbsd|openbsd|dragonfly)", compile, "gmake -C c_src" ++ ExtraTargets},
+    {"(linux|darwin|solaris)",             compile, "make -C c_src"  ++ ExtraTargets}
+  ]},
+  {post_hooks, [
+    {"(freebsd|netbsd|openbsd|dragonfly)", clean, "gmake -C c_src clean"},
+    {"(linux|darwin|solaris)",             clean, "make -C c_src clean"}
+  ]}
+],
+
+maps:to_list(maps:from_list(CONFIG_FINAL)).
