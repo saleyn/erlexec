@@ -735,15 +735,25 @@ default(portexe) ->
         "";
     Priv ->
         % Find all ports using wildcard for resiliency
-        Bin = case filelib:wildcard("*/exec-port", Priv) of
-            [Port] -> Port;
-            _      ->
-                Arch = erlang:system_info(system_architecture),
-                Tail = filename:join([Arch, "exec-port"]),
-                os:find_executable(filename:join([Priv, Tail]))
-        end,
-        % Join the priv/port path
-        filename:join([Priv, Bin])
+        case filelib:wildcard("*/exec-port", Priv) of
+        [Port] ->
+            % Exactly one match, use it as is (could be wrong arch)
+            filename:join([Priv, Port]);
+        [] ->
+            error_logger:warning_msg("No exec-port files found in ~p directory", [Priv]),
+            "";
+        Ports ->
+            % More than one match: try to find one matching system architecture
+            Arch = erlang:system_info(system_architecture),
+            % Check if the Path contains Arch as a subdirectory component
+            case [P || P <- Ports, string:str(P, Arch) > 0] of
+            [Match] ->
+                filename:join([Priv, Match]);
+            _ ->
+                error_logger:warning_msg("Multiple exec-port files found but none match architecture ~s", [Arch]),
+                ""
+            end
+        end
     end;
 default(valgrind) ->
     {{Y,M,D},{H,Mi,S}} = {date(), time()},
@@ -1968,29 +1978,151 @@ test_dynamic_pty_opts() ->
     ?receiveBytes({stdout, I, <<"^B">>}, 5000),
     ?receivePattern({'DOWN', I, process, P, {exit_status, 2}}, 5000).
 
-% tests value returned by `exec:default(portexec)` when there is no priv dir
 default_portexe_no_priv_dir_test_() ->
     Priv = code:priv_dir(erlexec),
-    Renamed = Priv ++ "_bak",
+    {setup,
+        fun() -> ok = backup_dir(Priv) end,
+        fun(_) -> ok = restore_backup_dir(Priv) end,
+        fun() ->
+            without_error_logger(fun() ->
+                ?assert(not filelib:is_dir(Priv)),
+                ?assertMatch("", exec:default(portexe))
+                                 end)
+        end}.
+
+default_portexe_invalid_file_test_() ->
+    Priv = code:priv_dir(erlexec),
+    RandomFile = filename:join(Priv, "random-file"),
+    ArchDir = filename:join(Priv, erlang:system_info(system_architecture)),
+
     {setup,
         fun() ->
-            case filelib:is_dir(Priv) of
-                true ->
-                    ok = file:rename(Priv, Renamed),
-                    renamed;
-                false -> no_priv_dir
-            end
+            ok = backup_dir(Priv),
+            ok = file:make_dir(Priv),
+            ok = file:write_file(RandomFile, <<>>),
+            ok = file:make_dir(ArchDir)
         end,
-        fun(renamed) ->
-            case filelib:is_dir(Renamed) of
-                true -> file:rename(Renamed, Priv);
-                false -> unexpected % these tests cannot run concurrently (check what affects renamed dir)
-            end
+        fun(_) ->
+            ok = delete_files([RandomFile]),
+            ok = delete_dirs([ArchDir, Priv]),
+            ok = restore_backup_dir(Priv)
         end,
         fun() ->
-            ?assert(not filelib:is_dir(Priv)),
-            ?assert(filelib:is_dir(Renamed)),
-            ?assert(lists:suffix("/priv/false", exec:default(portexe)))
+            without_error_logger(fun() ->
+                {ok, Entries} = file:list_dir(Priv),
+                ?assertEqual(lists:sort(["random-file", erlang:system_info(system_architecture)]), lists:sort(Entries)),
+                ?assertEqual("", exec:default(portexe))
+                                 end)
         end}.
+
+default_portexe_invalid_parent_dir_test_() ->
+    Priv = code:priv_dir(erlexec),
+    BinFile = filename:join(Priv, "exec-port"),
+    ArchDir = filename:join(Priv, "only-arch"),
+    RandomFile = filename:join(ArchDir, "random-file"),
+
+    {setup,
+        fun() ->
+            ok = backup_dir(Priv),
+            ok = file:make_dir(Priv),
+            ok = file:make_dir(ArchDir),
+            ok = file:write_file(BinFile, <<>>),
+            ok = file:write_file(RandomFile, <<>>)
+        end,
+        fun(_) ->
+            ok = delete_files([BinFile, RandomFile]),
+            ok = delete_dirs([ArchDir, Priv]),
+            ok = restore_backup_dir(Priv)
+        end,
+        fun() ->
+            without_error_logger(fun() ->
+                {ok, Entries} = file:list_dir(Priv),
+                ?assertEqual(["exec-port", "only-arch"], lists:sort(Entries)),
+                ?assertMatch("", exec:default(portexe))
+                                 end)
+        end}.
+
+default_portexe_single_execport_file_test_() ->
+    Priv = code:priv_dir(erlexec),
+    ArchDir = filename:join(Priv, "only-arch"),
+    BinFile = filename:join(ArchDir, "exec-port"),
+
+    {setup,
+        fun() ->
+            ok = backup_dir(Priv),
+            ok = file:make_dir(Priv),
+            ok = file:make_dir(ArchDir),
+            ok = file:write_file(BinFile, <<>>)
+        end,
+        fun(_) ->
+            ok = delete_files([BinFile]),
+            ok = delete_dirs([ArchDir, Priv]),
+            ok = restore_backup_dir(Priv)
+        end,
+        fun() ->
+            without_error_logger(fun() ->
+                {ok, Entries} = file:list_dir(Priv),
+                ?assertEqual(["only-arch"], Entries),
+                ?assert(lists:suffix("/priv/only-arch/exec-port", exec:default(portexe)))
+                                 end)
+        end}.
+
+default_portexe_multiple_portexec_files_test_() ->
+    Priv = code:priv_dir(erlexec),
+    Arch = erlang:system_info(system_architecture),
+    ArchDir = filename:join(Priv, Arch),
+    OtherArchDir = filename:join(Priv, "unknown-arch"),
+    BinFile = filename:join(ArchDir, "exec-port"),
+    OtherBinFile = filename:join(OtherArchDir, "exec-port"),
+
+    {setup,
+        fun() ->
+            ok = backup_dir(Priv),
+            ok = file:make_dir(Priv),
+            ok = file:make_dir(ArchDir),
+            ok = file:make_dir(OtherArchDir),
+            ok = file:write_file(BinFile, <<>>),
+            ok = file:write_file(OtherBinFile, <<>>)
+        end,
+        fun(_) ->
+            ok = delete_files([BinFile, OtherBinFile]),
+            ok = delete_dirs([ArchDir, OtherArchDir, Priv]),
+            ok = restore_backup_dir(Priv)
+        end,
+        fun() ->
+            without_error_logger(fun() ->
+                {ok, Entries} = file:list_dir(Priv),
+                ?assertEqual(lists:sort([Arch, "unknown-arch"]), lists:sort(Entries)),
+                ?assert(lists:suffix("/priv/" ++ Arch ++ "/exec-port", exec:default(portexe)))
+                                 end)
+        end}.
+
+%% @private
+backup_dir(Dir) ->
+    case filelib:is_dir(Dir) of
+        true -> file:rename(Dir, Dir ++ "_bak");
+        false -> no_dir_to_backup
+    end.
+
+%% @private
+restore_backup_dir(Dir) ->
+    BackupDir = Dir ++ "_bak",
+    case filelib:is_dir(BackupDir) of
+        true -> file:rename(BackupDir, Dir);
+        false -> no_dir_to_restore
+    end.
+
+%% @private
+delete_files(Files) ->
+    lists:foreach(fun file:delete/1, Files).
+
+%% @private
+delete_dirs(Dirs) ->
+    lists:foreach(fun file:del_dir/1, Dirs).
+
+%% @private
+without_error_logger(Fun) ->
+    error_logger:tty(false),
+    try Fun() after error_logger:tty(true) end.
 
 -endif.
