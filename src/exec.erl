@@ -735,33 +735,24 @@ default(portexe) ->
         "";
     Priv ->
         % Find all ports using wildcard for resiliency
-        Bin = case filelib:wildcard("*/exec-port", Priv) of
-              [Port] ->
-                  % Exactly one match, use it as is (could be wrong arch)
-                  Port;
-              [] ->
-                  error_logger:warning_msg("No exec-port files found in Priv directory", []),
-                  "";
-              Ports ->
-                  % More than one match: try to find one matching system architecture
-                  Arch = erlang:system_info(system_architecture),
-                  MatchingPath = lists:filter(
-                  fun(Path) ->
-                      % Check if the Path contains Arch as a subdirectory component
-                      string:str(Path, Arch) > 0
-                  end,
-                  Ports),
-                  case MatchingPath of
-                  [Match] -> Match;
-                  _ ->
-                      error_logger:warning_msg("Multiple exec-port files found but none match architecture ~s", [Arch]),
-                      ""
-                  end
-              end,
-        % If found, join the priv/port path
-        case Bin of
-        "" -> Bin;
-        _ -> filename:join([Priv, Bin])
+        case filelib:wildcard("*/exec-port", Priv) of
+        [Port] ->
+            % Exactly one match, use it as is (could be wrong arch)
+            filename:join([Priv, Port]);
+        [] ->
+            error_logger:warning_msg("No exec-port files found in ~p directory", [Priv]),
+            "";
+        Ports ->
+            % More than one match: try to find one matching system architecture
+            Arch = erlang:system_info(system_architecture),
+            % Check if the Path contains Arch as a subdirectory component
+            case [P || P <- Ports, string:str(P, Arch) > 0] of
+            [Match] ->
+                filename:join([Priv, Match]);
+            _ ->
+                error_logger:warning_msg("Multiple exec-port files found but none match architecture ~s", [Arch]),
+                ""
+            end
         end
     end;
 default(valgrind) ->
