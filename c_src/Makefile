@@ -42,7 +42,6 @@ else
   endif
 endif
 
-VSN       := $(shell git describe --always --tags --abbrev=0 | sed 's/^v//')
 X64       := $(if $(findstring $(MARCH),x86_64),-m64)
 
 # Set optimization flag
