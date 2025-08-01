@@ -509,10 +509,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
                 int* sfd = stream_fd[i];
                 int  cfd = op.stream_fd(i);
                 if (cfd == REDIRECT_ERL) {
-                    if (i == STDIN_FILENO)
-                        sfd[RD] = fds;
-                    else
-                        sfd[WR] = fds;
+                    sfd[i == STDIN_FILENO ? RD : WR] = fds;
                     DEBUG(debug, "  Redirecting [%s -> pipe:{r=%d,w=%d}] (PTY)",
                           stream_name(i), sfd[0], sfd[1]);
                 }
