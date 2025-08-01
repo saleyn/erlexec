@@ -112,7 +112,7 @@ COMPILE_CPP = $(cpp_verbose) $(CXX) $(CXXFLAGS) $(CPPFLAGS) -c
 
 # Targets
 
-all: $(EXE_OUTPUT)
+all: $(if $(ERLEXEC_REBAR_COMPILE_INFO),info) $(EXE_OUTPUT)
 
 clean:
 	rm -f $(EXE_OUTPUT) *.o *.d
