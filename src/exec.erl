@@ -726,7 +726,6 @@ default() ->
      {portexe, noportexe},
      {user, ""},        % Run port program as this user
      {limit_users, []}]. % Restricted list of users allowed to run commands
-%% @private
 default(portexe) ->
     % Retrieve the Priv directory
     case code:priv_dir(erlexec) of
@@ -780,7 +779,6 @@ default(Option) ->
 %%          {ok, State, Timeout} |
 %%          ignore               |
 %%          {stop, Reason}
-%% @private
 %%-----------------------------------------------------------------------
 init([Options]) ->
     process_flag(trap_exit, true),
@@ -876,7 +874,6 @@ init([Options]) ->
 %%          {noreply, State, Timeout}      |
 %%          {stop, Reason, Reply, State}   | (terminate/2 is called)
 %%          {stop, Reason, State}            (terminate/2 is called)
-%% @private
 %%----------------------------------------------------------------------
 handle_call({port, Instruction}, From, #state{last_trans=Last} = State) ->
     try is_port_command(Instruction, element(1, From), State) of
@@ -905,7 +902,6 @@ handle_call(Request, _From, _State) ->
 %% Returns: {noreply, State}          |
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
-%% @private
 %%----------------------------------------------------------------------
 handle_cast(_Msg, State) ->
     {noreply, State}.
@@ -915,7 +911,6 @@ handle_cast(_Msg, State) ->
 %% Returns: {noreply, State}          |
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
-%% @private
 %%----------------------------------------------------------------------
 handle_info({Port, {data, Bin}}, #state{port=Port, debug=Debug} = State) ->
     Msg = binary_to_term(Bin),
@@ -964,7 +959,6 @@ handle_info(_Info, State) ->
 %% Func: code_change/3
 %% Purpose: Convert process state when code is changed
 %% Returns: {ok, NewState}
-%% @private
 %%----------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -973,7 +967,6 @@ code_change(_OldVsn, State, _Extra) ->
 %% Func: terminate/2
 %% Purpose: Shutdown the server
 %% Returns: any (ignored by gen_server)
-%% @private
 %%----------------------------------------------------------------------
 terminate(_Reason, State) ->
     try
@@ -2097,14 +2090,12 @@ default_portexe_multiple_portexec_files_test_() ->
                                  end)
         end}.
 
-%% @private
 backup_dir(Dir) ->
     case filelib:is_dir(Dir) of
         true -> file:rename(Dir, Dir ++ "_bak");
         false -> no_dir_to_backup
     end.
 
-%% @private
 restore_backup_dir(Dir) ->
     BackupDir = Dir ++ "_bak",
     case filelib:is_dir(BackupDir) of
@@ -2112,15 +2103,12 @@ restore_backup_dir(Dir) ->
         false -> no_dir_to_restore
     end.
 
-%% @private
 delete_files(Files) ->
     lists:foreach(fun file:delete/1, Files).
 
-%% @private
 delete_dirs(Dirs) ->
     lists:foreach(fun file:del_dir/1, Dirs).
 
-%% @private
 without_error_logger(Fun) ->
     error_logger:tty(false),
     try Fun() after error_logger:tty(true) end.
