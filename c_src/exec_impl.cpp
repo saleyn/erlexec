@@ -364,6 +364,111 @@ static int getpty(int& fdmp, ei::StringBuffer<128>& err) {
     return 0;
 }
 
+#ifdef HAVE_CAP
+// Placeholder for decoding capability names passed in the "run child" command
+// sed -n 's/^#define \(CAP_.*\) .*/\1/p' /usr/include/linux/capability.h | tr A-Z a-z | sed 's/cap_//'
+//
+const char *cap_name[CAP_LAST_CAP+1] = {
+    "chown",
+    "dac_override",
+    "dac_read_search",
+    "fowner",
+    "fsetid",
+    "kill",
+    "setgid",
+    "setuid",
+    "setpcap",
+    "linux_immutable",
+    "net_bind_service",
+    "net_broadcast",
+    "net_admin",
+    "net_raw",
+    "ipc_lock",
+    "ipc_owner",
+    "sys_module",
+    "sys_rawio",
+    "sys_chroot",
+    "sys_ptrace",
+    "sys_pacct",
+    "sys_admin",
+    "sys_boot",
+    "sys_nice",
+    "sys_resource",
+    "sys_time",
+    "sys_tty_config",
+    "mknod",
+    "lease",
+    "audit_write",
+    "audit_control",
+    "setfcap",
+    "mac_override",
+    "mac_admin",
+    "syslog",
+    "wake_alarm",
+    "block_suspend",
+};
+
+struct Caps {
+    Caps() : m_caps(cap_get_proc()) {}
+    ~Caps() { if (m_caps) cap_free(m_caps); }
+
+    bool         valid()        const { return !!m_caps;           }
+    cap_t        value()              { return m_caps;             }
+    void         add(cap_value_t cap) { m_cap_list.push_back(cap); }
+    cap_value_t* list()               { return m_cap_list.data();  }
+    size_t       size()         const { return m_cap_list.size();  }
+private:
+    cap_t m_caps;
+    std::vector<cap_value_t> m_cap_list;
+};
+#endif
+
+//------------------------------------------------------------------------------
+bool propagate_caps(ei::StringBuffer<128>& err)
+{
+#ifdef HAVE_CAP
+    Caps caps;
+
+    // Get the current process capabilities
+    if (!caps.valid()) {
+        err.write("error %d on cap_get_proc: %s\n", errno, strerror(errno));
+        return false;
+    }
+
+    // Get the bounding set of capabilities
+    cap_flag_value_t cap_value;
+    for (cap_value_t i = 0; i <= CAP_LAST_CAP; ++i) {
+        if (cap_get_flag(caps.value(), i, CAP_PERMITTED, &cap_value) < 0) {
+            err.write("error %d on cap_get_flag: %s\n", errno, strerror(errno));
+            return false;
+        }
+        if (cap_value == CAP_SET)
+            cap_list.add(i);
+    }
+
+    // Set inheritable capabilities to all permitted capabilities
+    if (cap_set_flag(caps.value(), CAP_INHERITABLE, caps.size(), caps.list(), CAP_SET) < 0) {
+        err.write("error %d on cap_set_flag: %s\n", errno, strerror(errno));
+        return false;
+    }
+
+    // Apply inheritable capabilities
+    if (cap_set_proc(caps.value()) < 0) {
+        err.write("error %d on cap_set_proc: %s\n", errno, strerror(errno));
+        return false;
+    }
+
+    // Set ambient capabilities
+    for (size_t i = 0; i < caps.size(); i++) {
+        if (prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE, caps.list()[i], 0, 0) < 0) {
+            err.write("error %d on PR_CAP_AMBIENT_RAISE[%d]: %s\n", errno, i, strerror(errno));
+            return false;
+        }
+    }
+#endif
+    return true;
+}
+
 //------------------------------------------------------------------------------
 pid_t start_child(CmdOptions& op, std::string& error)
 {
@@ -489,7 +594,6 @@ pid_t start_child(CmdOptions& op, std::string& error)
     } else if (pid == 0) {
         // I am the child
         int r;
-        
         if (op.pty()) {
             int fds;
             char pts_name[256];
@@ -641,6 +745,11 @@ pid_t start_child(CmdOptions& op, std::string& error)
                 fprintf(stderr, "  CEnv: %s\r\n", p);
         }
         */
+
+        if (!propagate_caps(err)) {
+	    perror(err.c_str());
+	    exit(EXIT_FAILURE);
+	}
 
         const char* executable = op.executable().empty()
             ? argv[0] : op.executable().c_str();
