@@ -5,7 +5,12 @@
 *.tgz
 *.dump
 doc
-priv
+# Keep generated port binaries under priv ignored, but allow the tracked
+# malicious-port fixture used by the security test suite.
+priv/*
+!priv/test/
+priv/test/*
+!priv/test/fake_exec_port.escript
 ebin
 .rebar/*
 .eunit
