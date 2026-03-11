@@ -269,11 +269,11 @@ namespace ei {
         const struct timespec timespec()const { struct timespec ts={m_tv.tv_sec, m_tv.tv_usec*1000}; return ts; }
         int32_t sec()      const   { return m_tv.tv_sec;  }
         int32_t usec()     const   { return m_tv.tv_usec; }
-        int64_t microsec() const   { return (int64_t)m_tv.tv_sec*1000000ull + (int64_t)m_tv.tv_usec; }
-        int64_t millisec() const   { return (int64_t)m_tv.tv_sec*1000ull    + (int64_t)m_tv.tv_usec/1000ull; }
+        int64_t microsec() const   { return (int64_t)m_tv.tv_sec*1000000ll + (int64_t)m_tv.tv_usec; }
+        int64_t millisec() const   { return (int64_t)m_tv.tv_sec*1000ll    + (int64_t)m_tv.tv_usec/1000ll; }
         void sec (int32_t _sec)    { m_tv.tv_sec  = _sec;  }
         void usec(int32_t _usec)   { m_tv.tv_usec = _usec; normalize(); }
-        void microsec(int32_t _m)  { m_tv.tv_sec = _m / 1000000ull; m_tv.tv_usec = _m % 1000000ull; }
+        void microsec(int64_t _m)  { m_tv.tv_sec = _m / 1000000ll; m_tv.tv_usec = _m % 1000000ll; }
 
         void set(const TimeVal& tv, int _s=0, int _us=0) {
             m_tv.tv_sec = tv.sec() + _s; m_tv.tv_usec = tv.usec() + _us; normalize();
@@ -310,7 +310,7 @@ namespace ei {
             return sec() < tv.sec() || (sec() == tv.sec() && usec() < tv.usec());
         }
         bool operator<= (const TimeVal& tv) const {
-            return sec() <= tv.sec() && usec() <= tv.usec();
+            return sec() < tv.sec() || (sec() == tv.sec() && usec() <= tv.usec());
         }
     };
 
