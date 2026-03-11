@@ -199,6 +199,9 @@ iex(1)> :exec.start
 {:ok, #PID<0.112.0>}
 iex(2)> :exec.run("echo ok", [:sync, :stdout])
 {:ok, [stdout: ["ok\n"]]}
+
+iex(3)> :exec.run(["/bin/echo", "ok"], [:sync, :stdout])
+{:ok, [stdout: ["ok\n"]]}
 ```
 
 ### Clearing environment or unsetting an env variable of the child process
@@ -515,11 +518,11 @@ Got: {stdout,26143,<<"baz\nbar\nfoo\n">>}
 
 % Execute an executable without a shell (note that in this case
 % the full path to the executable is required):
-35> exec:run(["/bin/echo", "ok"], [sync, stdout])).
+35> exec:run(["/bin/echo", "ok"], [sync, stdout]).
 {ok, [{stdout, [<<"ok\n">>]}]}
 
 % Execute a shell with custom options
-36> exec:run(["/bin/bash", "-c", "echo ok"], [sync, stdout])).
+36> exec:run(["/bin/bash", "-c", "echo ok"], [sync, stdout]).
 {ok, [{stdout, [<<"ok\n">>]}]}
 ```
 
