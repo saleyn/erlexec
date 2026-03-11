@@ -87,7 +87,7 @@ ifeq ($(UNAME_SYS),linux)
 else ifeq ($(UNAME_SYS),darwin)
   CXXFLAGS += -pie -DHAVE_SETREUID
   LDFLAGS  += -flat_namespace -undefined suppress $(X64)
-else ifeq ($(uname_sys),solaris)
+else ifeq ($(UNAME_SYS),solaris)
   CXXFLAGS += -dhave_setreuid
   LDFLAGS  += -lrt $(x64)
 else ifneq ($(filter $(UNAME_SYS),freebsd openbsd dragonfly),)
