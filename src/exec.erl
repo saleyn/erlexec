@@ -1617,6 +1617,15 @@ exec_run_many_test_() ->
         ]
     }.
 
+port_runs_in_own_process_group_test_() ->
+    {timeout, 10, ?_test(test_port_runs_in_own_process_group())}.
+
+startup_fails_when_setpgid_is_rejected_test_() ->
+    {timeout, 10, ?_test(test_startup_fails_when_setpgid_is_rejected())}.
+
+finalize_shutdown_kills_shell_descendants_test_() ->
+    {timeout, 20, ?_test(test_finalize_shutdown_kills_shell_descendants())}.
+
 test_root() ->
     case os:getenv("NO_ROOT_TESTS") of
         false ->
@@ -1971,6 +1980,59 @@ test_dynamic_pty_opts() ->
     ?receiveBytes({stdout, I, <<"^B">>}, 5000),
     ?receivePattern({'DOWN', I, process, P, {exit_status, 2}}, 5000).
 
+test_port_runs_in_own_process_group() ->
+    {ok, ExecPid} = exec:start([]),
+    try
+        OsPid = exec_port_os_pid(ExecPid),
+        case os_process_group_id(OsPid) of
+        {skip, _} ->
+            ok;
+        GroupId ->
+            ?assertEqual(OsPid, GroupId)
+        end
+    after
+        exit(ExecPid, kill)
+    end.
+
+test_startup_fails_when_setpgid_is_rejected() ->
+    case build_setpgid_failure_harness() of
+        {ok, WrapperPath, PreloadPath} ->
+            try
+                without_error_logger(fun() ->
+                    ?assertMatch(
+                        {error, {port_exited_with_status, 4}},
+                        exec:start([
+                            {portexe, WrapperPath},
+                            {env, [
+                                {"ERLEXEC_REAL_PORTEXE", default(portexe)},
+                                {"ERLEXEC_FAIL_SETPGID_PRELOAD", PreloadPath}
+                            ]}
+                        ]))
+                end)
+            after
+                ok = file:delete(WrapperPath),
+                ok = file:delete(PreloadPath)
+            end;
+        {error, Reason} ->
+            erlang:error(Reason);
+        {skip, _Reason} ->
+            ok
+    end.
+
+test_finalize_shutdown_kills_shell_descendants() ->
+    PidFile = temp_file(),
+    {ok, ExecPid} = exec:start([]),
+    try
+        Cmd = lists:flatten(io_lib:format("sleep 20 & echo $! > ~s; wait", [PidFile])),
+        {ok, _, _} = exec:run(Cmd, []),
+        ChildPid = read_pid_file(PidFile),
+        ok = gen_server:stop(ExecPid),
+        ?assertEqual(false, os_pid_running(ChildPid))
+    after
+        maybe_kill_pid_from_file(PidFile),
+        file:delete(PidFile)
+    end.
+
 default_portexe_no_priv_dir_test_() ->
     Priv = code:priv_dir(erlexec),
     {setup,
@@ -2108,6 +2170,113 @@ delete_files(Files) ->
 
 delete_dirs(Dirs) ->
     lists:foreach(fun file:del_dir/1, Dirs).
+
+exec_port_os_pid(ExecPid) ->
+    #state{port = Port} = sys:get_state(ExecPid),
+    {os_pid, OsPid} = erlang:port_info(Port, os_pid),
+    OsPid.
+
+os_process_group_id(Pid) ->
+    case os:find_executable("ps") of
+        false ->
+            {skip, no_ps};
+        Ps ->
+            list_to_integer(string:trim(os:cmd(Ps ++ " -o pgid= -p " ++ integer_to_list(Pid))))
+    end.
+
+read_pid_file(Path) ->
+    read_pid_file(Path, 20).
+
+read_pid_file(Path, 0) ->
+    erlang:error({pid_file_timeout, Path});
+read_pid_file(Path, Retries) ->
+    case file:read_file(Path) of
+        {ok, Bin} ->
+            list_to_integer(string:trim(binary_to_list(Bin)));
+        {error, enoent} ->
+            timer:sleep(100),
+            read_pid_file(Path, Retries - 1)
+    end.
+
+os_pid_running(Pid) ->
+    case os:find_executable("ps") of
+        false ->
+            string:trim(os:cmd("kill -0 " ++ integer_to_list(Pid) ++ " >/dev/null 2>&1; echo $?")) =:= "0";
+        Ps ->
+            case string:trim(os:cmd(Ps ++ " -o stat= -p " ++ integer_to_list(Pid))) of
+                "" ->
+                    false;
+                [$Z | _] ->
+                    false;
+                _ ->
+                    true
+            end
+    end.
+
+maybe_kill_pid_from_file(Path) ->
+    case file:read_file(Path) of
+        {ok, Bin} ->
+            Pid = list_to_integer(string:trim(binary_to_list(Bin))),
+            os_pid_running(Pid) andalso os:cmd("kill -TERM " ++ integer_to_list(Pid)),
+            ok;
+        {error, _} ->
+            ok
+    end.
+
+build_setpgid_failure_harness() ->
+    case {os:type(), os:find_executable("cc")} of
+        {{unix, linux}, false} ->
+            {skip, no_c_compiler};
+        {{unix, linux}, Cc} ->
+            compile_setpgid_failure_harness(Cc);
+        _ ->
+            {skip, unsupported_os}
+    end.
+
+compile_setpgid_failure_harness(Cc) ->
+    PrivDir = code:priv_dir(erlexec),
+    Base = integer_to_list(erlang:unique_integer([positive])),
+    PreloadPath = filename:join(PrivDir, "deny_setpgid_" ++ Base ++ ".so"),
+    WrapperPath = filename:join(PrivDir, "exec_port_fork_wrapper_" ++ Base),
+    TestDir = filename:join(PrivDir, "test"),
+    PreloadSource = filename:join(TestDir, "deny_setpgid.c"),
+    WrapperSource = filename:join(TestDir, "exec_port_fork_wrapper.c"),
+    case {compile_c_helper(Cc, ["-shared", "-fPIC"], PreloadPath, PreloadSource),
+          compile_c_helper(Cc, ["-O2"], WrapperPath, WrapperSource)} of
+        {ok, ok} ->
+            {ok, WrapperPath, PreloadPath};
+        {{error, _} = Error, _} ->
+            file:delete(PreloadPath),
+            Error;
+        {_, {error, _} = Error} ->
+            file:delete(PreloadPath),
+            file:delete(WrapperPath),
+            Error
+    end.
+
+compile_c_helper(Cc, Flags, OutputPath, SourcePath) ->
+    Command = lists:flatten(shell_join([Cc | Flags] ++ ["-o", OutputPath, SourcePath])),
+    case compile_command(Command) of
+        ok ->
+            ok;
+        {error, _} = Error ->
+            file:delete(OutputPath),
+            Error
+    end.
+
+compile_command(Command) ->
+    case string:trim(os:cmd(Command ++ " >/dev/null 2>&1; echo $?")) of
+        "0" ->
+            ok;
+        Status ->
+            {error, {compile_failed, Status}}
+    end.
+
+shell_join(Args) ->
+    lists:join(" ", [shell_quote(Arg) || Arg <- Args]).
+
+shell_quote(Arg) ->
+    [$' | lists:join("'\"'\"'", string:split(Arg, "'", all))] ++ "'".
 
 without_error_logger(Fun) ->
     error_logger:tty(false),
