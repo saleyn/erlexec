@@ -77,6 +77,7 @@ bool  ei::pipe_valid      = true;
 int   ei::max_fds;
 int   ei::dev_null;
 int   ei::sigchld_pipe[2] = { -1, -1 }; // Pipe for delivering sig child details
+static bool finalize_group_isolated = false;
 
 static int run_as_euid    = std::numeric_limits<int>::max();
 
@@ -625,6 +626,19 @@ void initialize(int userid, bool use_alt_fds, bool is_root, bool requested_root)
             #endif
         );
 
+    // Final shutdown uses kill(0, SIGTERM) to preserve cleanup of shell-spawned
+    // descendants. Treat process-group isolation as a startup invariant so that
+    // cleanup never has to choose between leaking descendants and signaling
+    // unrelated processes.
+    if (getpgrp() == self_pid) {
+        finalize_group_isolated = true;
+    } else if (setpgid(0, 0) == 0) {
+        finalize_group_isolated = true;
+    } else {
+        DEBUG(true, "exec: failed to isolate its process group: %s", strerror(errno));
+        exit(4);
+    }
+
     // If we were root, set capabilities
     // to be able to adjust niceness and run commands as other users.
     // unless run_as_root is set
@@ -700,7 +714,8 @@ int finalize()
     int old_terminated = terminated ? 1 : 0;
     terminated = false;
 
-    kill(0, SIGTERM); // Kill all children in our process group
+    if (finalize_group_isolated)
+        kill(0, SIGTERM); // Kill all children in our process group
 
     TimeVal now(TimeVal::NOW);
     TimeVal deadline(now, FINALIZE_DEADLINE_SEC, 0);
