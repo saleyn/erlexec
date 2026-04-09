@@ -38,7 +38,7 @@ test-debug:
 	@OPTIMIZE=0 $(REBAR) eunit
 
 publish: docs clean
-	$(REBAR) hex $(if $(replace),publish --replace,cut)
+	$(REBAR) hex publish$(if $(replace), --replace)
 
 deprecate:
 	@if [ -z $(vsn) ]; then \
