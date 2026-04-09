@@ -18,11 +18,18 @@ jobs:
       matrix:
         os: [ linux ]
         compiler:
-          - { compiler: GNU-12,  CC: gcc-12,   CXX: g++-12 }
-          - { compiler: GNU-11,  CC: gcc-11,   CXX: g++-11 }
-          - { compiler: LLVM-12, CC: clang-12, CXX: clang++-12 }
-          - { compiler: LLVM-11, CC: clang-11, CXX: clang++-11 }
-        otp: [27]
+          - { compiler: GNU-14,  CC: gcc-14,      CXX: g++-14 }
+          - { compiler: GNU-12,  CC: gcc-12,      CXX: g++-12 }
+          - { compiler: LLVM-18, CC: clang-18,    CXX: clang++-18 }
+          - { compiler: LLVM-16, CC: clang-16,    CXX: clang++-16 }
+        otp: [27, 28]
+        exclude:
+          # GCC 14 and clang 18 are only available in OTP 28 (Debian Bookworm+)
+          - { otp: 27, compiler: { compiler: GNU-14 } }
+          - { otp: 27, compiler: { compiler: LLVM-18 } }
+          # GCC 12 and clang 16 are available in OTP 27 (Debian Bookworm)
+          - { otp: 28, compiler: { compiler: GNU-12 } }
+          - { otp: 28, compiler: { compiler: LLVM-16 } }
 
     steps:
       - uses: actions/checkout@v2
@@ -30,6 +37,10 @@ jobs:
         run:  erl -eval '{ok, Version} = file:read_file(filename:join([code:root_dir(), "releases", erlang:system_info(otp_release), "OTP_VERSION"])), io:format("Version=~s\n", [Version]), halt().' -noshell -noinput;
       - name: Fix Ownership
         run:  git config --global --add safe.directory ${GITHUB_WORKSPACE}
+      - name: Install compiler
+        run:  |
+          apt-get update -qq
+          apt-get install -y --no-install-recommends ${{ matrix.compiler.CC }} ${{ matrix.compiler.CXX }}
       - name: Build
         env:
           CC:  ${{ matrix.compiler.CC }}
@@ -46,39 +57,37 @@ jobs:
           chown -R newuser:newuser .
           su -c "make test" newuser
 
-#  macOS:
-#    name: OTP ${{ matrix.otp }} ${{ matrix.os }}.${{ matrix.compiler.compiler }}
-#    runs-on: ${{ matrix.os }}
-#    strategy:
-#      fail-fast: false
-#      matrix:
-#        os: [ macos-latest ]
-#        compiler:
-#          - { compiler: XCode, CC: cc, CXX: c++ }
-#        otp: [25]
-#    steps:
-#      - uses: actions/checkout@v2
-#      - name: Install Base Dependencies
-#        run: |
-#          brew update > /dev/null || true
-#          brew tap Homebrew/bundle
-#          brew install erlang
-#          brew install rebar3
-#          #brew bundle --verbose
-#      - name: Fix Ownership
-#        run:  git config --global --add safe.directory ${GITHUB_WORKSPACE}
-#      - name: Build
-#        env:
-#          CC: ${{ matrix.compiler.CC }}
-#          CXX: ${{ matrix.compiler.CXX }}
-#          SRC_DIR: ${{ github.workspace }}
-#          BUILD_DIR: ${{ github.workspace }}/build
-#          INSTALL_PREFIX: ${{ github.workspace }}/install
-#        run: erl -eval '{ok, Version} = file:read_file(filename:join([code:root_dir(), "releases", erlang:system_info(otp_release), "OTP_VERSION"])), io:format("Version=~s\n", [Version]), halt().' -noshell -noinput
-#      - name: Build
-#        run:  make
-#      - name: Test
-#        run:  make test
+  macOS:
+    name: OTP ${{ matrix.otp }} macos.${{ matrix.compiler.compiler }}
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler:
+          - { compiler: XCode, CC: cc, CXX: c++ }
+        otp: [27, 28]
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install Erlang/OTP
+        run: |
+          brew update > /dev/null || true
+          brew install erlang rebar3
+      - name: OTP Version
+        run:  erl -eval '{ok, Version} = file:read_file(filename:join([code:root_dir(), "releases", erlang:system_info(otp_release), "OTP_VERSION"])), io:format("Version=~s\n", [Version]), halt().' -noshell -noinput;
+      - name: Fix Ownership
+        run:  git config --global --add safe.directory ${GITHUB_WORKSPACE}
+      - name: Build
+        env:
+          CC:  ${{ matrix.compiler.CC }}
+          CXX: ${{ matrix.compiler.CXX }}
+        run:  |
+          make info
+          make
+      - name: Test
+        env:
+          CC:  ${{ matrix.compiler.CC }}
+          CXX: ${{ matrix.compiler.CXX }}
+        run:  make test
 
 #  windows-msys2:
 #    name: OTP ${{ matrix.otp }} ${{ matrix.os }}.${{ matrix.msys2.msystem }}.${{ matrix.compiler.compiler }}
