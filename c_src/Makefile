@@ -104,7 +104,7 @@ ifeq ($(TARGET_SYS),linux)
     LDFLAGS  += -lcap
   endif
 else ifeq ($(TARGET_SYS),darwin)
-  CXXFLAGS += -pie -DHAVE_SETREUID
+  CXXFLAGS += -DHAVE_SETREUID
   LDFLAGS  += -flat_namespace -undefined suppress $(X64)
 else ifeq ($(TARGET_SYS),solaris)
   CXXFLAGS += -dhave_setreuid

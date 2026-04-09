@@ -380,6 +380,11 @@ pid_t start_child(CmdOptions& op, std::string& error)
 
     // Optionally setup pseudoterminal
     int fdm = 0;
+    #ifdef __APPLE__
+    // Declared at function scope so it remains visible in both the child
+    // and parent branches after fork(), where __APPLE__ blocks reference it.
+    int fds_pre = -1;
+    #endif
 
     if (op.pty()) {
         if (getpty(fdm, err) < 0) {
@@ -397,9 +402,6 @@ pid_t start_child(CmdOptions& op, std::string& error)
         // we keep it open until after fork() so the settings are not discarded,
         // then close it in the parent after fork(); the child uses it directly.
         #ifdef __APPLE__
-        // fds_pre is declared at this scope so it is visible to the child block
-        // and to the parent-side close after fork().
-        int  fds_pre = -1;
         {
             char pts_name_pre[256];
             if (ptsname_r(fdm, pts_name_pre, sizeof(pts_name_pre)) == 0) {
