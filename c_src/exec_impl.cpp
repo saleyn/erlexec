@@ -387,13 +387,45 @@ pid_t start_child(CmdOptions& op, std::string& error)
             return -1;
         }
 
-        // Configure PTY termios and winsz on the slave *before* fork() via the
-        // master fd. On Linux/macOS, PTY ioctls (TCSETS, TIOCSWINSZ) applied to
-        // the master fd affect the slave's line discipline directly, so we don't
-        // need to open the slave. This eliminates the race condition (issue #193)
-        // where the parent writes to the master before the child disables echo.
-        // We only call tcsetattr() if tcgetattr() succeeds, to avoid overwriting
-        // the slave's termios with an uninitialized struct.
+        // Configure PTY termios and winsz on the slave *before* fork() to
+        // eliminate the race condition (issue #193) where the parent writes to
+        // the master fd before the child has a chance to disable echo.
+        //
+        // On Linux, tcsetattr on the master fd propagates directly to the slave's
+        // line discipline and the settings are preserved even with no slave fd open.
+        // On macOS, we must open the slave (with O_NOCTTY) to configure termios;
+        // we keep it open until after fork() so the settings are not discarded,
+        // then close it in the parent after fork(); the child uses it directly.
+        #ifdef __APPLE__
+        // fds_pre is declared at this scope so it is visible to the child block
+        // and to the parent-side close after fork().
+        int  fds_pre = -1;
+        {
+            char pts_name_pre[256];
+            if (ptsname_r(fdm, pts_name_pre, sizeof(pts_name_pre)) == 0) {
+                fds_pre = open(pts_name_pre, O_RDWR | O_NOCTTY);
+                if (fds_pre >= 0) {
+                    if (!op.pty_echo()) {
+                        struct termios ios{};
+                        if (tcgetattr(fds_pre, &ios) == 0) {
+                            ios.c_lflag &= ~(ECHO | ECHONL | ECHOE | ECHOK);
+                            tcsetattr(fds_pre, TCSANOW, &ios);
+                        }
+                    }
+                    if (!op.pty_opts().empty()) {
+                        MapPtyOpt pty_opts = op.pty_opts();
+                        struct termios ios{};
+                        if (tcgetattr(fds_pre, &ios) == 0) {
+                            for (auto it = pty_opts.begin(), end = pty_opts.end(); it != end; ++it)
+                                set_pty_opt(&ios, it->first, it->second);
+                            tcsetattr(fds_pre, TCSANOW, &ios);
+                        }
+                    }
+                }
+            }
+        }
+        #else
+        // On Linux, configure via master fd; settings persist in the kernel.
         if (!op.pty_echo()) {
             struct termios ios{};
             if (tcgetattr(fdm, &ios) == 0) {
@@ -410,9 +442,12 @@ pid_t start_child(CmdOptions& op, std::string& error)
                 tcsetattr(fdm, TCSANOW, &ios);
             }
         }
-        auto [rows, cols] = op.winsz();
-        if (rows && cols)
-            set_winsz(fdm, rows, cols);
+        #endif
+        {
+            auto [rows, cols] = op.winsz();
+            if (rows && cols)
+                set_winsz(fdm, rows, cols);
+        }
     }
 
     // Optionally setup stdin/stdout/stderr redirect
@@ -522,8 +557,17 @@ pid_t start_child(CmdOptions& op, std::string& error)
             int fds;
             char pts_name[256];
 
-            // Slave pty termios/winsz were pre-configured in the parent (via master fd)
-            // before fork(). Open the slave here; it inherits those kernel settings.
+            // Slave pty termios/winsz were pre-configured in the parent before fork().
+            #ifdef __APPLE__
+            // On macOS the slave fd (fds_pre) was kept open by the parent to preserve
+            // termios settings; the child inherits it directly.
+            fds = fds_pre;
+            if (fds < 0) {
+                DEBUG(true, "slave pty fd not available in child");
+                exit(1);
+            }
+            #else
+            // On Linux settings were applied via master fd; open slave fresh here.
             int r = ptsname_r(fdm, pts_name, sizeof(pts_name));
             if (r < 0) {
                 DEBUG(true, "ptsname_r(%d) failed: %s", fdm, strerror(errno));
@@ -534,6 +578,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
                 DEBUG(true, "open slave pty %s failed: %s", pts_name, strerror(errno));
                 exit(1);
             }
+            #endif
             for (int i=STDIN_FILENO; i <= STDERR_FILENO; i++) {
                 int* sfd = stream_fd[i];
                 int  cfd = op.stream_fd(i);
@@ -667,6 +712,12 @@ pid_t start_child(CmdOptions& op, std::string& error)
     }
 
     // I am the parent
+
+    #ifdef __APPLE__
+    // Close the pre-opened slave fd; the child has inherited it and uses it directly.
+    if (op.pty() && fds_pre >= 0)
+        close(fds_pre);
+    #endif
 
     DEBUG(debug > 1, "Spawned child pid %d", pid);
 
