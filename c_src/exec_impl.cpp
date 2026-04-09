@@ -386,6 +386,29 @@ pid_t start_child(CmdOptions& op, std::string& error)
             error = err.c_str();
             return -1;
         }
+
+        // Configure PTY termios and winsz on the slave *before* fork() via the
+        // master fd. On Linux/macOS, PTY ioctls (TCSETS, TIOCSWINSZ) applied to
+        // the master fd affect the slave's line discipline directly, so we don't
+        // need to open the slave. This eliminates the race condition (issue #193)
+        // where the parent writes to the master before the child disables echo.
+        if (!op.pty_echo()) {
+            struct termios ios{};
+            tcgetattr(fdm, &ios);
+            ios.c_lflag &= ~(ECHO | ECHONL | ECHOE | ECHOK);
+            tcsetattr(fdm, TCSANOW, &ios);
+        }
+        if (!op.pty_opts().empty()) {
+            MapPtyOpt pty_opts = op.pty_opts();
+            struct termios ios{};
+            tcgetattr(fdm, &ios);
+            for (auto it = pty_opts.begin(), end = pty_opts.end(); it != end; ++it)
+                set_pty_opt(&ios, it->first, it->second);
+            tcsetattr(fdm, TCSANOW, &ios);
+        }
+        auto [rows, cols] = op.winsz();
+        if (rows && cols)
+            set_winsz(fdm, rows, cols);
     }
 
     // Optionally setup stdin/stdout/stderr redirect
@@ -491,15 +514,14 @@ pid_t start_child(CmdOptions& op, std::string& error)
         return pid;
     } else if (pid == 0) {
         // I am the child
-        int r;
-        
         if (op.pty()) {
             int fds;
             char pts_name[256];
-            
-            // have to open the pty slave in the child, otherwise TIOCSCTTY will fail later
-            r = ptsname_r(fdm, pts_name, sizeof(pts_name));
-            if( r < 0 ) {
+
+            // Slave pty termios/winsz were pre-configured in the parent (via master fd)
+            // before fork(). Open the slave here; it inherits those kernel settings.
+            int r = ptsname_r(fdm, pts_name, sizeof(pts_name));
+            if (r < 0) {
                 DEBUG(true, "ptsname_r(%d) failed: %s", fdm, strerror(errno));
                 exit(1);
             }
@@ -556,28 +578,10 @@ pid_t start_child(CmdOptions& op, std::string& error)
         // will be automatically closed in the execve(2) call below
 
         if (op.pty()) {
-            if (!op.pty_echo()) {
-                struct termios ios{};
-                tcgetattr(STDIN_FILENO, &ios);
-                // Disable the ECHO mode
-                // For the list of all modes see RFC4254:
-                // https://datatracker.ietf.org/doc/html/rfc4254#section-8
-                ios.c_lflag &= ~(ECHO | ECHONL | ECHOE | ECHOK);
-                // We don't check if it succeeded because if the STDIN is not a terminal
-                // it won't be able to disable the ECHO anyway.
-                tcsetattr(STDIN_FILENO, TCSANOW, &ios);
-            }
-            if (!op.pty_opts().empty()) {
-                MapPtyOpt pty_opts = op.pty_opts();
-                struct termios ios{};
-                tcgetattr(STDIN_FILENO, &ios);
-                for (auto it = pty_opts.begin(), end = pty_opts.end(); it != end; ++it)
-                    set_pty_opt(&ios, it->first, it->second);
-                tcsetattr(STDIN_FILENO, TCSANOW, &ios);
-            }
-            auto [rows, cols] = op.winsz();
-            if (rows && cols)
-                set_winsz(STDIN_FILENO, rows, cols);
+            // Termios (echo/opts) and winsz were already set on the slave in the
+            // parent before fork() and persist in the kernel's line discipline.
+            // Here we only need to become a session leader and claim the slave
+            // pty as our controlling terminal.
 
             // Make the current process a new session leader
             setsid();
