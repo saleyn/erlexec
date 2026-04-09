@@ -31,10 +31,16 @@ jobs:
       - name: Fix Ownership
         run:  git config --global --add safe.directory ${GITHUB_WORKSPACE}
       - name: Build
+        env:
+          CC:  ${{ matrix.compiler.CC }}
+          CXX: ${{ matrix.compiler.CXX }}
         run:  |
           make info
           make
       - name: Test
+        env:
+          CC:  ${{ matrix.compiler.CC }}
+          CXX: ${{ matrix.compiler.CXX }}
         run:  |
           adduser --disabled-password --gecos '' newuser
           chown -R newuser:newuser .
