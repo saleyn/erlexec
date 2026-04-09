@@ -475,10 +475,13 @@ pid_t start_child(CmdOptions& op, std::string& error)
             error = "cannot run empty command";
             return -1;
         }
-        if (!op.mapenv().empty() && (debug || op.dbg()))
+        if (!op.mapenv().empty() && (debug || op.dbg())) {
             for (auto& kv : op.mapenv())
-                fprintf(stderr, "  Env[%s]: %s\r\n", kv.first.c_str(), kv.second.c_str());
-
+                if (kv.second)
+                    fprintf(stderr, "  Env[%s]: %s\r\n", kv.first.c_str(), kv.second->c_str());
+                else
+                    fprintf(stderr, "  Env[%s]: (unset)\r\n", kv.first.c_str());
+        }
     }
 
     pid_t pid = fork();
@@ -738,7 +741,7 @@ int stop_child(CmdInfo& ci, int transId, const TimeVal& now, bool notify)
         // This is the first attempt to kill this pid and kill command is provided.
         CmdArgsList kill_cmd;
         kill_cmd.push_front(ci.kill_cmd.c_str());
-        MapEnv env{{"CHILD_PID", std::to_string(ci.cmd_pid)}};
+        MapEnv env{{"CHILD_PID", std::optional<std::string>(std::to_string(ci.cmd_pid))}};
         CmdOptions co(kill_cmd, NULL, env,
                       std::numeric_limits<int>::max(), // user
                       std::numeric_limits<int>::max(), // nice
@@ -1381,7 +1384,7 @@ int CmdOptions::ei_decode(bool getcmd)
 
                 for (int i=0; i < opt_env_sz; i++) {
                     int sz, type = eis.decodeType(sz);
-                    bool res = false;
+                    bool res = false, unset = false;
                     std::string s, key;
 
                     if (type == etString || type == etBinary) {
@@ -1411,8 +1414,8 @@ int CmdOptions::ei_decode(bool getcmd)
                                 s   = val;
                             } else if (!eis.decodeBool(bval) && !bval) {
                                 // {"VAR", false}  - this means to unset the variable
-                                res = true;
-                                s   = "";
+                                res   = true;
+                                unset = true;
                             } else {
                                 res = false;
                             }
@@ -1423,7 +1426,7 @@ int CmdOptions::ei_decode(bool getcmd)
                         m_err << op << " - invalid env argument #" << i;
                         return -1;
                     }
-                    m_env[key] = s;
+                    m_env[key] = unset ? std::nullopt : std::optional<std::string>(s);
                 }
                 eis.decodeListEnd();
                 break;
@@ -1612,14 +1615,12 @@ int CmdOptions::init_cenv()
     }
 
     int i = 0;
-    for (auto it = m_env.begin(), end = m_env.end(); it != end; ++it)
-        if (it->second.empty()) // Unset the env variable
-            continue;
-        else {
-            // Reformat the environment in the form: KEY=VALUE
-            it->second = it->first + "=" + it->second;
-            m_cenv[i++] = it->second.c_str();
-        }
+    for (auto it = m_env.begin(), end = m_env.end(); it != end; ++it) {
+        if (!it->second) continue; // unset variable
+        // Reformat the environment in the form: KEY=VALUE
+        it->second = it->first + "=" + *it->second;
+        m_cenv[i++] = it->second->c_str();
+    }
 
     m_cenv[i] = NULL;
 
