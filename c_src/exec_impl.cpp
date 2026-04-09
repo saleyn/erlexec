@@ -175,7 +175,7 @@ int set_nice(pid_t pid,int nice, std::string& error)
 
 //------------------------------------------------------------------------------
 bool set_winsz(int fd, int rows, int cols) {
-    struct winsize ws;
+    struct winsize ws{};
     ws.ws_row =  rows;
     ws.ws_col =  cols;
 
@@ -569,7 +569,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
             }
             if (!op.pty_opts().empty()) {
                 MapPtyOpt pty_opts = op.pty_opts();
-                struct termios ios;
+                struct termios ios{};
                 tcgetattr(STDIN_FILENO, &ios);
                 for (auto it = pty_opts.begin(), end = pty_opts.end(); it != end; ++it)
                     set_pty_opt(&ios, it->first, it->second);
