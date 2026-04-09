@@ -69,9 +69,10 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Install Erlang/OTP
-        run: |
-          brew update > /dev/null || true
-          brew install erlang rebar3
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ matrix.otp }}
+          rebar3-version: '3'
       - name: OTP Version
         run:  erl -eval '{ok, Version} = file:read_file(filename:join([code:root_dir(), "releases", erlang:system_info(otp_release), "OTP_VERSION"])), io:format("Version=~s\n", [Version]), halt().' -noshell -noinput;
       - name: Fix Ownership
