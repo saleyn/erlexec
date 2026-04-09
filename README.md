@@ -207,15 +207,19 @@ iex(3)> :exec.run(["/bin/echo", "ok"], [:sync, :stdout])
 ### Clearing environment or unsetting an env variable of the child process
 ```erlang
 %% Clear environment with {env, [clear]} option:
-10> f(Bin), {ok, [{stdout, [Bin]}]} = exec:run("env", [sync, stdout, {env, [clear]}]), p(re:split(Bin, <<"\n">>)).
+10> f(Bin), {ok, [{stdout, [Bin]}]} = exec:run("env", [sync, stdout, {env, [clear]}]), io:format("~s\n", [re:split(Bin, <<"\n">>)]).
 [<<"PWD=/home/...">>,<<"SHLVL=0">>, <<"_=/usr/bin/env">>,<<>>]
 ok
 %% Clear env and add a "TEST" env variable:
-11> f(Bin), {ok, [{stdout, [Bin]}]} = exec:run("env", [sync, stdout, {env, [clear, {"TEST", "xxx"}]}]), p(re:split(Bin, <<"\n">>)).
+11> f(Bin), {ok, [{stdout, [Bin]}]} = exec:run("env", [sync, stdout, {env, [clear, {"TEST", "xxx"}]}]), io:format("~s\n", [re:split(Bin, <<"\n">>)]).
 [<<"PWD=/home/...">>,<<"SHLVL=0">>, <<"_=/usr/bin/env">>,<<"TEST=xxx">>,<<>>]
 %% Unset an "EMU" env variable:
-11> f(Bin), {ok, [{stdout, [Bin]}]} = exec:run("env", [sync, stdout, {env, [{"EMU", false}]}]), p(re:split(Bin, <<"\n">>)).
+11> f(Bin), {ok, [{stdout, [Bin]}]} = exec:run("env", [sync, stdout, {env, [{"EMU", false}]}]), io:format("~s\n", [re:split(Bin, <<"\n">>)]).
 [...]
+ok
+%% Set an env variable to an empty string (use "" as the value, not false):
+12> f(Bin), {ok, [{stdout, [Bin]}]} = exec:run("env", [sync, stdout, {env, [{"MY_VAR", ""}]}]), io:format("~s\n", [re:split(Bin, <<"\n">>)]).
+[..., <<"MY_VAR=">>, ...]
 ok
 ```
 

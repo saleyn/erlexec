@@ -135,8 +135,8 @@ startup.
   : Extend environment of the port program by using `Env` specification.
     `Env` should be a list of tuples `{Name, Val}`, where Name is the
     name of an environment variable, and Val is the value it is to have
-    in the spawned port process. If Val is `false`, then the `Name`
-    environment variable is unset.
+    in the spawned port process. Use `false` to unset an environment
+    variable, or `""` to set it to an empty string.
 - `valgrind`
   : Start port-exec by valgrind in order to check for memory and
     resource leaks. This is only adviseable for testing. For Valgrind

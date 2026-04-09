@@ -45,7 +45,7 @@ enum class FdType {
 #include <map>
 #include <list>
 #include <deque>
-#include <set>
+#include <optional>
 #include <sstream>
 
 #if defined(USE_POLL) && USE_POLL > 0
@@ -148,7 +148,7 @@ typedef std::map <pid_t, CmdInfo>               MapChildrenT;
 typedef std::pair<kill_cmd_pid_t, pid_t>        KillPidStatusT;
 typedef std::pair<pid_t, ei::TimeVal>           KillPidInfoT;
 typedef std::map <kill_cmd_pid_t, KillPidInfoT> MapKillPidT;
-typedef std::map<std::string, std::string>      MapEnv;
+typedef std::map<std::string, std::optional<std::string>> MapEnv;
 typedef MapEnv::iterator                        MapEnvIterator;
 typedef std::map<std::string, int>              MapPtyOpt;
 typedef std::map<pid_t, exit_status_t>          ExitedChildrenT;
