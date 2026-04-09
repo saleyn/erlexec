@@ -392,19 +392,23 @@ pid_t start_child(CmdOptions& op, std::string& error)
         // the master fd affect the slave's line discipline directly, so we don't
         // need to open the slave. This eliminates the race condition (issue #193)
         // where the parent writes to the master before the child disables echo.
+        // We only call tcsetattr() if tcgetattr() succeeds, to avoid overwriting
+        // the slave's termios with an uninitialized struct.
         if (!op.pty_echo()) {
             struct termios ios{};
-            tcgetattr(fdm, &ios);
-            ios.c_lflag &= ~(ECHO | ECHONL | ECHOE | ECHOK);
-            tcsetattr(fdm, TCSANOW, &ios);
+            if (tcgetattr(fdm, &ios) == 0) {
+                ios.c_lflag &= ~(ECHO | ECHONL | ECHOE | ECHOK);
+                tcsetattr(fdm, TCSANOW, &ios);
+            }
         }
         if (!op.pty_opts().empty()) {
             MapPtyOpt pty_opts = op.pty_opts();
             struct termios ios{};
-            tcgetattr(fdm, &ios);
-            for (auto it = pty_opts.begin(), end = pty_opts.end(); it != end; ++it)
-                set_pty_opt(&ios, it->first, it->second);
-            tcsetattr(fdm, TCSANOW, &ios);
+            if (tcgetattr(fdm, &ios) == 0) {
+                for (auto it = pty_opts.begin(), end = pty_opts.end(); it != end; ++it)
+                    set_pty_opt(&ios, it->first, it->second);
+                tcsetattr(fdm, TCSANOW, &ios);
+            }
         }
         auto [rows, cols] = op.winsz();
         if (rows && cols)
