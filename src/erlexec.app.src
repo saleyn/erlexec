@@ -8,6 +8,5 @@
               {mod,{exec_app,[]}},
               {env,[]},
               {exclude_paths,["priv"]},
-              {maintainers,["Serge Aleynikov"]},
-              {licenses,["BSD"]},
+              {licenses,["BSD-2-Clause"]},
               {links,[{"GitHub","https://github.com/saleyn/erlexec"}]}]}.
