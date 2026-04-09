@@ -12,6 +12,25 @@ USE_POLL  ?= 1
 
 UNAME_SYS := $(shell uname -s | tr 'A-Z' 'a-z')
 
+# When cross-compiling, the target OS may differ from the build host OS.
+# Derive TARGET_SYS from the cross compiler's target triplet if CROSS_COMPILE is set.
+ifneq ($(CROSS_COMPILE),)
+  TARGET_TRIPLET := $(shell $(CXX) -dumpmachine)
+  ifneq ($(findstring linux,$(TARGET_TRIPLET)),)
+    TARGET_SYS := linux
+  else ifneq ($(findstring darwin,$(TARGET_TRIPLET)),)
+    TARGET_SYS := darwin
+  else ifneq ($(findstring freebsd,$(TARGET_TRIPLET)),)
+    TARGET_SYS := freebsd
+  else ifneq ($(findstring openbsd,$(TARGET_TRIPLET)),)
+    TARGET_SYS := openbsd
+  else
+    TARGET_SYS := $(UNAME_SYS)
+  endif
+else
+  TARGET_SYS := $(UNAME_SYS)
+endif
+
 # System type and C compiler/flags.
 
 # For cross building using erlang:system_info() does not work as rebar runs
@@ -70,7 +89,7 @@ endif
 HAVE_FORMAT ?= $(C20_FEATURES)
 HAVE_SRCLOC ?= $(C20_FEATURES)
 
-ifeq ($(UNAME_SYS),linux)
+ifeq ($(TARGET_SYS),linux)
   #ifeq ($(shell gcc -march=native -dM -E - </dev/null | awk '/__AVX2__/ { print $$3 }'),1)
   #  CXXFLAGS += -mavx2
   #else ifeq ($(shell gcc -march=native -dM -E - </dev/null | awk '/__AVX__/ { print $$3 }'),1)
@@ -84,17 +103,17 @@ ifeq ($(UNAME_SYS),linux)
     CXXFLAGS += -DHAVE_CAP
     LDFLAGS  += -lcap
   endif
-else ifeq ($(UNAME_SYS),darwin)
+else ifeq ($(TARGET_SYS),darwin)
   CXXFLAGS += -pie -DHAVE_SETREUID
   LDFLAGS  += -flat_namespace -undefined suppress $(X64)
-else ifeq ($(UNAME_SYS),solaris)
+else ifeq ($(TARGET_SYS),solaris)
   CXXFLAGS += -dhave_setreuid
   LDFLAGS  += -lrt $(x64)
-else ifneq ($(filter $(UNAME_SYS),freebsd openbsd dragonfly),)
+else ifneq ($(filter $(TARGET_SYS),freebsd openbsd dragonfly),)
   CXXFLAGS += -DHAVE_SETRESUID -DHAVE_PIPE2 $(X64)
   LDFLAGS  += $(X64)
 else
-  $(error Architecture $(UNAME_SYS) not supported!)
+  $(error Architecture $(TARGET_SYS) not supported!)
 endif
 
 CXXFLAGS   += $(ADD_FLAGS) $(ERL_CXXFLAGS)
@@ -117,12 +136,13 @@ clean:
 	rm -f $(EXE_OUTPUT) *.o *.d
 
 info:
-	@echo "SOURCES: $(SOURCES)"
-	@echo "OBJECTS: $(OBJECTS)"
-	@echo "TARGET:  $(TARGET)"
-	@echo "MARCH:   $(MARCH)"
-	@echo "OUTPUT:  $(EXE_OUTPUT)"
-	@echo "OUT_DIR: $(EXE_DIR)"
+	@echo "SOURCES:    $(SOURCES)"
+	@echo "OBJECTS:    $(OBJECTS)"
+	@echo "TARGET:     $(TARGET)"
+	@echo "TARGET_SYS: $(TARGET_SYS)"
+	@echo "MARCH:      $(MARCH)"
+	@echo "OUTPUT:     $(EXE_OUTPUT)"
+	@echo "OUT_DIR:    $(EXE_DIR)"
 
 $(EXE_OUTPUT): $(OBJECTS) $(EXE_DIR)
 	mkdir -p "$(EXE_DIR)"
