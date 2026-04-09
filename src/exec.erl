@@ -22,7 +22,7 @@ that the emulator is not running as `root`:
   SUID bit: `chown root:root exec-port; chmod 4755 exec-port`.
   (This option is discouraged as it's less secure).
 
-In either of these two cases, `exec:start_link/2` must be started
+In either of these two cases, `exec:start/1` must be started
 with options `[root, {user, User}, {limit_users, Users}]`,
 so that `exec-port` process will not actually run as
 root but will switch to the effective `User`, and set the kernel
@@ -214,7 +214,7 @@ and there's no shell injection vulnerability.
 Command options:
 - `monitor`
   : Set up a monitor for the spawned process. The monitor is not
-    a standard `erlang:montior/2` function call, but it's emulated
+    a standard `erlang:monitor/2` function call, but it's emulated
     by ensuring that the monitoring process receives notification
     in the form:
     `{'DOWN', OsPid::integer(), process, Pid::pid(), Reason}`.
