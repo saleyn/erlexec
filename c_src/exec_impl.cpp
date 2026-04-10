@@ -658,7 +658,11 @@ pid_t start_child(CmdOptions& op, std::string& error)
         }
         #endif
 
-        if (op.group() != std::numeric_limits<int>::max() && setpgid(0, op.group()) < 0) {
+        // PTY children that own their session/group already got it from setsid().
+        if (!op.pty_owns_group() &&
+            op.group() != std::numeric_limits<int>::max() &&
+            setpgid(0, op.group()) < 0)
+        {
             err.write("Cannot set effective group to %d", op.group());
             perror(err.c_str());
             exit(EXIT_FAILURE);
@@ -735,7 +739,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
     // group ID to the same value immediately after a fork(), and the
     // parent ignores any occurrence of the EACCES error on the setpgid() call.
 
-    if (op.group() != std::numeric_limits<int>::max()) {
+    if (!op.pty_owns_group() && op.group() != std::numeric_limits<int>::max()) {
         pid_t gid = op.group() ? op.group() : pid;
         if (setpgid(pid, gid) == -1 && errno != EACCES)
             DEBUG(debug, "  Parent failed to set group of pid %d to %d: %s",
@@ -1689,4 +1693,3 @@ int CmdOptions::init_cenv()
 }
 
 } // namespace ei
-

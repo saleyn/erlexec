@@ -399,8 +399,10 @@ bool process_command(bool is_err)
             if ((pid = start_child(po, err)) < 0)
                 send_error_str(transId, false, "Couldn't start pid: %s", err.c_str());
             else {
+                // PTY children create their own session/process group via setsid().
+                pid_t gid = po.pty_owns_group() ? pid : getpgid(pid);
                 children.emplace(pid, CmdInfo(po.cmd(), po.kill_cmd(), pid,
-                                              getpgid(pid),
+                                              gid,
                                               po.success_exit_code(), false,
                                               po.stream_fd(STDIN_FILENO),
                                               po.stream_fd(STDOUT_FILENO),

@@ -12,6 +12,7 @@ priv/*
 priv/test/*
 !priv/test/fake_exec_port.escript
 !priv/test/deny_setpgid.c
+!priv/test/delay_setsid_deny_child_setpgid.c
 !priv/test/exec_port_fork_wrapper.c
 ebin
 .rebar/*
