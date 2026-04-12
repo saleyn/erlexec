@@ -266,6 +266,8 @@ Command options:
 - `{group, GID}`
   : Sets the effective group ID of the spawned process. The value 0
     means to create a new group ID equal to the OS pid of the process.
+    When `pty` is enabled, omitting `group` or using `{group, 0}` relies on
+    the session/process group created by `setsid()`.
 - `{user, RunAsUser}`
   : When exec-port was compiled with capability (Linux) support
     enabled and has a suid bit set, it's capable of running
@@ -1590,7 +1592,8 @@ exec_test_() ->
             ?tt(test_pty()),
             ?tt(test_pty_echo()),
             ?tt(test_pty_opts()),
-            ?tt(test_dynamic_pty_opts())
+            ?tt(test_dynamic_pty_opts()),
+            ?tt(test_pty_group_zero_kill_group())
         ]
     }.
 
@@ -1980,6 +1983,29 @@ test_dynamic_pty_opts() ->
     ?receiveBytes({stdout, I, <<"^B">>}, 5000),
     ?receivePattern({'DOWN', I, process, P, {exit_status, 2}}, 5000).
 
+test_pty_group_zero_kill_group() ->
+    case build_pty_group_zero_harness() of
+        {ok, PreloadPath} ->
+            PidFile = temp_file(),
+            {ok, ExecPid} = exec:start([{env, [{"LD_PRELOAD", PreloadPath}]}]),
+            try
+                Cmd = lists:flatten(io_lib:format("sleep 20 & echo $! > ~s; wait", [PidFile])),
+                {ok, P, I} = exec:run(Cmd, [monitor, pty, {group, 0}, kill_group]),
+                ChildPid = read_pid_file(PidFile),
+                ok = exec:stop(I),
+                ?receivePattern({'DOWN', I, process, P, normal}, 5000),
+                wait_until_pid_stops(ChildPid)
+            after
+                maybe_kill_pid_from_file(PidFile),
+                file:delete(PidFile),
+                exit(ExecPid, kill)
+            end;
+        {error, Reason} ->
+            erlang:error(Reason);
+        {skip, _Reason} ->
+            ok
+    end.
+
 test_port_runs_in_own_process_group() ->
     {ok, ExecPid} = exec:start([]),
     try
@@ -2223,12 +2249,36 @@ maybe_kill_pid_from_file(Path) ->
             ok
     end.
 
+wait_until_pid_stops(Pid) ->
+    wait_until_pid_stops(Pid, 20).
+
+wait_until_pid_stops(Pid, 0) ->
+    erlang:error({pid_still_running, Pid});
+wait_until_pid_stops(Pid, Retries) ->
+    case os_pid_running(Pid) of
+        false ->
+            ok;
+        true ->
+            timer:sleep(100),
+            wait_until_pid_stops(Pid, Retries - 1)
+    end.
+
 build_setpgid_failure_harness() ->
     case {os:type(), os:find_executable("cc")} of
         {{unix, linux}, false} ->
             {skip, no_c_compiler};
         {{unix, linux}, Cc} ->
             compile_setpgid_failure_harness(Cc);
+        _ ->
+            {skip, unsupported_os}
+    end.
+
+build_pty_group_zero_harness() ->
+    case {os:type(), os:find_executable("cc")} of
+        {{unix, linux}, false} ->
+            {skip, no_c_compiler};
+        {{unix, linux}, Cc} ->
+            compile_pty_group_zero_harness(Cc);
         _ ->
             {skip, unsupported_os}
     end.
@@ -2251,6 +2301,19 @@ compile_setpgid_failure_harness(Cc) ->
         {_, {error, _} = Error} ->
             file:delete(PreloadPath),
             file:delete(WrapperPath),
+            Error
+    end.
+
+compile_pty_group_zero_harness(Cc) ->
+    PrivDir = code:priv_dir(erlexec),
+    Base = integer_to_list(erlang:unique_integer([positive])),
+    PreloadPath = filename:join(PrivDir, "delay_setsid_deny_child_setpgid_" ++ Base ++ ".so"),
+    TestDir = filename:join(PrivDir, "test"),
+    PreloadSource = filename:join(TestDir, "delay_setsid_deny_child_setpgid.c"),
+    case compile_c_helper(Cc, ["-shared", "-fPIC", "-ldl"], PreloadPath, PreloadSource) of
+        ok ->
+            {ok, PreloadPath};
+        {error, _} = Error ->
             Error
     end.
 

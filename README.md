@@ -39,6 +39,8 @@ The following features are supported:
 * Run interactive processes with psudo-terminal pty support.
 * Support all RFC4254 pty psudo-terminal options defined in
   [section-8](https://datatracker.ietf.org/doc/html/rfc4254#section-8) of the spec.
+  PTY commands use the session/process group created by `setsid()`, so
+  `{group, 0}` remains the equivalent of "own process group" in PTY mode.
 * Execute OS processes under different user credentials (using Linux capabilities).
 * Perform proper cleanup of OS child processes at port program termination time.
 

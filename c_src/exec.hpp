@@ -250,6 +250,9 @@ public:
     const CmdArgsList&   cmd()          const { return m_cmd; }
     bool                 shell()        const { return m_shell; }
     bool                 pty()          const { return m_pty; }
+    bool                 pty_owns_group() const {
+        return m_pty && (m_group == std::numeric_limits<int>::max() || m_group == 0);
+    }
     bool                 pty_echo()     const { return m_pty_echo; }
     MapPtyOpt const&     pty_opts()     const { return m_pty_opts; }
     std::tuple<int, int> winsz()        const { return std::make_tuple(m_winsz_rows, m_winsz_cols); }
