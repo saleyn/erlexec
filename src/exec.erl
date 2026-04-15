@@ -1987,7 +1987,19 @@ test_pty_group_zero_kill_group() ->
     case build_pty_group_zero_harness() of
         {ok, PreloadPath} ->
             PidFile = temp_file(),
-            {ok, ExecPid} = exec:start([{env, [{"LD_PRELOAD", PreloadPath}]}]),
+            ExecPid = case exec:start([{env, [{"LD_PRELOAD", PreloadPath}]}]) of
+                {ok, Pid} -> Pid;
+                {error, {already_started, Pid}} ->
+                    Ref = monitor(process, Pid),
+                    exit(Pid, kill),
+                    receive
+                        {'DOWN', Ref, process, _, _} -> ok
+                    after 30000 ->
+                        erlang:error({test_pty_group_zero_kill_group, timeout})
+                    end,
+                    {ok, Pid2} = exec:start([{env, [{"LD_PRELOAD", PreloadPath}]}]),
+                    Pid2
+            end,
             try
                 Cmd = lists:flatten(io_lib:format("sleep 20 & echo $! > ~s; wait", [PidFile])),
                 {ok, P, I} = exec:run(Cmd, [monitor, pty, {group, 0}, kill_group]),
