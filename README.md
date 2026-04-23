@@ -47,7 +47,7 @@ The following features are supported:
 This application provides significantly better control
 over OS processes than built-in `erlang:open_port/2` command with a
 `{spawn, Command}` option, and performs proper OS child process cleanup
-when the emulator exits. 
+when the emulator exits.
 
 The `erlexec` application has been in production use by Erlang and Elixir systems,
 and is considered stable.
@@ -283,15 +283,99 @@ $ ps haxo user,comm | grep exec-port
 wheel      exec-port
 ```
 
+### Linux Capabilities Support
+
+The `erlexec` application on Linux supports setting Linux kernel capabilities on the port program.
+This allows fine-grained control over what privileged operations the port program can perform
+without requiring full root access. Capabilities are propagated to child processes automatically.
+
+#### Available Capabilities
+
+The following Linux capabilities can be specified (see `man 7 capabilities` for details):
+
+- `cap_setuid` - Change UID/GID of processes
+- `cap_kill` - Send signals to processes
+- `cap_sys_nice` - Set process priority
+- `cap_net_bind_service` - Bind to ports < 1024
+- `cap_net_admin` - Network administration (configure interfaces, etc.)
+- And 30+ others...
+
+#### Using Specific Capabilities
+
+You can start the port program with specific capabilities for your use case:
+
+```erlang
+$ whoami
+serge
+
+$ erl
+1> Opts = [{capabilities, [setuid, kill, sys_nice]}],   % "cap_" prefix is optional
+2> exec:start(Opts).                                    % Start with specific capabilities
+{ok,<0.32.0>}
+3> exec:run("whoami", [sync, stdout]).                  % Command inherits specified capabilities
+{ok,[{stdout,[<<"serge\n">>]}]}
+```
+
+#### Using All Capabilities
+
+To enable all available Linux capabilities, use the `all` keyword:
+
+```erlang
+1> exec:start([{capabilities, all}]).                   % Enable all capabilities
+{ok,<0.32.0>}
+2> exec:run("whoami", [sync, stdout]).                  % Command inherits all capabilities
+{ok,[{stdout,[<<"serge\n">>]}]}
+```
+
+#### Using Default Capabilities
+
+When no `capabilities` option is specified, the port program uses default capabilities
+(`setuid`, `kill`, `sys_nice`):
+
+```erlang
+1> exec:start([]).                                       % Uses default capabilities
+{ok,<0.32.0>}
+```
+
+#### Combining with User Switching
+
+Capabilities work seamlessly with user switching. This allows the port program
+to run as a non-root user while still having necessary capabilities:
+
+```erlang
+1> Opts = [root, {user, "nobody"}, 
+           {limit_users, ["alex", "guest"]},
+           {capabilities, [cap_setuid, cap_kill]}],
+2> exec:start(Opts).                                    % Run as "nobody" with specific caps
+{ok,<0.32.0>}
+3> exec:run("whoami", [sync, stdout, {user, "alex"}]).  % Run command as "alex"
+{ok,[{stdout,[<<"alex\n">>]}]}
+```
+
+#### Capability Propagation
+
+When capabilities are set on the port program, they are automatically propagated
+to child processes as inheritable capabilities. This means child processes can acquire additional capabilities beyond what they would normally have access to.
+This is useful for:
+
+- Container environments where the port program has specific capabilities
+- Allowing child processes to perform privileged operations without SUID
+- Fine-grained permission control in multi-tenant environments
+
+Note: Capabilities are only supported on Linux systems and require the `libcap`
+library. On other systems or when libcap is not available, capability options
+are ignored gracefully.
+
 ### Running the port program as root
 
-While running the port program as root is highly discouraged, since it opens a security
-hole that gives users an ability to damage the system, for those who might need such an
-option, here is how to get it done (PROCEED AT YOUR OWN RISK!!!).
+While running the port program as root is highly discouraged, since it opens a
+security hole that gives users an ability to damage the system, for those who
+might need such an option, here is how to get it done (PROCEED AT YOUR OWN
+RISK!!!).
 
-Note: in this case `exec` would use `sudo exec-port` to run it as `root` or the `exec-port`
-must have the SUID bit set (4555) and be owned by `root`.  The other (DANGEROUS and
-firmly DISCOURAGED!!!) alternative is to run `erl` as `root`:
+Note: in this case `exec` would use `sudo exec-port` to run it as `root` or the
+`exec-port` must have the SUID bit set (4555) and be owned by `root`.  The other
+(DANGEROUS and firmly DISCOURAGED!!!) alternative is to run `erl` as `root`:
 
 ```erlang
 $ whoami
@@ -387,7 +471,7 @@ ok
 ```erlang
 > f(I), f(P), {ok, P, I} = exec:run("echo ok", [{stdout, self()}, monitor]).
 {ok,<0.263.0>,18950}
-16> flush().                                                                  
+16> flush().
 Shell got {stdout,18950,<<"ok\n">>}
 Shell got {'DOWN',18950,process,<0.263.0>,normal}
 ok
@@ -400,7 +484,7 @@ the process and kill it.
 ```erlang
 % Start an externally managed OS process and retrieve its OS PID:
 17> spawn(fun() -> os:cmd("echo $$ > /tmp/pid; sleep 15") end).
-<0.330.0>  
+<0.330.0>
 18> f(P), P = list_to_integer(lists:reverse(tl(lists:reverse(binary_to_list(element(2,
 file:read_file("/tmp/pid"))))))).
 19355
@@ -426,7 +510,7 @@ ok
 23> exec:stop(I).
 ok
 % Wait for its completion
-24> f(M), receive M -> M after 10000 -> timeout end.                                          
+24> f(M), receive M -> M after 10000 -> timeout end.
 {'DOWN',26347,process,<0.403.0>,normal}
 ```
 
@@ -447,7 +531,7 @@ timeout
 4> exec:stop(I).
 ok
 % Wait for its completion
-5> f(M), receive M -> M after 1000 -> timeout end.                                          
+5> f(M), receive M -> M after 1000 -> timeout end.
 {'DOWN',26347,process,<0.403.0>,normal}
 ```
 
@@ -457,7 +541,7 @@ ok
 25> f(I), {ok, _, I} = exec:run("read x; echo \"Got: $x\"", [stdin, stdout, monitor]).
 {ok,<0.427.0>,26431}
 % Send the OS process some data via its stdin
-26> exec:send(I, <<"Test data\n">>).                                                  
+26> exec:send(I, <<"Test data\n">>).
 ok
 % Get the response written to processes stdout
 27> f(M), receive M -> M after 10000 -> timeout end.
@@ -503,12 +587,12 @@ Got: {stdout,26143,<<"baz\nbar\nfoo\n">>}
 {ok,[{stdout, [<<"Test\n">>]}]}
 
 % Execute a non-existing command
-31> exec:run("echo1 Test", [sync, stdout, stderr]).   
+31> exec:run("echo1 Test", [sync, stdout, stderr]).
 {error,[{exit_status,32512},
         {stderr,[<<"/bin/bash: echo1: command not found\n">>]}]}
 
 % Capture stdout/stderr of the executed command
-32> exec:run("echo Test; echo Err 1>&2", [sync, stdout, stderr]).    
+32> exec:run("echo Test; echo Err 1>&2", [sync, stdout, stderr]).
 {ok,[{stdout,[<<"Test\n">>]},{stderr,[<<"Err\n">>]}]}
 
 % Redirect stderr to stdout

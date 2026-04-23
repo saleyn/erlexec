@@ -29,7 +29,7 @@ doc:
 	$(REBAR) ex_doc
 
 test:
-	@$(REBAR) eunit
+	@$(REBAR) eunit --verbose
 
 info:
 	@$(MAKE) -C c_src $@
