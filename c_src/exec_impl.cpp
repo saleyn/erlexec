@@ -365,6 +365,124 @@ static int getpty(int& fdmp, ei::StringBuffer<128>& err) {
 }
 
 //------------------------------------------------------------------------------
+//------------------------------------------------------------------------------
+#ifdef HAVE_CAP
+// Placeholder for decoding capability names passed in the "run child" command
+// awk '/^#define +CAP_LAST_CAP/{exit} /^#define +CAP_.*/{gsub("CAP_", "", $2); printf("\"%-20s // %d\n", tolower($2)",", $3)}' /usr/include/linux/capability.h
+//
+const char* Caps::s_cap_name[] = {
+    "chown",                // 0
+    "dac_override",         // 1
+    "dac_read_search",      // 2
+    "fowner",               // 3
+    "fsetid",               // 4
+    "kill",                 // 5
+    "setgid",               // 6
+    "setuid",               // 7
+    "setpcap",              // 8
+    "linux_immutable",      // 9
+    "net_bind_service",     // 10
+    "net_broadcast",        // 11
+    "net_admin",            // 12
+    "net_raw",              // 13
+    "ipc_lock",             // 14
+    "ipc_owner",            // 15
+    "sys_module",           // 16
+    "sys_rawio",            // 17
+    "sys_chroot",           // 18
+    "sys_ptrace",           // 19
+    "sys_pacct",            // 20
+    "sys_admin",            // 21
+    "sys_boot",             // 22
+    "sys_nice",             // 23
+    "sys_resource",         // 24
+    "sys_time",             // 25
+    "sys_tty_config",       // 26
+    "mknod",                // 27
+    "lease",                // 28
+    "audit_write",          // 29
+    "audit_control",        // 30
+    "setfcap",              // 31
+    "mac_override",         // 32
+    "mac_admin",            // 33
+    "syslog",               // 34
+    "wake_alarm",           // 35
+    "block_suspend",        // 36
+    "audit_read",           // 37
+    "perfmon",              // 38
+    "bpf",                  // 39
+    "checkpoint_restore",   // 40
+};
+
+std::unordered_map<std::string, cap_value_t> Caps::s_cap_s2i;
+std::unordered_map<cap_value_t, std::string> Caps::s_cap_i2s;
+
+#endif
+
+//------------------------------------------------------------------------------
+bool propagate_caps(CmdOptions const& op, ei::StringBuffer<128>& err)
+{
+#ifdef HAVE_CAP
+    if (!op.has_caps())
+        return true;
+
+    Caps caps;
+
+    // Get the current process capabilities
+    if (!caps.valid()) {
+        err.write("error %d on cap_get_proc: %s\n", errno, strerror(errno));
+        return false;
+    }
+
+    DEBUG(debug > 1, "PID (%d) requested caps: %s", getpid(), op.caps_to_string().c_str());
+
+    // Get the bounding set of capabilities
+    cap_flag_value_t cap_value;
+    for (cap_value_t i = 0; i < Caps::TOTAL_CAP_COUNT; ++i) {
+        // Check if the user requested this process to inherit capabilities
+        if (!op.has_cap(i)) {
+            DEBUG(debug > 1, "PID (%d) capability %s not set", getpid(), Caps::value_to_string(i).c_str());
+            continue;
+        }
+
+        if (cap_get_flag(caps.value(), i, CAP_PERMITTED, &cap_value) < 0) {
+            err.write("cap_get_flag(%s) error(%d): %s", Caps::value_to_string(i).c_str(), errno, strerror(errno));
+            return false;
+        }
+
+        if (cap_value == CAP_SET)
+            caps.add(i);
+        else {
+            DEBUG(debug > 1, "PID (%d) value of capability %s not set!", getpid(), Caps::value_to_string(i).c_str());
+        }
+    }
+
+    // Set inheritable capabilities to all permitted capabilities
+    if (caps.size()) {
+        if (cap_set_flag(caps.value(), CAP_INHERITABLE, caps.size(), caps.list(), CAP_SET) < 0) {
+            err.write("cap_set_flag([%s]) error(%d): %s", caps.to_string().c_str(), errno, strerror(errno));
+            return false;
+        }
+
+        // Apply inheritable capabilities
+        if (cap_set_proc(caps.value()) < 0) {
+            err.write("cap_set_proc error(%d): %s", errno, strerror(errno));
+            return false;
+        }
+
+        DEBUG(debug > 1, "PID(%d) setting capabilities: %s", getpid(), caps.to_string().c_str());
+
+        // Set ambient capabilities
+        for (size_t i = 0; i < caps.size(); i++)
+            if (prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE, caps.list()[i], 0, 0) < 0) {
+                err.write("PR_CAP_AMBIENT_RAISE[%d] error(%d): %s\n", i, errno, strerror(errno));
+                return false;
+            }
+    }
+#endif
+    return true;
+}
+
 pid_t start_child(CmdOptions& op, std::string& error)
 {
     enum { RD = 0, WR = 1 };
@@ -706,6 +824,14 @@ pid_t start_child(CmdOptions& op, std::string& error)
 
         const char* executable = op.executable().empty()
             ? argv[0] : op.executable().c_str();
+
+        // Apply per-command Linux capabilities before execve
+        #ifdef HAVE_CAP
+        if (!propagate_caps(op, err)) {
+            perror(err.c_str());
+            exit(EXIT_FAILURE);
+        }
+        #endif
 
         // Execute the process
         if (execve(executable, (char* const*)argv, op.env()) < 0) {
@@ -1320,14 +1446,14 @@ int CmdOptions::ei_decode(bool getcmd)
         PTY,        SUCCESS_EXIT_CODE, CD,     ENV,
         EXECUTABLE, KILL,              KILL_TIMEOUT,
         KILL_GROUP, NICE,              USER,    GROUP,
-        DEBUG_OPT,  PTY_ECHO,          WINSZ
+        DEBUG_OPT,  PTY_ECHO,          WINSZ,   CAPABILITIES
     } opt;
     const char* opts[] = {
         "stdin",      "stdout",            "stderr",
         "pty",        "success_exit_code", "cd", "env",
         "executable", "kill",              "kill_timeout",
         "kill_group", "nice",              "user",  "group",
-        "debug",      "pty_echo",          "winsz"
+        "debug",      "pty_echo",          "winsz", "capabilities"
     };
 
     bool seen_opt[sizeof(opts) / sizeof(char*)] = {false};
@@ -1540,6 +1666,37 @@ int CmdOptions::ei_decode(bool getcmd)
                 }
                 break;
 
+            #ifdef HAVE_CAP
+            case CAPABILITIES: {
+                std::string all;
+                int caps_list_size = -1;
+                if ((eis.decodeAtom(all) > -1) && (all == "all"))
+                    m_caps_all = true;
+                else if ((caps_list_size = eis.decodeListSize()) < 0) {
+                    m_err << op << " must be a list of atoms or 'all'";
+                    return -1;
+                }
+
+                if (caps_list_size > -1) {
+                    for (int i=0; i < caps_list_size; i++) {
+                        std::string s;
+                        if (eis.decodeAtom(s) < 0) {
+                            m_err << "badarg: capability#" << i << " name not an atom";
+                            return -1;
+                        }
+                        auto cap = Caps::string_to_value(s);
+                        if (cap < 0) {
+                            m_err << "badarg: capability '" << s << "' is invalid";
+                            return -1;
+                        }
+                        m_caps.insert(cap);
+                    }
+                    eis.decodeListEnd();
+                }
+                break;
+            }
+            #endif
+
             case SUCCESS_EXIT_CODE:
                 if (eis.decodeInt(m_success_exit_code) < 0 ||
                     m_success_exit_code < 0 ||
@@ -1580,7 +1737,7 @@ int CmdOptions::ei_decode(bool getcmd)
                         stream_redirect(opt, REDIRECT_STDERR);
                     else if (s == "stdout" && opt == STDERR)   // Redirect STDERR to STDOUT
                         stream_redirect(opt, REDIRECT_STDOUT);
-                    else if (!s.empty()) {
+                    else if (s.length() > 0) {
                         stream_file(opt, s);                   // Redirect to file
                     }
                 } else if (arity == 3) {
@@ -1655,7 +1812,20 @@ int CmdOptions::ei_decode(bool getcmd)
     return 0;
 }
 
+
 //------------------------------------------------------------------------------
+#ifdef HAVE_CAP
+std::string CmdOptions::caps_to_string() const {
+    std::string s = "[";
+    for (auto c : m_caps) {
+        if (s.length() > 1) s += "|";
+        s += Caps::value_to_string(c);
+    }
+    s += "]";
+    return s;
+}
+#endif
+
 int CmdOptions::init_cenv()
 {
     if (m_env.empty()) {

@@ -80,6 +80,7 @@ int   ei::sigchld_pipe[2] = { -1, -1 }; // Pipe for delivering sig child details
 static bool finalize_group_isolated = false;
 
 static int run_as_euid    = std::numeric_limits<int>::max();
+static std::string g_capabilities = "";  // Custom capabilities to set on startup
 
 //-------------------------------------------------------------------------
 // Types & variables
@@ -106,13 +107,21 @@ int     finalize();
 static void usage(char* progname) {
     fprintf(stderr,
         "Usage:\n"
-        "   %s [-n] [-root] [-alarm N] [-debug [Level]] [-user User]\n"
+        "   %s [-n] [-root] [-alarm N] [-debug [Level]] [-user User] [-cap Capabilities]\n"
         "Options:\n"
         "   -n              - Use marshaling file descriptors 3&4 instead of default 0&1.\n"
         "   --whoami        - Output the name of effective user and exit\n"
         "   -alarm N        - Allow up to <N> seconds to live after receiving SIGTERM/SIGINT (default %d)\n"
         "   -debug [Level]  - Turn on debug mode (default Level: 1)\n"
         "   -user User      - If started by root, run as User\n"
+        "   -cap Caps       - Capabilities to set on the port program and inherit by child processes.\n"
+        "                     This option allows the exec-port program to set Linux capabilities on itself\n"
+        "                     and inherit them to child processes. This enables running privileged operations\n"
+        "                     without full root access.\n"
+        "                     Supported modes:\n"
+        "                     - (empty/default): Set cap_setuid=eip cap_kill=eip cap_sys_nice=eip\n"
+        "                     - 'all': Inherit all capabilities currently available on this process\n"
+        "                     - comma-separated: e.g., 'setuid,kill,sys_nice' (without cap_ prefix)\n"
         "Description:\n"
         "   This is a port program intended to be started by an Erlang\n"
         "   virtual machine.  It can start/kill/list OS processes\n"
@@ -190,6 +199,9 @@ int main(int argc, char* argv[])
                 if (debug > 2)
                     DEBUG(true, "SUID bit %sset on %s owned by uid=%d",
                                     argv[0], (st.st_mode & S_ISUID) ? "" : " NOT", st.st_uid);
+            } else if (strcmp(argv[res], "-cap") == 0 && res+1 < argc && argv[res+1][0] != '-') {
+                g_capabilities = argv[++res];
+                DEBUG(debug, "exec: capabilities requested: %s", g_capabilities.c_str());
             }
         }
     }
@@ -272,9 +284,9 @@ int main(int argc, char* argv[])
             terminated = true;
             break;
         }
-        
+
         auto is_err = false;
-        
+
         // Check for SIGCHLD
         if (fdhandler.is_readable(FdType::SIGCHILD)) {
             if (!process_sigchld())
@@ -523,7 +535,7 @@ bool process_command(bool is_err)
 
             break;
         }
-            
+
         case STDIN: {
             // {stdin, OsPid::integer(), Data::binary()}
             long pid;
@@ -590,6 +602,11 @@ int ei::set_euid(int userid)
 
 void initialize(int userid, bool use_alt_fds, bool is_root, bool requested_root)
 {
+    // Initialize capability string-to-int conversion maps
+    #ifdef HAVE_CAP
+    Caps::init_maps();
+    #endif
+
     // In root mode, we are running exec-port as another effective
     // user `userid`, and the spawned child processes to be the
     // effective user `userid` by default, unless overridden in the
@@ -658,15 +675,72 @@ void initialize(int userid, bool use_alt_fds, bool is_root, bool requested_root)
 
         #ifdef HAVE_CAP
         cap_t cur;
-        if ((cur = cap_from_text("cap_setuid=eip cap_kill=eip cap_sys_nice=eip")) == 0) {
-            DEBUG(true, "exec: failed to convert cap_setuid & cap_sys_nice from text");
-            exit(8);
+
+        // Determine which capabilities to use
+        std::string cap_str = g_capabilities;
+
+        // If no custom capabilities specified, use defaults
+        if (cap_str.empty()) {
+            cap_str = "cap_setuid=eip cap_kill=eip cap_sys_nice=eip";
+        } else if (cap_str == "all") {
+            // Special case: inherit all capabilities - skip cap_from_text and use cap_get_proc
+            cur = cap_get_proc();
+            if (cur == NULL) {
+                DEBUG(true, "exec: failed to get current capabilities");
+                exit(8);
+            }
+            // Make all capabilities inheritable
+            if (cap_set_flag(cur, CAP_INHERITABLE, cap_max_bits(), NULL, CAP_SET) < 0) {
+                DEBUG(true, "exec: failed to set inheritable capabilities");
+                cap_free(cur);
+                exit(9);
+            }
+            if (cap_set_proc(cur) < 0) {
+                DEBUG(true, "exec: failed to set capabilities");
+                cap_free(cur);
+                exit(9);
+            }
+            cap_free(cur);
+            DEBUG(debug, "exec: set all inheritable capabilities");
+            if (debug) {
+                cur = cap_get_proc();
+                DEBUG(true, "exec: current capabilities: %s", cur ? cap_to_text(cur, NULL) : "none");
+                cap_free(cur);
+            }
+        } else {
+            // Convert comma-separated capability names to cap_from_text format
+            std::string cap_text = "";
+            size_t pos = 0;
+            while (pos < cap_str.length()) {
+                size_t comma_pos = cap_str.find(',', pos);
+                if (comma_pos == std::string::npos) comma_pos = cap_str.length();
+
+                std::string cap_name = cap_str.substr(pos, comma_pos - pos);
+                // Trim whitespace
+                size_t start = cap_name.find_first_not_of(" \t");
+                size_t end = cap_name.find_last_not_of(" \t");
+                if (start != std::string::npos)
+                    cap_name = cap_name.substr(start, end - start + 1);
+
+                if (!cap_name.empty()) {
+                    if (!cap_text.empty()) cap_text += " ";
+                    cap_text += cap_name + "=eip";
+                }
+                pos = comma_pos + 1;
+            }
+
+            DEBUG(debug, "exec: setting capabilities: %s", cap_text.c_str());
+            if ((cur = cap_from_text(cap_text.c_str())) == 0) {
+                DEBUG(true, "exec: failed to convert capabilities from text: %s", cap_text.c_str());
+                exit(8);
+            }
+            if (cap_set_proc(cur) < 0) {
+                DEBUG(true, "exec: failed to set capabilities");
+                cap_free(cur);
+                exit(9);
+            }
+            cap_free(cur);
         }
-        if (cap_set_proc(cur) < 0) {
-            DEBUG(true, "exec: failed to set cap_setuid & cap_sys_nice");
-            exit(9);
-        }
-        cap_free(cur);
 
         if (debug) {
             cur = cap_get_proc();

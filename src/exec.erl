@@ -126,6 +126,16 @@ startup.
   : Limit execution of external commands to these set of users.
     This option is only valid when the port program is owned
     by root.
+- `{capabilities, Capabilities}`
+  : When the port program is compiled with capability (Linux) support,
+    allows specifying inheritable capabilities to set on the port program
+    at startup. This enables running privileged operations without full
+    root access. Can be either `all` to inherit all available capabilities,
+    or a list of capability names to enable: 
+    `[setuid, kill, sys_nice, ...]`. The full list of available
+    capabilities can be found in the Linux capabilities man page.
+    The capability names can be specified with or without `cap_` prefix
+    (e.g. `kill` or `cap_kill`). Default: `[setuid, kill, sys_nice]`.
 - `{portexe, Exe}`
   : Provide an alternative location of the port program.
     This option is useful when this application is stored
@@ -161,6 +171,45 @@ sudo pkg ins valgrind                # FreeBSD
     | {alarm, non_neg_integer()}
     | {user, string()|binary()}
     | {limit_users, [string()|binary(), ...]}
+    | {capabilities, all | [
+        chown            |
+        dac_override     |
+        dac_read_search  |
+        fowner           |
+        fsetid           |
+        kill             |
+        setgid           |
+        setuid           |
+        setpcap          |
+        linux_immutable  |
+        net_bind_service |
+        net_broadcast    |
+        net_admin        |
+        net_raw          |
+        ipc_lock         |
+        ipc_owner        |
+        sys_module       |
+        sys_rawio        |
+        sys_chroot       |
+        sys_ptrace       |
+        sys_pacct        |
+        sys_admin        |
+        sys_boot         |
+        sys_nice         |
+        sys_resource     |
+        sys_time         |
+        sys_tty_config   |
+        mknod            |
+        lease            |
+        audit_write      |
+        audit_control    |
+        setfcap          |
+        mac_override     |
+        mac_admin        |
+        syslog           |
+        wake_alarm       |
+        block_suspend
+      ]}
     | {portexe, string()|binary()}
     | {env, [{string()|binary(), string()|binary()|false}, ...]}
     | valgrind
@@ -301,6 +350,9 @@ Command options:
   : Use pseudo terminal for the process's stdin, stdout and stderr
 - `pty_echo`
   : Allow the pty to run in echo mode, disabled by default
+- `{capabilities, all | [capability()]}`
+  : Capability names to inherit from the parent `exec-port` process.
+    Linux platform only. See [capability()](#t:capability/0).
 - `debug`
   : Same as `{debug, 1}`
 - `{debug, Level::integer()}`
@@ -328,8 +380,81 @@ Command options:
     | {winsz, {Rows::non_neg_integer(), Cols::non_neg_integer()}}
     | pty | {pty, pty_opts()}
     | pty_echo
+    | {capabilities, all | [capability()]}
     | debug | {debug, integer()}.
 -export_type([cmd_option/0, cmd_options/0]).
+
+-doc """
+For Linux platform that supports capabilities this type defines permissible
+capability options.
+* `chown`: Make arbitrary changes to file UIDs and GIDs.
+* `dac_override`: Bypass file read, write, and execute permission checks.
+* `dac_read_search`: Bypass file read permission checks and directory read and
+  execute permission checks.
+* `fowner`: Bypass permission checks on operations that normally require the file
+  system UID of the process to match the UID of the file.
+* `fsetid`: Don't clear set-user-ID and set-group-ID permission bits when a file is
+  modified; set the set-group-ID bit for a file whose GID does not match the file
+  system or any of the supplementary GIDs of the calling process.
+* `ipc_lock`: Lock memory.
+* `ipc_owner`: Bypass permission checks for operations on System V IPC objects.
+* `kill`: Bypass permission checks for sending signals.
+* `lease`: Establish leases on arbitrary files.
+* `linux_immutable`: Set the FS_APPEND_FL and FS_IMMUTABLE_FL i-node flags.
+* `mac_admin`: Override Mandatory Access Control.
+* `mac_override`: Allow MAC configuration or state changes.
+* `mknod`: Create special files using.
+* `net_admin`: Perform various network-related operations.
+* `net_bind_service`: Bind a socket to Internet domain privileged ports.
+* `net_broadcast`: (Unused) Make socket broadcasts, and listen to multicasts.
+* `net_raw`: Use RAW and PACKET sockets.
+* `setgid`: Make arbitrary manipulations of process GIDs and supplementary GID list;
+  forge GID when passing socket credentials via UNIX domain sockets.
+* `setfcap`: Set file capabilities.
+* `setpcap`: If file capabilities are not supported: grant or remove any capability
+  in the caller's permitted capability set to or from any other process.
+* `setuid`: Make arbitrary manipulations of process UIDs; make forged UID when
+  passing socket credentials via UNIX domain sockets.
+* `sys_admin`: Perform a range of system administration operations including:
+  `quotactl(2)`, `mount(2)`, `umount(2)`, `swapon(2)`, `swapoff(2)`, `sethostname(2)`,
+  and `setdomainname(2)`.
+* `sys_boot`: Use `reboot(2)` and `kexec_load(2)`.
+* `sys_chroot`: Use `chroot(2)`.
+* `sys_module`: Load and unload kernel modules; in kernels before 2.6.25: drop
+  capabilities from the system-wide capability bounding set.
+* `sys_nice`: Raise process nice value (`nice(2)`, `setpriority(2)`) and change the
+  nice value for arbitrary processes.
+* `sys_pacct`: Use `acct(2)`.
+* `sys_ptrace`: Trace arbitrary processes using `ptrace(2)`;
+  apply `get_robust_list(2)` to arbitrary processes; inspect processes using `kcmp(2)`.
+* `sys_rawio`: Perform I/O port operations (`iopl(2)` and `ioperm(2)`).
+* `sys_resource`: Use reserved space on ext2 file systems.
+* `sys_time`: Set system clock.
+* `sys_tty_config`: Use `vhangup(2)`; employ various privileged `ioctl(2)` operations
+  on virtual terminals.
+* `syslog`: Perform privileged `syslog(2)` operations. See `syslog(2)` for
+  information on which operations require privilege.
+* `wake_alarm`: Trigger something that will wake up the system.
+* `block_suspend`: Block process awakening.
+* `audit_read`: Allow reading the audit log.
+* `audit_write`: Write records to kernel audit log.
+* `audit_control`: Enable and disable kernel audit logging.
+* `perfmon`: Allow system performance and observability privileged operations.
+* `bpf`: Allow BPF programs to run.
+* `checkpoint_restore`: Allow checkpoint and restore of process state.
+
+""".
+-type capability() ::
+    chown | dac_override | dac_read_search | fowner |
+    fsetid | kill | setgid | setuid | setpcap |
+    linux_immutable | net_bind_service | net_broadcast |
+    net_admin | net_raw | ipc_lock | ipc_owner | sys_module |
+    sys_rawio | sys_chroot | sys_ptrace | sys_pacct |
+    sys_admin | sys_boot | sys_nice | sys_resource | sys_time |
+    sys_tty_config | mknod | lease | audit_write | audit_control | setfcap |
+    mac_override | mac_admin | syslog | wake_alarm | block_suspend | audit_read |
+    perfmon | bpf | checkpoint_restore.
+-export_type([capability/0]).
 
 -doc """
 Output device option:
@@ -727,7 +852,8 @@ default() ->
      {alarm, 12},
      {portexe, noportexe},
      {user, ""},        % Run port program as this user
-     {limit_users, []}]. % Restricted list of users allowed to run commands
+     {limit_users, []}, % Restricted list of users allowed to run commands
+     {capabilities, []}]. % Capabilities to set on port program (empty = defaults)
 default(portexe) ->
     % Retrieve the Priv directory
     case code:priv_dir(erlexec) of
@@ -815,6 +941,13 @@ init([Options]) ->
     User  = to_list(proplists:get_value(user,Options)),
     Debug = proplists:get_value(verbose,     Options, default(verbose)),
     Root  = proplists:get_value(root,        Options, default(root)),
+    Caps  = case proplists:get_value(capabilities, Options, default(capabilities)) of
+            all -> " -cap all";
+            []  -> "";
+            CapList when is_list(CapList) ->
+                CL = exec_util:validate_capabilities(CapList),
+                " -cap " ++ lists:flatten(lists:join(",", [atom_to_list(C) || C <- CL]))
+            end,
     Valgr = case proplists:get_value(valgrind, Options) of
             true                  -> default(valgrind);
             Vg when is_list(Vg)   -> Vg ++ " ";
@@ -831,21 +964,21 @@ init([Options]) ->
     EffUsr= os:getenv("USER"),
     IsRoot= EffUsr =:= "root",
     Exe   = if not Root ->
-                Valgr++Exe1++Args;
+                Valgr++Exe1++Args++Caps;
             Root, IsRoot, User/=undefined, User/="", ((SUID     andalso Users/=[]) orelse
                                                       (not SUID andalso Users==[])) ->
-                Valgr++Exe1++Args;
+                Valgr++Exe1++Args++Caps;
             %Root, not IsRoot, NeedSudo, User/=undefined, User/="" ->
                 % Asked to enable root, but running as non-root, and have no SUID: use sudo.
-            %    lists:append(["/usr/bin/sudo -u ", to_list(User), " ", Exe1, Args]);
+            %    lists:append(["/usr/bin/sudo -u ", to_list(User), " ", Exe1, Args, Caps]);
             Root, not IsRoot, NeedSudo, ((User/=undefined andalso User/="") orelse
                                          (EffUsr/=User andalso User/=undefined
                                                        andalso User/=root
                                                        andalso User/="root")) ->
                 % Asked to enable root, but running as non-root, and have SUID: use sudo.
-                lists:append(["/usr/bin/sudo ", Valgr, Exe1, Args]);
+                lists:append(["/usr/bin/sudo ", Valgr, Exe1, Args, Caps]);
             true ->
-                Valgr++Exe1++Args
+                Valgr++Exe1++Args++Caps
             end,
     debug(Debug, "exec: ~s~sport program: ~s\n~s",
         [if SUID -> "[SUID] "; true -> "" end,
@@ -1334,6 +1467,11 @@ check_cmd_options([{winsz, {Rows, Cols}}=H|T], Pid, State, PortOpts, OtherOpts)
     check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
 check_cmd_options([{pty, Pty}=H|T], Pid, State, PortOpts, OtherOpts) when is_list(Pty) ->
     ok = check_pty_opts(Pty),
+    check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+check_cmd_options([{capabilities, all}=H|T], Pid, State, PortOpts, OtherOpts) ->
+    check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+check_cmd_options([{capabilities, Caps}=H|T], Pid, State, PortOpts, OtherOpts) when is_list(Caps) ->
+    exec_util:validate_capabilities(Caps),
     check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
 check_cmd_options([{stdin, I}=H|T], Pid, State, PortOpts, OtherOpts)
         when I=:=null; I=:=close; is_list(I); is_binary(I) ->
