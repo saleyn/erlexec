@@ -2368,7 +2368,14 @@ read_pid_file(Path, 0) ->
 read_pid_file(Path, Retries) ->
     case file:read_file(Path) of
         {ok, Bin} ->
-            list_to_integer(string:trim(binary_to_list(Bin)));
+            case string:trim(binary_to_list(Bin)) of
+                [] ->
+                    %% File exists but is empty, retry
+                    timer:sleep(100),
+                    read_pid_file(Path, Retries - 1);
+                Trimmed ->
+                    list_to_integer(Trimmed)
+            end;
         {error, enoent} ->
             timer:sleep(100),
             read_pid_file(Path, Retries - 1)

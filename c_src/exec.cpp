@@ -121,7 +121,7 @@ static void usage(char* progname) {
         "                     Supported modes:\n"
         "                     - (empty/default): Set cap_setuid=eip cap_kill=eip cap_sys_nice=eip\n"
         "                     - 'all': Inherit all capabilities currently available on this process\n"
-        "                     - comma-separated: e.g., 'setuid,kill,sys_nice' (without cap_ prefix)\n"
+        "                     - comma-separated: e.g., 'setuid,kill,sys_nice' (with or without cap_ prefix)\n"
         "Description:\n"
         "   This is a port program intended to be started by an Erlang\n"
         "   virtual machine.  It can start/kill/list OS processes\n"
