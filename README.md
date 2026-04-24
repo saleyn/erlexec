@@ -6,7 +6,7 @@
 
 **Author** Serge Aleynikov <saleyn(at)gmail.com>
 
-## Summary ##
+## Summary
 
 Execute and control OS processes from Erlang/OTP.
 
@@ -52,7 +52,50 @@ when the emulator exits.
 The `erlexec` application has been in production use by Erlang and Elixir systems,
 and is considered stable.
 
-## Donations ##
+## Table of Contents
+
+- [Donations](#donations)
+- [Supported Platforms](#supported-platforms)
+- [Documentation](#documentation)
+- [Usage](#usage)
+  - [Erlang: import as a dependency](#erlang-import-as-a-dependency)
+  - [Elixir: import as a dependency](#elixir-import-as-a-dependency)
+- [Building From Source](#building-from-source)
+- [License](#license)
+- [Architecture](#architecture)
+- [Configuration Options](#configuration-options)
+- [Debugging](#debugging)
+- [Examples](#examples)
+  - [Starting/stopping an OS process](#startingstopping-an-os-process)
+  - [Clearing environment or unsetting an env variable](#clearing-environment-or-unsetting-an-env-variable-of-the-child-process)
+  - [Running exec-port as another effective user](#running-exec-port-as-another-effective-user)
+  - [Allowing exec-port to run commands as other effective users](#allowing-exec-port-to-run-commands-as-other-effective-users)
+  - [Linux Capabilities Support](#linux-capabilities-support)
+    - [Available Capabilities](#available-capabilities)
+    - [Using Specific Capabilities](#using-specific-capabilities)
+    - [Using All Capabilities](#using-all-capabilities)
+    - [Using Default Capabilities](#using-default-capabilities)
+    - [Combining with User Switching](#combining-with-user-switching)
+    - [Capability Propagation](#capability-propagation)
+  - [Running the port program as root](#running-the-port-program-as-root)
+  - [Killing an OS process](#killing-an-os-process)
+  - [Using a custom success return code](#using-a-custom-success-return-code)
+  - [Redirecting OS process stdout to a file](#redirecting-os-process-stdout-to-a-file)
+  - [Redirecting OS process stdout to screen, an Erlang process or a custom function](#redirecting-os-process-stdout-to-screen-an-erlang-process-or-a-custom-function)
+  - [Appending OS process stdout to a file](#appending-os-process-stdout-to-a-file)
+  - [Setting up a monitor for the OS process](#setting-up-a-monitor-for-the-os-process)
+  - [Managing an externally started OS process](#managing-an-externally-started-os-process)
+  - [Specifying a custom process shutdown delay in seconds](#specifying-a-custom-process-shutdown-delay-in-seconds)
+  - [Specifying a custom kill command for a process](#specifying-a-custom-kill-command-for-a-process)
+  - [Communicating with an OS process via STDIN](#communicating-with-an-os-process-via-stdin)
+  - [Communicating with an OS process via STDIN and sending end-of-file](#communicating-with-an-os-process-via-stdin-and-sending-end-of-file)
+  - [Running OS commands synchronously](#running-os-commands-synchronously)
+  - [Running OS commands with/without shell](#running-os-commands-withwithout-shell)
+  - [Running OS commands with pseudo terminal (pty)](#running-os-commands-with-pseudo-terminal-pty)
+  - [Kill a process group at process exit](#kill-a-process-group-at-process-exit)
+
+## Donations
+
 If you find this project useful, please donate to:
 * Bitcoin: `12pt8TcoMWMkF6iY66VJQk95ntdN4pFihg`
 * Ethereum: `0x268295486F258037CF53E504fcC1E67eba014218`
@@ -61,13 +104,13 @@ If you find this project useful, please donate to:
 
 Linux, Solaris, FreeBSD, DragonFly, OpenBSD, MacOS X
 
-## DOCUMENTATION ##
+## Documentation
 
 See https://hexdocs.pm/erlexec/readme.html
 
-## USAGE ##
+## Usage
 
-### Erlang: import as a dependency ###
+### Erlang: import as a dependency
 
 - Add dependency in `rebar.config`:
 ```erlang
@@ -87,7 +130,7 @@ See https://hexdocs.pm/erlexec/readme.html
    ]}
 ```
 
-### Elixir: import as a dependency ###
+### Elixir: import as a dependency
 
 ```elixir
 defp deps do
@@ -98,7 +141,7 @@ defp deps do
 end
 ```
 
-## BUILDING FROM SOURCE ##
+## Building From Source
 
 Make sure you have [rebar](http://github.com/basho/rebar) or
 [rebar3](http://github.com/basho/rebar3) installed locally and the rebar script
@@ -130,7 +173,7 @@ variable:
 $ USE_POLL=0 make
 ```
 
-## LICENSE ##
+## License
 
 The program is distributed under BSD license.
 
