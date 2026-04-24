@@ -660,6 +660,39 @@ ok
 Shell got {'DOWN',16662,process,<0.199.0>,{exit_status,2}}
 ok
 ```
+
+#### Important Note: PTY stdout/stderr Separation
+
+When using PTY mode, **stdout and stderr cannot be separated** because they are
+both connected to the same PTY master file descriptor. This is a fundamental
+characteristic of how pseudo-terminals work - they multiplex both streams into a
+single data stream, similar to how SSH handles TTY connections.
+
+If you use `pty` with both `stdout` and `stderr` options, **all output will appear
+only in stdout, and stderr will receive nothing**:
+
+```erlang
+% With pty and both stdout/stderr: all data goes to stdout, stderr is empty
+exec:run("echo Test\necho ERR 1>&2", [sync, stdout, stderr, pty]).
+{ok,[{stdout,[<<"Test\r\nERR\r\n">>]}]}
+```
+
+**Recommended workaround for clarity**: Explicitly redirect stderr to stdout
+using `{stderr, stdout}` when using `pty` mode:
+
+```erlang
+% All output flows through a single coherent stream in stdout
+exec:run("echo Test\necho ERR 1>&2", [sync, stdout, {stderr, stdout}, pty]).
+{ok,[{stdout,[<<"Test\r\nERR\r\n">>]}]}
+```
+
+If you need **clear separation** of stdout and stderr, **do not use PTY mode**:
+
+```erlang
+% Without pty: stdout and stderr are properly separated
+exec:run("echo Test\necho ERR 1>&2", [sync, stdout, stderr]).
+{ok,[{stdout,[<<"Test\n">>]}, {stderr,[<<"ERR\n">>]}]}
+```
  
 ### Kill a process group at process exit
 ```erlang

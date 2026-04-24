@@ -347,7 +347,12 @@ Command options:
 - `{winsz, {Rows, Cols}}`
   : Set the (psudo) terminal's dimensions of rows and columns
 - `pty`
-  : Use pseudo terminal for the process's stdin, stdout and stderr
+  : Use pseudo terminal for the process's stdin, stdout and stderr.
+    **Note**: In PTY mode, both stdout and stderr are connected to the
+    same PTY master fd, so they cannot be separated. If both `stdout` and
+    `stderr` options are specified, all output will appear only in stdout.
+    To ensure all output is captured, use `{stderr, stdout}` to explicitly
+    combine them, or omit `pty` if separation is needed.
 - `pty_echo`
   : Allow the pty to run in echo mode, disabled by default
 - `{capabilities, all | [capability()]}`
