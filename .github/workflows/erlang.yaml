@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [ master ]
 
+env:
+  OTP_LATEST: "29"
+
 jobs:
   linux:
     runs-on: ubuntu-latest
@@ -92,6 +95,11 @@ jobs:
           CC:  ${{ matrix.compiler.CC }}
           CXX: ${{ matrix.compiler.CXX }}
         run:  make test
+      - name: Docs
+        env:
+          CC:  ${{ matrix.compiler.CC }}
+          CXX: ${{ matrix.compiler.CXX }}
+        run:  make doc
 
 #  windows-msys2:
 #    name: OTP ${{ matrix.otp }} ${{ matrix.os }}.${{ matrix.msys2.msystem }}.${{ matrix.compiler.compiler }}
@@ -128,3 +136,68 @@ jobs:
 #          erl -eval '{ok, Version} = file:read_file(filename:join([code:root_dir(), "releases", erlang:system_info(otp_release), "OTP_VERSION"])), io:format("Version=~s\n", [Version]), halt().' -noshell;
 #          make
 #
+  create-tag:
+    name: Create Tag if Version Changed
+    runs-on: ubuntu-latest
+    needs: [linux, macOS]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get project version
+        id: project_version
+        run: |
+          VERSION=$(sed -nE 's/.*\{vsn,\s*"([^"]+)".*/\1/p' src/erlexec.app.src | head -1)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Project version: $VERSION"
+
+      - name: Check if tag should be created
+        id: should_create_tag
+        run: |
+          PROJECT_VERSION="${{ steps.project_version.outputs.version }}"
+          MAX_TAG=$(git tag -l "*.*.*" | sort -V | tail -1)
+
+          if [ -z "$MAX_TAG" ]; then
+            echo "create_tag=true" >> $GITHUB_OUTPUT
+            echo "First tag: $PROJECT_VERSION"
+          else
+            if [ "$(printf '%s\n' "$MAX_TAG" "$PROJECT_VERSION" | sort -V | tail -1)" = "$PROJECT_VERSION" ] && [ "$MAX_TAG" != "$PROJECT_VERSION" ]; then
+              echo "create_tag=true" >> $GITHUB_OUTPUT
+              echo "Project version $PROJECT_VERSION is greater than max tag $MAX_TAG, creating tag"
+            else
+              echo "create_tag=false" >> $GITHUB_OUTPUT
+              echo "Project version $PROJECT_VERSION is not greater than max tag $MAX_TAG, skipping tag creation"
+            fi
+          fi
+
+      - name: Create and push tag
+        if: steps.should_create_tag.outputs.create_tag == 'true'
+        run: |
+          VERSION="${{ steps.project_version.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "$VERSION"
+          git push https://x-access-token:${{ secrets.RELEASE_PAT }}@github.com/${{ github.repository }}.git "$VERSION"
+
+      - name: Trigger release workflow
+        if: steps.should_create_tag.outputs.create_tag == 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.RELEASE_PAT }}
+          script: |
+            // Explicitly trigger the release workflow via the GitHub API.
+            // GitHub Actions has a limitation: workflows triggered by other workflows don't
+            // automatically trigger additional workflows, even with a PAT. The release.yaml
+            // workflow has workflow_dispatch enabled to allow manual triggering via the API.
+            const version = "${{ steps.project_version.outputs.version }}";
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'release.yaml',
+              ref: version,
+              inputs: {}
+            });
