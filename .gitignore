@@ -18,6 +18,7 @@ ebin
 .rebar/*
 .eunit
 .vscode
+.tool-versions
 _build
 *.crashdump
 compile_commands.json
