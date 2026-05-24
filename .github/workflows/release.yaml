@@ -71,10 +71,8 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.version.outputs.version }}
-          files: ./dbml
           generate_release_notes: true
           draft: false
-          make_latest: true
           prerelease: ${{ contains(steps.version.outputs.version, 'alpha') || contains(steps.version.outputs.version, 'beta') || contains(steps.version.outputs.version, 'rc') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -130,7 +128,7 @@ jobs:
             fi
           fi
 
-      - name: Setup Rebar
+      - name: Setup Rebar3
         if: steps.should_publish.outputs.publish == 'true'
         uses: erlef/setup-beam@v1
         with:
@@ -144,20 +142,25 @@ jobs:
 
       - name: Publish to Hex.pm
         if: steps.should_publish.outputs.publish == 'true'
-        run: |
-          set +e
-          output=$(rebar3 hex publish --yes 2>&1)
-          exit_code=$?
-          echo "$output"
-
-          if [ $exit_code -ne 0 ] && echo "$output" | grep -q "must include the --replace flag"; then
-            echo "Package already exists, retrying with --replace flag..."
-            rebar3 hex publish --yes --replace
-          else
-            exit $exit_code
-          fi
         env:
           HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
+        run: |
+          set +e
+
+          # Get the version from the app source
+          VERSION=$(sed -nE 's/.*\{vsn,\s*"([^"]+)".*/\1/p' src/erlexec.app.src | head -1)
+          APP="erlexec"
+          TODAY=$(date +%Y-%m-%d)
+
+          # Check if the package was already published today
+          REPLACE=$(if mix hex.info "$APP" "$VERSION" 2>&1 | grep -q "Released: $TODAY"; then echo " --replace"; fi)
+
+          if [ -n "$REPLACE" ]; then
+            echo "Package $APP $VERSION was released today, using --replace flag"
+          else
+            echo "Publishing $APP $VERSION"
+          fi
+          rebar3 hex publish --repo hexpm --yes $REPLACE
 
       - name: Retire prior version
         if: steps.should_publish.outputs.publish == 'true'
@@ -197,7 +200,7 @@ jobs:
 
           for VSN in $TO_RETIRE; do
             echo "Retiring version $VSN of $APP on Hex..."
-            rebar3 hex retire $APP $VSN deprecated --message "Deprecated"
+            mix hex.retire $APP $VSN deprecated --message "Deprecated"
           done
         env:
           HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
