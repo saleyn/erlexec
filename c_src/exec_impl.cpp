@@ -675,7 +675,6 @@ pid_t start_child(CmdOptions& op, std::string& error)
         // I am the child
         if (op.pty()) {
             int fds;
-            char pts_name[256];
 
             // Slave pty termios/winsz were pre-configured in the parent before fork().
             #ifdef __APPLE__
@@ -687,6 +686,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
                 exit(1);
             }
             #else
+            char pts_name[256];
             // On Linux settings were applied via master fd; open slave fresh here.
             int r = ptsname_r(fdm, pts_name, sizeof(pts_name));
             if (r < 0) {
