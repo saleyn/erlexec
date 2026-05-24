@@ -10,58 +10,58 @@ env:
   OTP_LATEST: "29"
 
 jobs:
-  # linux:
-  #   runs-on: ubuntu-latest
-  #   name: OTP ${{ matrix.otp }} ${{ matrix.os }}.${{ matrix.compiler.compiler }}
+  linux:
+    runs-on: ubuntu-latest
+    name: OTP ${{ matrix.otp }} ${{ matrix.os }}.${{ matrix.compiler.compiler }}
 
-  #   container:
-  #     image: erlang:${{matrix.otp}}
+    container:
+      image: erlang:${{matrix.otp}}
 
-  #   strategy:
-  #     matrix:
-  #       os: [ linux ]
-  #       compiler:
-  #         - { compiler: GNU-14,  CC: gcc-14,      CXX: g++-14 }
-  #         - { compiler: GNU-12,  CC: gcc-12,      CXX: g++-12 }
-  #         - { compiler: LLVM-18, CC: clang-18,    CXX: clang++-18 }
-  #         - { compiler: LLVM-16, CC: clang-16,    CXX: clang++-16 }
-  #       otp: [29]
-  #       exclude:
-  #         # GCC 14 and clang 18 are only available in OTP 28 (Debian Bookworm+)
-  #         - { otp: 27, compiler: { compiler: GNU-14 } }
-  #         - { otp: 27, compiler: { compiler: LLVM-18 } }
-  #         # GCC 12 and clang 16 are available in OTP 27 (Debian Bookworm)
-  #         - { otp: 28, compiler: { compiler: GNU-12 } }
-  #         - { otp: 28, compiler: { compiler: LLVM-16 } }
-  #         # GCC 12 and clang 16 are available in OTP 27 (Debian Bookworm)
-  #         - { otp: 29, compiler: { compiler: GNU-12 } }
-  #         - { otp: 29, compiler: { compiler: LLVM-16 } }
+    strategy:
+      matrix:
+        os: [ linux ]
+        compiler:
+          - { compiler: GNU-14,  CC: gcc-14,      CXX: g++-14 }
+          - { compiler: GNU-12,  CC: gcc-12,      CXX: g++-12 }
+          - { compiler: LLVM-18, CC: clang-18,    CXX: clang++-18 }
+          - { compiler: LLVM-16, CC: clang-16,    CXX: clang++-16 }
+        otp: [27, 28, 29]
+        exclude:
+          # GCC 14 and clang 18 are only available in OTP 28 (Debian Bookworm+)
+          - { otp: 27, compiler: { compiler: GNU-14 } }
+          - { otp: 27, compiler: { compiler: LLVM-18 } }
+          # GCC 12 and clang 16 are available in OTP 27 (Debian Bookworm)
+          - { otp: 28, compiler: { compiler: GNU-12 } }
+          - { otp: 28, compiler: { compiler: LLVM-16 } }
+          # GCC 12 and clang 16 are available in OTP 27 (Debian Bookworm)
+          - { otp: 29, compiler: { compiler: GNU-12 } }
+          - { otp: 29, compiler: { compiler: LLVM-16 } }
 
-  #   steps:
-  #     - uses: actions/checkout@v2
-  #     - name: OTP Version
-  #       run:  erl -eval '{ok, Version} = file:read_file(filename:join([code:root_dir(), "releases", erlang:system_info(otp_release), "OTP_VERSION"])), io:format("Version=~s\n", [Version]), halt().' -noshell -noinput;
-  #     - name: Fix Ownership
-  #       run:  git config --global --add safe.directory ${GITHUB_WORKSPACE}
-  #     - name: Install compiler
-  #       run:  |
-  #         apt-get update -qq
-  #         apt-get install -y --no-install-recommends ${{ matrix.compiler.CC }} ${{ matrix.compiler.CXX }}
-  #     - name: Build
-  #       env:
-  #         CC:  ${{ matrix.compiler.CC }}
-  #         CXX: ${{ matrix.compiler.CXX }}
-  #       run:  |
-  #         make info
-  #         make
-  #     - name: Test
-  #       env:
-  #         CC:  ${{ matrix.compiler.CC }}
-  #         CXX: ${{ matrix.compiler.CXX }}
-  #       run:  |
-  #         adduser --disabled-password --gecos '' newuser
-  #         chown -R newuser:newuser .
-  #         su -c "make test" newuser
+    steps:
+      - uses: actions/checkout@v2
+      - name: OTP Version
+        run:  erl -eval '{ok, Version} = file:read_file(filename:join([code:root_dir(), "releases", erlang:system_info(otp_release), "OTP_VERSION"])), io:format("Version=~s\n", [Version]), halt().' -noshell -noinput;
+      - name: Fix Ownership
+        run:  git config --global --add safe.directory ${GITHUB_WORKSPACE}
+      - name: Install compiler
+        run:  |
+          apt-get update -qq
+          apt-get install -y --no-install-recommends ${{ matrix.compiler.CC }} ${{ matrix.compiler.CXX }}
+      - name: Build
+        env:
+          CC:  ${{ matrix.compiler.CC }}
+          CXX: ${{ matrix.compiler.CXX }}
+        run:  |
+          make info
+          make
+      - name: Test
+        env:
+          CC:  ${{ matrix.compiler.CC }}
+          CXX: ${{ matrix.compiler.CXX }}
+        run:  |
+          adduser --disabled-password --gecos '' newuser
+          chown -R newuser:newuser .
+          su -c "make test" newuser
 
   macOS:
     name: OTP ${{ matrix.otp }} macos.${{ matrix.compiler.compiler }}
@@ -71,7 +71,7 @@ jobs:
       matrix:
         compiler:
           - { compiler: XCode, CC: cc, CXX: c++ }
-        otp: [29]
+        otp: [27, 28, 29]
     steps:
       - uses: actions/checkout@v2
       - name: Install Erlang/OTP
@@ -90,16 +90,16 @@ jobs:
         run:  |
           make info
           make
-      # - name: Test
-      #   env:
-      #     CC:  ${{ matrix.compiler.CC }}
-      #     CXX: ${{ matrix.compiler.CXX }}
-      #   run:  make test
-      # - name: Docs
-      #   env:
-      #     CC:  ${{ matrix.compiler.CC }}
-      #     CXX: ${{ matrix.compiler.CXX }}
-      #   run:  make doc
+      - name: Test
+        env:
+          CC:  ${{ matrix.compiler.CC }}
+          CXX: ${{ matrix.compiler.CXX }}
+        run:  make test
+      - name: Docs
+        env:
+          CC:  ${{ matrix.compiler.CC }}
+          CXX: ${{ matrix.compiler.CXX }}
+        run:  make doc
 
 #  windows-msys2:
 #    name: OTP ${{ matrix.otp }} ${{ matrix.os }}.${{ matrix.msys2.msystem }}.${{ matrix.compiler.compiler }}
@@ -139,8 +139,7 @@ jobs:
   create-tag:
     name: Create Tag if Version Changed
     runs-on: ubuntu-latest
-#    needs: [linux, macOS]
-    needs: [macOS]
+    needs: [linux, macOS]
     if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
 
     steps:
