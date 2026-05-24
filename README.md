@@ -1,6 +1,6 @@
 # Erlexec - OS Process Manager for the Erlang VM
 
-[![build](https://github.com/saleyn/erlexec/actions/workflows/erlang.yml/badge.svg)](https://github.com/saleyn/erlexec/actions/workflows/erlang.yml)
+[![build](https://github.com/saleyn/erlexec/actions/workflows/erlang.yaml/badge.svg)](https://github.com/saleyn/erlexec/actions/workflows/erlang.yaml)
 [![Hex.pm](https://img.shields.io/hexpm/v/erlexec.svg)](https://hex.pm/packages/erlexec)
 [![Hex.pm](https://img.shields.io/hexpm/dt/erlexec.svg)](https://hex.pm/packages/erlexec)
 
