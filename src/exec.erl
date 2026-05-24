@@ -1886,11 +1886,14 @@ test_executable() ->
     % Cmd given as string
     ?AssertMatch(
         [<<"Pid ", _/binary>>, <<" cannot execute '00kuku00': No such file or directory\n">>],
-        begin
-            Res = exec:run("ls", [sync, {executable, "00kuku00"}, stdout, stderr]),
-            {error,[{exit_status,256},{stderr, [E]}]} = Res,
-            binary:split(E, <<":">>)
-        end),
+        (fun() ->
+            case exec:run("ls", [sync, {executable, "00kuku00"}, stdout, stderr]) of
+                {error,[{exit_status,256},{stderr, [E]}]} ->
+                    binary:split(E, <<":">>);
+                {error, Other} ->
+                    error(Other)
+            end
+        end)()),
 
     ?AssertMatch(
         {ok, [{stdout,[<<"ok\n">>]}]},

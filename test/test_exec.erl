@@ -9,7 +9,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -export([run/0, run/1, run/2, run/3, stats/0]).
--export([test_capabilities_specific/0, test_capabilities_all/0, 
+-export([test_capabilities_specific/0, test_capabilities_all/0,
          test_capabilities_default/0, test_capabilities_comma_separated/0,
          test_capabilities_inherit_via_exec/0, test_capabilities_multiple_children/0,
          test_child_propagates_setuid/0, test_child_propagates_kill/0,
@@ -222,13 +222,13 @@ check_expected_capabilities(HexValue, ExpectedCaps) ->
 %% Helper: Extract capability value trying Prm first, then Eff as fallback
 extract_cap_value_with_fallback(OutputStr) ->
     case extract_cap_value(OutputStr, "Prm") of
-        {ok, Value} -> 
+        {ok, Value} ->
             {ok, Value};
         nomatch ->
             case extract_cap_value(OutputStr, "Eff") of
-                {ok, EffValue} -> 
+                {ok, EffValue} ->
                     {ok, EffValue};
-                nomatch -> 
+                nomatch ->
                     {error, no_capeff}
             end
     end.
@@ -240,7 +240,7 @@ verify_capabilities_in_output([Bin | _], ExpectedCaps) when is_binary(Bin) ->
     verify_capabilities_in_output(binary_to_list(Bin), ExpectedCaps);
 verify_capabilities_in_output(OutputStr, ExpectedCaps) when is_list(OutputStr)->
     io:format("    Checking capabilities in output: ~s~n", [OutputStr]),
-    
+
     maybe
         false ?= string:find(OutputStr, "Cap") == nomatch andalso no_cap_fields,
         {ok, CapValue} ?= extract_cap_value_with_fallback(OutputStr),
@@ -261,21 +261,25 @@ verify_capabilities_in_output(OutputStr, ExpectedCaps) when is_list(OutputStr)->
             ok
     end.
 
-%% Helper: Safely start exec, stopping any existing instance first
+%% Helper: Kill any existing exec instance
+stop_exec() ->
+    case whereis(exec) of
+        undefined -> ok;
+        Pid -> exit(Pid, kill)
+    end,
+    timer:sleep(100).
+
+%% Helper: Safely start exec, killing any existing instance first
 start_exec(Options) ->
-    % Try to stop any existing exec instance
-    catch exec:stop(),
-    % Brief pause to ensure clean shutdown
-    timer:sleep(100),
-    % Try to start fresh
+    stop_exec(),
     case exec:start(Options) of
-        {error, {already_started, Pid}} -> 
+        {error, {already_started, Pid}} ->
             io:format("  ℹ Reusing existing exec instance~n"),
             {ok, Pid};
-        {ok, Pid} -> 
+        {ok, Pid} ->
             io:format("  [OK] Started new exec instance~n"),
             {ok, Pid};
-        Error -> 
+        Error ->
             io:format("  [FAIL] Failed to start exec: ~p~n", [Error]),
             Error
     end.
@@ -288,9 +292,9 @@ test_capabilities_inherit_via_exec() ->
         {capabilities, [cap_setuid, cap_kill, cap_sys_nice]},
         verbose
     ]),
-    
+
     CapCheckScript = create_capability_check_script(),
-    
+
     % Run the capability check script in a child process
     io:format("  Starting child process to check inherited capabilities~n"),
     case exec:run(CapCheckScript, [sync, stdout]) of
@@ -314,7 +318,7 @@ test_capabilities_all() ->
         verbose
     ]),
     io:format("  [OK] Successfully started exec with 'all' capabilities~n"),
-    
+
     % Check that capabilities are present
     CapCheckScript = create_capability_check_script(),
     case exec:run(CapCheckScript, [sync, stdout]) of
@@ -335,7 +339,7 @@ test_capabilities_specific() ->
         verbose
     ]),
     io:format("  [OK] Successfully started exec with specific capabilities~n"),
-    
+
     % Verify we can execute a command
     case exec:run("echo 'Capabilities test'", [sync, stdout]) of
         {ok, _} ->
@@ -356,7 +360,7 @@ test_capabilities_comma_separated() ->
         verbose
     ]),
     io:format("  [OK] Started with capabilities: cap_setuid, cap_kill, cap_sys_nice~n"),
-    
+
     % Run a command to verify capabilities are propagated
     CapCheckCmd = create_capability_check_script(),
     io:format("  Verifying capabilities in child process~n"),
@@ -389,10 +393,10 @@ test_capabilities_multiple_children() ->
         verbose
     ]),
     io:format("  Starting exec with cap_setuid, cap_kill, cap_sys_nice~n"),
-    
+
     % Start multiple child processes
     Processes = [create_capability_check_script() || _ <- lists:seq(1, 3)],
-    
+
     Results = lists:map(fun(Cmd) ->
         case exec:run(Cmd, [sync, stdout]) of
             {ok, [{stdout, Output}]} ->
@@ -406,7 +410,7 @@ test_capabilities_multiple_children() ->
                 {error, Error}
         end
     end, Processes),
-    
+
     exec:stop(Pid),
     case lists:all(fun(R) -> R == ok end, Results) of
         true ->
@@ -424,7 +428,7 @@ test_capabilities_default() ->
         verbose
     ]),
     io:format("  [OK] Successfully started exec with default capabilities~n"),
-    
+
     % Verify port program started with default capabilities
     % Get parent PID (which is the port program) by running a child process
     io:format("  Checking port program capabilities~n"),
@@ -454,7 +458,7 @@ test_capabilities_default() ->
         {error, _} ->
             io:format("  [WARN] Could not check port program capabilities~n")
     end,
-    
+
     % Run a test command to verify it works
     case exec:run(create_capability_check_script(), [sync, stdout]) of
         {ok, _} ->
@@ -493,7 +497,7 @@ check_cap_in_hex(HexValue, CapName) ->
 %% Helper: Run capability check command and verify in child
 verify_child_caps(Title, CapName) ->
     io:format("~n=== Test: ~s ===~n", [Title]),
-    catch exec:stop(),
+    stop_exec(),
     timer:sleep(100),
     case exec:start([{capabilities, [CapName]}, verbose]) of
         {ok, _Pid} -> ok;
@@ -512,7 +516,7 @@ run_cap_check_and_verify(CapList) when is_list(CapList) ->
         {ok, [{stdout, Output}]} ->
             OutputStr = merge_bin_output(Output),
             io:format("  Child process capabilities: ~s~n", [OutputStr]),
-            
+
             case extract_cap_value_with_fallback(OutputStr) of
                 {ok, HexValue} ->
                     % Strip cap_ prefix from capability names if present
@@ -549,7 +553,7 @@ check_multiple_caps_in_hex(HexValue, CapNames) ->
                 {Cap, false}
         end
     end, CapNames),
-    
+
     case lists:all(fun({_, Present}) -> Present end, Results) of
         true ->
             io:format("  [OK] All capabilities verified~n"),
@@ -596,7 +600,7 @@ test_child_propagates_kill() ->
 test_child_propagates_multiple() ->
     CapList = [cap_setuid, cap_kill, cap_sys_nice],
     io:format("~n=== Test: Child process inherits multiple capabilities ===~n"),
-    catch exec:stop(),
+    stop_exec(),
     timer:sleep(100),
     case exec:start([{capabilities, CapList}, verbose]) of
         {ok, _Pid} -> ok;
@@ -609,29 +613,29 @@ test_child_propagates_multiple() ->
 %% Test: Verify 'all' capabilities are propagated to child process
 test_child_propagates_all() ->
     io:format("~n=== Test: Child process inherits all capabilities ===~n"),
-    catch exec:stop(),
+    stop_exec(),
     timer:sleep(100),
     case exec:start([{capabilities, all}, verbose]) of
         {ok, _Pid} -> ok;
         {error, {already_started, _Pid}} -> ok;
         StartErr -> StartErr
     end,
-    
+
     CapCheckCmd = "grep -i '^CapEff' /proc/self/status || grep -i '^CapPrm' /proc/self/status || echo 'no-caps'",
-    
+
     io:format("  Starting child process with 'all' capabilities~n"),
     case exec:run(CapCheckCmd, [sync, stdout]) of
         {ok, [{stdout, Output}]} ->
             OutputStr = merge_bin_output(Output),
             io:format("  Child process capabilities: ~s~n", [OutputStr]),
-            
+
             case extract_cap_value_with_fallback(OutputStr) of
                 {ok, HexValue} ->
                     % Check that common capabilities are present
                     CommonCaps = [setuid, kill, net_admin],
                     PresentCaps = [Cap || Cap <- CommonCaps, exec_util:is_capability_set(HexValue, Cap)],
                     io:format("  Found ~w common capabilities~n", [length(PresentCaps)]),
-                    
+
                     if length(PresentCaps) > 0 ->
                         io:format("  [OK] Multiple capabilities verified with 'all' option~n"),
                         ok;
@@ -651,14 +655,14 @@ test_child_propagates_all() ->
 %% Test: Verify capabilities persist across multiple process executions
 test_child_cap_inheritance_across_exec() ->
     io:format("~n=== Test: Capabilities persist across multiple child executions ===~n"),
-    catch exec:stop(),
+    stop_exec(),
     timer:sleep(100),
     case exec:start([{capabilities, [cap_setuid, cap_kill]}, verbose]) of
         {ok, _Pid} -> ok;
         {error, {already_started, _Pid}} -> ok;
         StartErr -> StartErr
     end,
-    
+
     CapCheckCmd = "grep -i '^CapEff' /proc/self/status | wc -l || echo '0'",
     run_command_n_times(CapCheckCmd, 3).
 
@@ -745,9 +749,9 @@ set_capabilities_via_sudo(ExecPortPath) ->
 
 %% Cleanup function - ensure exec is stopped and capabilities are removed if they were set
 cleanup(_) ->
-    catch exec:stop(),
+    stop_exec(),
     % Remove capabilities if sudo is available
-    maybe 
+    maybe
         {unix, linux} ?= os:type(),
         true ?= has_sudo_access(),
         try
