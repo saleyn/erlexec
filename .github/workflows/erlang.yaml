@@ -25,7 +25,7 @@ jobs:
           - { compiler: GNU-12,  CC: gcc-12,      CXX: g++-12 }
           - { compiler: LLVM-18, CC: clang-18,    CXX: clang++-18 }
           - { compiler: LLVM-16, CC: clang-16,    CXX: clang++-16 }
-        otp: [27, 28, 29]
+        otp: [28, 29]
         exclude:
           # GCC 14 and clang 18 are only available in OTP 28 (Debian Bookworm+)
           - { otp: 27, compiler: { compiler: GNU-14 } }
@@ -71,7 +71,7 @@ jobs:
       matrix:
         compiler:
           - { compiler: XCode, CC: cc, CXX: c++ }
-        otp: [27, 28, 29]
+        otp: [28, 29]
     steps:
       - uses: actions/checkout@v2
       - name: Install Erlang/OTP
@@ -159,7 +159,7 @@ jobs:
         id: should_create_tag
         run: |
           PROJECT_VERSION="${{ steps.project_version.outputs.version }}"
-          MAX_TAG=$(git tag -l "*.*.*" | sort -V | tail -1)
+          MAX_TAG=$(git tag -l "*.*.*" | sed 's/^v//' | sort -V | tail -1)
 
           if [ -z "$MAX_TAG" ]; then
             echo "create_tag=true" >> $GITHUB_OUTPUT

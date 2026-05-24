@@ -114,7 +114,7 @@ jobs:
           fi
 
           CURRENT_TAG="${{ steps.current_version.outputs.version }}"
-          MAX_TAG=$(git tag -l "*.*.*" | sort -V | tail -1)
+          MAX_TAG=$(git tag -l "*.*.*" | sed 's/^v//' | sort -V | tail -1)
 
           if [ -z "$MAX_TAG" ]; then
             echo "publish=true" >> $GITHUB_OUTPUT
@@ -163,7 +163,7 @@ jobs:
         if: steps.should_publish.outputs.publish == 'true'
         run: |
           set +e
-          APP=$(sed -nE '/app:/{s/.*app:\s*:([a-z_]+).*/\1/p; q}' mix.exs)
+          APP=$(sed -nE '/{application/{s/.*{application,\s*([a-z_]+)\s*,.*/\1/p; q}' src/erlexec.app.src)
 
           mix hex.info $APP
 
