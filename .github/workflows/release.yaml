@@ -197,7 +197,7 @@ jobs:
 
           for VSN in $TO_RETIRE; do
             echo "Retiring version $VSN of $APP on Hex..."
-            mix hex.retire $APP $VSN deprecated --message "Deprecated"
+            rebar3 hex retire $APP $VSN deprecated --message "Deprecated"
           done
         env:
           HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
