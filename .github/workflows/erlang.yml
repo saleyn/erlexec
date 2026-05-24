@@ -22,7 +22,7 @@ jobs:
           - { compiler: GNU-12,  CC: gcc-12,      CXX: g++-12 }
           - { compiler: LLVM-18, CC: clang-18,    CXX: clang++-18 }
           - { compiler: LLVM-16, CC: clang-16,    CXX: clang++-16 }
-        otp: [27, 28]
+        otp: [27, 28, 29]
         exclude:
           # GCC 14 and clang 18 are only available in OTP 28 (Debian Bookworm+)
           - { otp: 27, compiler: { compiler: GNU-14 } }
@@ -30,6 +30,9 @@ jobs:
           # GCC 12 and clang 16 are available in OTP 27 (Debian Bookworm)
           - { otp: 28, compiler: { compiler: GNU-12 } }
           - { otp: 28, compiler: { compiler: LLVM-16 } }
+          # GCC 12 and clang 16 are available in OTP 27 (Debian Bookworm)
+          - { otp: 29, compiler: { compiler: GNU-12 } }
+          - { otp: 29, compiler: { compiler: LLVM-16 } }
 
     steps:
       - uses: actions/checkout@v2
@@ -65,7 +68,7 @@ jobs:
       matrix:
         compiler:
           - { compiler: XCode, CC: cc, CXX: c++ }
-        otp: [27, 28]
+        otp: [27, 28, 29]
     steps:
       - uses: actions/checkout@v2
       - name: Install Erlang/OTP
