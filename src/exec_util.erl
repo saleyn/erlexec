@@ -126,9 +126,9 @@ validate_capabilities(CapList) when is_list(CapList) ->
                 "cap_" ++ Name -> Name;
                 Other          -> Other
             end,
-        maybe 
+        maybe
             {ok, ACap} ?= try {ok, erlang:list_to_existing_atom(Cap)}
-                          catch _ -> error
+                          catch _:_ -> error
                           end,
             Index       = capability_to_index(ACap),
             true       ?= (Index >= 0)
