@@ -255,7 +255,7 @@ followed by the list of arguments (e.g. `["/bin/echo", "ok"]`).
 In this case all shell-based features are disabled
 and there's no shell injection vulnerability.
 """.
--type cmd() :: binary() | string() | [string()].
+-type cmd() :: binary() | string() | [binary() | string()].
 -export_type([cmd/0]).
 
 -type cmd_options() :: [cmd_option()].
