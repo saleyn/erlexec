@@ -666,6 +666,25 @@ test_child_cap_inheritance_across_exec() ->
     CapCheckCmd = "grep -i '^CapEff' /proc/self/status | wc -l || echo '0'",
     run_command_n_times(CapCheckCmd, 3).
 
+%% Test: Very that that cmd() accepts a list of binaries
+cmd_binary_list_test_() ->
+    {setup,
+     fun() -> application:ensure_all_started(erlexec), ok end,
+     fun(_) -> ok end,
+     [
+         {"run with list of binaries", fun() ->
+             {ok, [{stdout, [Output]}]} =
+                 exec:run([<<"/bin/echo">>, <<"hello">>], [sync, stdout]),
+             ?assertEqual(<<"hello\n">>, Output)
+         end},
+         {"run with mixed binaries and charlists", fun() ->
+             {ok, [{stdout, [Output]}]} =
+                 exec:run(["/bin/echo", <<"world">>], [sync, stdout]),
+             ?assertEqual(<<"world\n">>, Output)
+         end}
+     ]
+    }.
+
 %% Main test suite generator for capability tests
 capabilities_test_() ->
     {setup,
