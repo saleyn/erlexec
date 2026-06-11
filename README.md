@@ -1,3 +1,5 @@
+![Banner](https://github.com/saleyn/erlexec/blob/main/assets/erlexec.png?raw=true)
+
 # Erlexec - OS Process Manager for the Erlang VM
 
 [![build](https://github.com/saleyn/erlexec/actions/workflows/erlang.yaml/badge.svg)](https://github.com/saleyn/erlexec/actions/workflows/erlang.yaml)
@@ -54,45 +56,49 @@ and is considered stable.
 
 ## Table of Contents
 
-- [Donations](#donations)
-- [Supported Platforms](#supported-platforms)
-- [Documentation](#documentation)
-- [Usage](#usage)
-  - [Erlang: import as a dependency](#erlang-import-as-a-dependency)
-  - [Elixir: import as a dependency](#elixir-import-as-a-dependency)
-- [Building From Source](#building-from-source)
-- [License](#license)
-- [Architecture](#architecture)
-- [Configuration Options](#configuration-options)
-- [Debugging](#debugging)
-- [Examples](#examples)
-  - [Starting/stopping an OS process](#startingstopping-an-os-process)
-  - [Clearing environment or unsetting an env variable](#clearing-environment-or-unsetting-an-env-variable-of-the-child-process)
-  - [Running exec-port as another effective user](#running-exec-port-as-another-effective-user)
-  - [Allowing exec-port to run commands as other effective users](#allowing-exec-port-to-run-commands-as-other-effective-users)
-  - [Linux Capabilities Support](#linux-capabilities-support)
-    - [Available Capabilities](#available-capabilities)
-    - [Using Specific Capabilities](#using-specific-capabilities)
-    - [Using All Capabilities](#using-all-capabilities)
-    - [Using Default Capabilities](#using-default-capabilities)
-    - [Combining with User Switching](#combining-with-user-switching)
-    - [Capability Propagation](#capability-propagation)
-  - [Running the port program as root](#running-the-port-program-as-root)
-  - [Killing an OS process](#killing-an-os-process)
-  - [Using a custom success return code](#using-a-custom-success-return-code)
-  - [Redirecting OS process stdout to a file](#redirecting-os-process-stdout-to-a-file)
-  - [Redirecting OS process stdout to screen, an Erlang process or a custom function](#redirecting-os-process-stdout-to-screen-an-erlang-process-or-a-custom-function)
-  - [Appending OS process stdout to a file](#appending-os-process-stdout-to-a-file)
-  - [Setting up a monitor for the OS process](#setting-up-a-monitor-for-the-os-process)
-  - [Managing an externally started OS process](#managing-an-externally-started-os-process)
-  - [Specifying a custom process shutdown delay in seconds](#specifying-a-custom-process-shutdown-delay-in-seconds)
-  - [Specifying a custom kill command for a process](#specifying-a-custom-kill-command-for-a-process)
-  - [Communicating with an OS process via STDIN](#communicating-with-an-os-process-via-stdin)
-  - [Communicating with an OS process via STDIN and sending end-of-file](#communicating-with-an-os-process-via-stdin-and-sending-end-of-file)
-  - [Running OS commands synchronously](#running-os-commands-synchronously)
-  - [Running OS commands with/without shell](#running-os-commands-withwithout-shell)
-  - [Running OS commands with pseudo terminal (pty)](#running-os-commands-with-pseudo-terminal-pty)
-  - [Kill a process group at process exit](#kill-a-process-group-at-process-exit)
+- [Erlexec - OS Process Manager for the Erlang VM](#erlexec---os-process-manager-for-the-erlang-vm)
+  - [Summary](#summary)
+  - [Table of Contents](#table-of-contents)
+  - [Donations](#donations)
+  - [Supported Platforms](#supported-platforms)
+  - [Documentation](#documentation)
+  - [Usage](#usage)
+    - [Erlang: import as a dependency](#erlang-import-as-a-dependency)
+    - [Elixir: import as a dependency](#elixir-import-as-a-dependency)
+  - [Building From Source](#building-from-source)
+  - [License](#license)
+  - [Architecture](#architecture)
+  - [Configuration Options](#configuration-options)
+  - [Debugging](#debugging)
+  - [Examples](#examples)
+    - [Starting/stopping an OS process](#startingstopping-an-os-process)
+    - [Clearing environment or unsetting an env variable of the child process](#clearing-environment-or-unsetting-an-env-variable-of-the-child-process)
+    - [Running exec-port as another effective user](#running-exec-port-as-another-effective-user)
+    - [Allowing exec-port to run commands as other effective users](#allowing-exec-port-to-run-commands-as-other-effective-users)
+    - [Linux Capabilities Support](#linux-capabilities-support)
+      - [Available Capabilities](#available-capabilities)
+      - [Using Specific Capabilities](#using-specific-capabilities)
+      - [Using All Capabilities](#using-all-capabilities)
+      - [Using Default Capabilities](#using-default-capabilities)
+      - [Combining with User Switching](#combining-with-user-switching)
+      - [Capability Propagation](#capability-propagation)
+    - [Running the port program as root](#running-the-port-program-as-root)
+    - [Killing an OS process](#killing-an-os-process)
+    - [Using a custom success return code](#using-a-custom-success-return-code)
+    - [Redirecting OS process stdout to a file](#redirecting-os-process-stdout-to-a-file)
+    - [Redirecting OS process stdout to screen, an Erlang process or a custom function](#redirecting-os-process-stdout-to-screen-an-erlang-process-or-a-custom-function)
+    - [Appending OS process stdout to a file](#appending-os-process-stdout-to-a-file)
+    - [Setting up a monitor for the OS process](#setting-up-a-monitor-for-the-os-process)
+    - [Managing an externally started OS process](#managing-an-externally-started-os-process)
+    - [Specifying a custom process shutdown delay in seconds](#specifying-a-custom-process-shutdown-delay-in-seconds)
+    - [Specifying a custom kill command for a process](#specifying-a-custom-kill-command-for-a-process)
+    - [Communicating with an OS process via STDIN](#communicating-with-an-os-process-via-stdin)
+    - [Communicating with an OS process via STDIN and sending end-of-file](#communicating-with-an-os-process-via-stdin-and-sending-end-of-file)
+    - [Running OS commands synchronously](#running-os-commands-synchronously)
+    - [Running OS commands with/without shell](#running-os-commands-withwithout-shell)
+    - [Running OS commands with pseudo terminal (pty)](#running-os-commands-with-pseudo-terminal-pty)
+      - [Important Note: PTY stdout/stderr Separation](#important-note-pty-stdoutstderr-separation)
+    - [Kill a process group at process exit](#kill-a-process-group-at-process-exit)
 
 ## Donations
 
@@ -305,7 +311,7 @@ In order to be able to use this feature the current user must either have `sudo`
 rights or the `exec-port` file must have the SUID bit set, and the `exec-port` file
 must have the capabilities set as described in the "Build" section above.
 
-The port program will initially be started as `root`, and then it will 
+The port program will initially be started as `root`, and then it will
 switch the effective user to `{user, User}` and set process capabilities to
 `cap_setuid,cap_kill,cap_sys_nice`.  After that it'll allow to run child programs
 under effective users listed in the `{limit_users, Users}` option.
@@ -386,7 +392,7 @@ Capabilities work seamlessly with user switching. This allows the port program
 to run as a non-root user while still having necessary capabilities:
 
 ```erlang
-1> Opts = [root, {user, "nobody"}, 
+1> Opts = [root, {user, "nobody"},
            {limit_users, ["alex", "guest"]},
            {capabilities, [cap_setuid, cap_kill]}],
 2> exec:start(Opts).                                    % Run as "nobody" with specific caps
@@ -489,7 +495,7 @@ Got stdout from 29652: <<"Iter1\n">>
 Got stdout from 29652: <<"Iter2\n">>
 Got stdout from 29652: <<"Iter3\n">>
 
-% Note that stdout/stderr options are equivanet to {stdout, self()}, {stderr, self()} 
+% Note that stdout/stderr options are equivanet to {stdout, self()}, {stderr, self()}
 11> exec:run("echo Hello World!; echo ERR!! 1>&2", [stdout, stderr]).
 {ok,<0.244.0>,18382}
 12> flush().
@@ -736,7 +742,7 @@ If you need **clear separation** of stdout and stderr, **do not use PTY mode**:
 exec:run("echo Test\necho ERR 1>&2", [sync, stdout, stderr]).
 {ok,[{stdout,[<<"Test\n">>]}, {stderr,[<<"ERR\n">>]}]}
 ```
- 
+
 ### Kill a process group at process exit
 ```erlang
 % In the following scenario the process P0 will create a new process group
