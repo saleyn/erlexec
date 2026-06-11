@@ -24,7 +24,7 @@ clean:
 path:
 	@echo $(shell $(REBAR) $@)
 
-doc:
+doc docs:
 	mkdir -p $@
 	$(REBAR) ex_doc
 
