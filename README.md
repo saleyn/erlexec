@@ -1,4 +1,4 @@
-![Banner](https://github.com/saleyn/erlexec/blob/main/assets/erlexec.png?raw=true)
+![Banner](https://github.com/saleyn/erlexec/blob/master/assets/erlexec.png?raw=true)
 
 # Erlexec - OS Process Manager for the Erlang VM
 
