@@ -1,5 +1,8 @@
 name: build
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [ master ]
@@ -8,6 +11,7 @@ on:
 
 env:
   OTP_LATEST: "29"
+  MIN_AGE_HOURS: 1
 
 jobs:
   linux:
@@ -136,11 +140,59 @@ jobs:
 #          erl -eval '{ok, Version} = file:read_file(filename:join([code:root_dir(), "releases", erlang:system_info(otp_release), "OTP_VERSION"])), io:format("Version=~s\n", [Version]), halt().' -noshell;
 #          make
 #
-  create-tag:
-    name: Create Tag if Version Changed
+  detect-release:
+    name: Detect Release
     runs-on: ubuntu-latest
     needs: [linux, macOS]
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    outputs:
+      should_release: ${{ steps.resolve.outputs.should_release }}
+      version:        ${{ steps.resolve.outputs.version }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve release version
+        id: resolve
+        run: |
+          get_version() { sed -nE 's/.*\{vsn,\s*"([^"]+)".*/\1/p' | head -1; }
+
+          VERSION=$(cat src/erlexec.app.src | get_version)
+          PARENT_VERSION=$(git show "HEAD^:src/erlexec.app.src" 2>/dev/null | get_version || true)
+
+          if [ "$VERSION" != "$PARENT_VERSION" ]; then
+            echo "Version changed: $PARENT_VERSION -> $VERSION"
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "should_release=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Version unchanged — if this commit landed within an hour of the
+          # last one, treat it as a follow-up fix to the same release and
+          # republish (replacing) the current version on Hex.pm.
+          COMMIT_TS=$(git show -s --format=%ct HEAD)
+          PARENT_TS=$(git show -s --format=%ct HEAD^)
+          AGE=$((COMMIT_TS - PARENT_TS))
+          MIN_AGE=$((MIN_AGE_HOURS * 3600))
+
+          if [ "$AGE" -lt $MIN_AGE ]; then
+            echo "Republishing updated release ($VERSION), modified $((AGE / 60)) minutes ago"
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "should_release=true" >> $GITHUB_OUTPUT
+          else
+            echo "Version unchanged ($VERSION), skipping release"
+            echo "should_release=false" >> $GITHUB_OUTPUT
+          fi
+
+  publish-to-hex:
+    name: Publish to Hex.pm
+    runs-on: ubuntu-latest
+    needs: [detect-release]
+    if: needs.detect-release.outputs.should_release == 'true'
 
     steps:
       - name: Checkout code
@@ -148,56 +200,98 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Get project version
-        id: project_version
-        run: |
-          VERSION=$(sed -nE 's/.*\{vsn,\s*"([^"]+)".*/\1/p' src/erlexec.app.src | head -1)
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Project version: $VERSION"
+      - name: Setup Rebar3
+        uses: erlef/setup-beam@v1
+        with:
+          # Latest that excludes pre-releases
+          otp-version: "> 0"
+          elixir-version: "> 0"
+          rebar3-version: '3'
+          hexpm-mirrors: |
+            https://builds.hex.pm
+            https://cdn.jsdelivr.net/hex
 
-      - name: Check if tag should be created
-        id: should_create_tag
+      - name: Check if version is already published
+        id: should_publish
         run: |
-          PROJECT_VERSION="${{ steps.project_version.outputs.version }}"
-          MAX_TAG=$(git tag -l "*.*.*" | sed 's/^v//' | sort -V | tail -1)
+          VERSION="${{ needs.detect-release.outputs.version }}"
+          APP="erlexec"
 
-          if [ -z "$MAX_TAG" ]; then
-            echo "create_tag=true" >> $GITHUB_OUTPUT
-            echo "First tag: $PROJECT_VERSION"
+          INSERTED_AT=$(curl -fsS "https://hex.pm/api/packages/$APP" \
+            | jq -r --arg v "$VERSION" '.releases[] | select(.version == $v) | .inserted_at')
+
+          if [ -z "$INSERTED_AT" ]; then
+            echo "publish=true" >> $GITHUB_OUTPUT
+            echo "Version $VERSION not yet published — will publish"
           else
-            if [ "$(printf '%s\n' "$MAX_TAG" "$PROJECT_VERSION" | sort -V | tail -1)" = "$PROJECT_VERSION" ] && [ "$MAX_TAG" != "$PROJECT_VERSION" ]; then
-              echo "create_tag=true" >> $GITHUB_OUTPUT
-              echo "Project version $PROJECT_VERSION is greater than max tag $MAX_TAG, creating tag"
+            PUBLISHED_TS=$(date -u -d "$INSERTED_AT" +%s)
+            NOW_TS=$(date -u +%s)
+            AGE=$((NOW_TS - PUBLISHED_TS))
+
+            # Hex.pm only allows replacing a release within 1 hour of publication.
+            if [ "$AGE" -lt 3600 ]; then
+              echo "publish=replace" >> $GITHUB_OUTPUT
+              echo "Version $VERSION published $((AGE / 60)) minutes ago — will replace"
             else
-              echo "create_tag=false" >> $GITHUB_OUTPUT
-              echo "Project version $PROJECT_VERSION is not greater than max tag $MAX_TAG, skipping tag creation"
+              echo "publish=false" >> $GITHUB_OUTPUT
+              echo "Version $VERSION published $((AGE / 60)) minutes ago — too old to replace, skipping"
             fi
           fi
 
-      - name: Create and push tag
-        if: steps.should_create_tag.outputs.create_tag == 'true'
+      - name: Publish to Hex.pm
+        if: steps.should_publish.outputs.publish != 'false'
+        env:
+          HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
         run: |
-          VERSION="${{ steps.project_version.outputs.version }}"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "$VERSION"
-          git push https://x-access-token:${{ secrets.RELEASE_PAT }}@github.com/${{ github.repository }}.git "$VERSION"
+          VERSION="${{ needs.detect-release.outputs.version }}"
+          APP="erlexec"
+          if [ "${{ steps.should_publish.outputs.publish }}" = "replace" ]; then
+            echo "Replacing $APP $VERSION (published within the last hour)"
+            rebar3 hex publish --repo hexpm --yes --replace
+          else
+            echo "Publishing $APP $VERSION"
+            rebar3 hex publish --repo hexpm --yes
+          fi
 
-      - name: Trigger release workflow
-        if: steps.should_create_tag.outputs.create_tag == 'true'
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.RELEASE_PAT }}
-          script: |
-            // Explicitly trigger the release workflow via the GitHub API.
-            // GitHub Actions has a limitation: workflows triggered by other workflows don't
-            // automatically trigger additional workflows, even with a PAT. The release.yaml
-            // workflow has workflow_dispatch enabled to allow manual triggering via the API.
-            const version = "${{ steps.project_version.outputs.version }}";
-            await github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'release.yaml',
-              ref: version,
-              inputs: {}
-            });
+      - name: Retire prior version
+        if: steps.should_publish.outputs.publish != 'false'
+        run: |
+          set +e
+          APP=$(sed -nE '/\{application/{s/.*\{application,\s*([a-z_]+)\s*,.*/\1/p; q}' src/erlexec.app.src)
+
+          mix hex.info $APP
+
+          INFO=$(mix hex.info $APP)
+          VSNS=$(printf '%s\n' "$INFO" | awk '
+            /^Releases:/ { sub(/^Releases:[[:space:]]*/, ""); print; exit }
+            /^Recent releases:/ { recent=1; next }
+            recent && /^[[:space:]]*[0-9]/ { sub(/^[[:space:]]*/, ""); print; next }
+            recent && !/^[[:space:]]/ { exit }
+          ')
+
+          if [ -z "$VSNS" ]; then
+            echo "$APP: no releases were found on Hex"
+            exit 0
+          fi
+
+          RELEASES=$(printf '%s\n' "$VSNS" | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$')
+          echo "Raw release lines:"
+          printf '%s\n' "$RELEASES"
+
+          KEEP=$(printf '%s\n' "$RELEASES" | awk 'NR==1 {print $1}')
+          TO_RETIRE=$(printf '%s\n' "$RELEASES" | tail -n +2 | grep -v '(retired)' | awk '{print $1}')
+
+          if [ -z "$TO_RETIRE" ]; then
+            echo "$APP: no prior versions need to be retired"
+            exit 0
+          fi
+
+          echo "Keeping latest version: $KEEP"
+          echo -n "Versions to retire:\n$TO_RETIRE\n"
+
+          for VSN in $TO_RETIRE; do
+            echo "Retiring version $VSN of $APP on Hex..."
+            mix hex.retire $APP $VSN deprecated --message "Deprecated"
+          done
+        env:
+          HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
