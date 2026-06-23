@@ -25,3 +25,7 @@ compile_commands.json
 build-aux
 valgrind.*.log
 c_src/erl_crash.dump
+test/memory_leak_test
+test/race_condition_test
+test/security_tests
+test/test_report.txt
