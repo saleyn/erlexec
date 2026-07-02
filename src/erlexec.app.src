@@ -1,12 +1,18 @@
-{application,erlexec,
-             [{description,"OS Process Manager"},
-              {vsn,"2.3.4"},
-              {id,"erlexec"},
-              {modules,[]},
-              {registered,[exec]},
-              {applications,[kernel,stdlib]},
-              {mod,{exec_app,[]}},
-              {env,[]},
-              {exclude_paths,["priv"]},
-              {licenses,["BSD-2-Clause"]},
-              {links,[{"GitHub","https://github.com/saleyn/erlexec"}]}]}.
+{application,erlexec, [
+  {description,"OS Process Manager"},
+  {vsn,"2.3.4"},
+  {id,"erlexec"},
+  {modules,[]},
+  {registered,[exec]},
+  {applications,[kernel,stdlib]},
+  {mod,{exec_app,[]}},
+  {env,[]},
+  {exclude_paths,["priv"]},
+  {licenses,["BSD-2-Clause"]},
+  {links,[{"GitHub","https://github.com/saleyn/erlexec"}]},
+  {files,    [
+    "src", "c_src", "Makefile", "rebar.config", "rebar.lock",
+    "README.md", "LICENSE", "assets"
+  ]}
+
+]}.
