@@ -177,9 +177,9 @@ int Serializer::read_exact(int fd, char *buf, size_t len, size_t& got)
 
   while (got < len) {
     int size = len-got;
-    while ((i = ::read(fd, (void*)(buf+got), size)) < size && errno == EINTR)
-      if (i > 0)
-        got += i;
+    do {
+      i = ::read(fd, (void*)(buf+got), size);
+    } while (i < 0 && errno == EINTR);
 
     if (i <= 0)
       return i;
@@ -196,9 +196,9 @@ int Serializer::write_exact(int fd, const char *buf, size_t len, size_t& wrote)
 
   while (wrote < len) {
     int size = len-wrote;
-    while ((i = ::write(fd, buf+wrote, size)) < size && errno == EINTR)
-      if (i > 0)
-        wrote += i;
+    do {
+      i = ::write(fd, buf+wrote, size);
+    } while (i < 0 && errno == EINTR);
 
     if (i <= 0)
       return i;
