@@ -188,7 +188,7 @@ bool process_sigchld()
     DEBUG(debug > 1, "Processed %d SIGCHLD signals from pipe", processed);
   }
 
-  return n > 0 || errno == EAGAIN;
+  return n > 0 || (n < 0 && errno == EAGAIN);
 }
 
 //------------------------------------------------------------------------------
