@@ -14,5 +14,4 @@
     "src", "c_src", "Makefile", "rebar.config", "rebar.lock",
     "README.md", "LICENSE", "assets"
   ]}
-
 ]}.
