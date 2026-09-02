@@ -44,12 +44,17 @@ The following features are supported:
   PTY commands use the session/process group created by `setsid()`, so
   `{group, 0}` remains the equivalent of "own process group" in PTY mode.
 * Execute OS processes under different user credentials (using Linux capabilities).
+* Attach spawned processes to Linux cgroups for resource isolation and control.
 * Perform proper cleanup of OS child processes at port program termination time.
 
 This application provides significantly better control
 over OS processes than built-in `erlang:open_port/2` command with a
 `{spawn, Command}` option, and performs proper OS child process cleanup
 when the emulator exits.
+
+With support of Linux Control Groups (`cgroup`), `erlexec` is a robust tool
+for running untrusted or resource-intensive workloads safely within
+constrained environments, such as containerized or multi-tenant systems.
 
 The `erlexec` application has been in production use by Erlang and Elixir systems,
 and is considered stable.
@@ -82,6 +87,7 @@ and is considered stable.
       - [Using Default Capabilities](#using-default-capabilities)
       - [Combining with User Switching](#combining-with-user-switching)
       - [Capability Propagation](#capability-propagation)
+    - [Linux cgroup support](#linux-cgroup-support)
     - [Running the port program as root](#running-the-port-program-as-root)
     - [Killing an OS process](#killing-an-os-process)
     - [Using a custom success return code](#using-a-custom-success-return-code)
@@ -414,6 +420,67 @@ This is useful for:
 Note: Capabilities are only supported on Linux systems and require the `libcap`
 library. On other systems or when libcap is not available, capability options
 are ignored gracefully.
+
+### Linux cgroup support
+
+Linux cgroups (control groups) let the kernel group processes together and apply
+resource policies such as CPU, memory, I/O, and PID limits to that group. The
+purpose of `erlexec`'s cgroup support is to let a spawned child process inherit
+those limits automatically without forcing callers to manage the kernel files by
+hand.
+
+On Linux, a child can be attached to a cgroup path using the `{cgroup, Path}`
+option, or with a structured map for more precise setup. The `Path` is the
+cgroup directory relative to the mounted cgroup filesystem root (typically
+`/sys/fs/cgroup` for cgroup v2), not a literal file-system path that includes the
+`/sys/fs` prefix. For example, `{cgroup, "/erlexec/demo"}` maps to
+`/sys/fs/cgroup/erlexec/demo`.
+
+```erlang
+1> exec:run("/usr/bin/bash -lc 'echo $$; cat /proc/self/cgroup'",
+2>          [sync, stdout, {cgroup, "/erlexec/demo"}]).
+{ok,[{stdout,[...]}]}
+
+2> exec:run("/usr/bin/bash -lc 'echo ready'",
+2>          [sync, stdout,
+2>           {cgroup, #{create => true,
+2>                      clear => true,
+2>                      limits => #{cpu => "max 100000 100000",
+2>                                  memory => "512M",
+2>                                  pids => 256,
+2>                                  io => "8:0 rbps=1048576"}}}]).
+{ok,[{stdout,[<<"ready\n">>]}]}
+```
+
+The simple path form may be absolute or relative; if the directory does not yet
+exist, `exec-port` will attempt to create it as needed. The map form allows
+`create`, `clear`, and `limits` to be specified together for controller-specific
+resource tuning. In cgroup v2, the kernel writes limits through controller files
+such as `cpu.max`, `memory.max`, `pids.max`, and `io.max`; the implementation
+accepts either a bare controller name or an explicit file name. For convenience, a
+bare controller name defaults to its main control file, so `cpu => "max 100000 100000"`
+writes `cpu.max`, `memory => "512M"` writes `memory.max`, and `pids => 256`
+writes `pids.max`. When a specific cgroup file is needed, use the full file name
+in the key instead, e.g. `"memory.high" => "1G"` or `"memory.low" => "128M"`.
+For the authoritative descriptions of the supported controller files and their
+value formats, see the Linux kernel documentation for cgroups:
+<https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v2.html> and
+<https://man7.org/linux/man-pages/man7/cgroups.7.html>.
+
+Implementation details:
+
+- The Erlang API simply passes the cgroup option through to the native port.
+- The port creates the target cgroup directory hierarchy as needed.
+- For cgroup v2, it enables the relevant controllers in the parent cgroup's
+  `cgroup.subtree_control` using entries like `+cpu +memory +pids`.
+- It writes the requested values to the matching controller files in the child
+  cgroup.
+- It then writes the spawned process PID into `cgroup.procs` to attach the child
+  to the cgroup.
+
+This feature is Linux-only and best-effort: if the process does not have
+permission to create or attach to the cgroup, the option is ignored and the child
+still starts normally.
 
 ### Running the port program as root
 

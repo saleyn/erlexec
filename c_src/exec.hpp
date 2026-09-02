@@ -47,6 +47,7 @@ enum class FdType {
 #include <map>
 #include <list>
 #include <deque>
+#include <set>
 #include <optional>
 #include <sstream>
 
@@ -180,8 +181,10 @@ std::string fd_type(int tp);
 //-------------------------------------------------------------------------
 // Structs
 //-------------------------------------------------------------------------
-struct CmdOptions {
-private:
+class CmdOptions {
+  using StrSet          = std::set<std::string>;
+  using StrMap          = std::map<std::string, std::string>;
+
   ei::StringBuffer<256>   m_tmp;
   std::stringstream       m_err;
   bool                    m_shell = true;
@@ -201,6 +204,10 @@ private:
   long                    m_nice;     // niceness level
   int                     m_group;    // used in setgid()
   int                     m_user;     // run as
+  std::string             m_cgroup;
+  bool                    m_cgroup_create = false;
+  bool                    m_cgroup_clear = false;
+  StrMap                  m_cgroup_limits;
   int                     m_success_exit_code = 0;
   std::string             m_std_stream[3];
   bool                    m_std_stream_append[3];
@@ -216,10 +223,10 @@ private:
 
   void init_streams() {
     for (int i=STDIN_FILENO; i <= STDERR_FILENO; i++) {
-      m_std_stream_append[i]  = false;
-      m_std_stream_mode[i]    = DEF_MODE;
-      m_std_stream_fd[i]      = REDIRECT_NULL;
-      m_std_stream[i]         = CS_DEV_NULL;
+      m_std_stream_append[i] = false;
+      m_std_stream_mode[i]   = DEF_MODE;
+      m_std_stream_fd[i]     = REDIRECT_NULL;
+      m_std_stream[i]        = CS_DEV_NULL;
     }
   }
 
@@ -264,33 +271,37 @@ public:
 
   std::string          error()        const { return m_err.str();  }
   const std::string&   executable()   const { return m_executable; }
-  const CmdArgsList&   cmd()          const { return m_cmd; }
-  bool                 shell()        const { return m_shell; }
-  bool                 pty()          const { return m_pty; }
+  const CmdArgsList&   cmd()          const { return m_cmd;        }
+  bool                 shell()        const { return m_shell;      }
+  bool                 pty()          const { return m_pty;        }
   bool                 pty_owns_group() const {
     return m_pty && (m_group == std::numeric_limits<int>::max() || m_group == 0);
   }
-  bool                 pty_echo()     const { return m_pty_echo; }
-  MapPtyOpt const&     pty_opts()     const { return m_pty_opts; }
+  bool                 pty_echo()     const { return m_pty_echo;   }
+  MapPtyOpt const&     pty_opts()     const { return m_pty_opts;   }
   std::tuple<int, int> winsz()        const { return std::make_tuple(m_winsz_rows, m_winsz_cols); }
-  const char*   cd()                  const { return m_cd.c_str(); }
-  MapEnv const& mapenv()              const { return m_env; }
-  char* const*  env()                 const { return (char* const*)m_cenv; }
-  int           dbg()                 const { return m_debug; }
-  const char*   kill_cmd()            const { return m_kill_cmd.c_str(); }
-  int           kill_timeout()        const { return m_kill_timeout; }
-  bool          kill_group()          const { return m_kill_group; }
-  bool          is_kill_cmd()         const { return m_is_kill_cmd; }
-  int           group()               const { return m_group; }
-  int           user()                const { return m_user; }
-  int           success_exit_code()   const { return m_success_exit_code; }
-  int           nice()                const { return m_nice; }
+  const char*   cd()                  const { return m_cd.c_str();            }
+  MapEnv const& mapenv()              const { return m_env;                   }
+  char* const*  env()                 const { return (char* const*)m_cenv;    }
+  int           dbg()                 const { return m_debug;                 }
+  const char*   kill_cmd()            const { return m_kill_cmd.c_str();      }
+  int           kill_timeout()        const { return m_kill_timeout;          }
+  bool          kill_group()          const { return m_kill_group;            }
+  bool          is_kill_cmd()         const { return m_is_kill_cmd;           }
+  int           group()               const { return m_group;                 }
+  int           user()                const { return m_user;                  }
+  const std::string& cgroup()         const { return m_cgroup;                }
+  bool          cgroup_create()       const { return m_cgroup_create;         }
+  bool          cgroup_clear()        const { return m_cgroup_clear;          }
+  const StrMap& cgroup_limits()       const { return m_cgroup_limits;         }
+  int           success_exit_code()   const { return m_success_exit_code;     }
+  int           nice()                const { return m_nice;                  }
   const char*   stream_file(int i)    const { return m_std_stream[i].c_str(); }
-  bool          stream_append(int i)  const { return m_std_stream_append[i]; }
-  int           stream_mode(int i)    const { return m_std_stream_mode[i]; }
-  int           stream_fd(int i)      const { return m_std_stream_fd[i]; }
-  int&          stream_fd(int i)            { return m_std_stream_fd[i]; }
-  std::string   stream_fd_type(int i) const { return fd_type(stream_fd(i)); }
+  bool          stream_append(int i)  const { return m_std_stream_append[i];  }
+  int           stream_mode(int i)    const { return m_std_stream_mode[i];    }
+  int           stream_fd(int i)      const { return m_std_stream_fd[i];      }
+  int&          stream_fd(int i)            { return m_std_stream_fd[i];      }
+  std::string   stream_fd_type(int i) const { return fd_type(stream_fd(i));   }
 
   #ifdef HAVE_CAP
   bool                         caps_all() const { return m_caps_all; }

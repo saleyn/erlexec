@@ -52,7 +52,7 @@ versa.
 * `{debug, Level}` - turns on debug verbosity in the port program.
 * `verbose`        - turns on verbosity in the Erlang code.
 * `valgrind`       - runs exec under the Valgrind tool, which needs
-  to be installed in the OS. This generates a local 
+  to be installed in the OS. This generates a local
   `valgrind.YYYYMMDDhhmmss.log` file containing Valgrind's output.
   If you need to customize the Valgrind command options, use
   `{valgrind, "/path/to/valgrind Args ..."}` option.
@@ -131,7 +131,7 @@ startup.
     allows specifying inheritable capabilities to set on the port program
     at startup. This enables running privileged operations without full
     root access. Can be either `all` to inherit all available capabilities,
-    or a list of capability names to enable: 
+    or a list of capability names to enable:
     `[setuid, kill, sys_nice, ...]`. The full list of available
     capabilities can be found in the Linux capabilities man page.
     The capability names can be specified with or without `cap_` prefix
@@ -317,6 +317,47 @@ Command options:
     means to create a new group ID equal to the OS pid of the process.
     When `pty` is enabled, omitting `group` or using `{group, 0}` relies on
     the session/process group created by `setsid()`.
+- `{cgroup, Path}`
+  : Attach the child process to a Linux cgroup path. `Path` may be a string or
+    binary such as "/erlexec/myjob" or "myjob". This is the cgroup directory
+    path relative to the mounted cgroup filesystem root, typically
+    `/sys/fs/cgroup` on a cgroup v2 system, so `/erlexec/myjob` maps to
+    `/sys/fs/cgroup/erlexec/myjob`. The port program attempts to create the
+    directory hierarchy and add the spawned PID to `cgroup.procs` when permitted.
+    This feature is Linux-only and best-effort: if the current user does not have
+    permission or the system does not expose cgroups, the option is ignored without
+    failing the command.
+- `{cgroup, #{create => true|false,
+             clear => true|false,
+             limits => #{cgroup_controller() => string()|binary()|integer()}}}`
+  : Attach the child process to a Linux cgroup using a structured configuration.
+    `create` creates the target cgroup hierarchy if it does not yet exist,
+    `clear` removes any existing contents in the cgroup before starting the child,
+    and `limits` writes controller-specific values keyed directly by controller
+    name or cgroup file name. The `Path` portion of the overall cgroup option is
+    still relative to the mounted cgroup root; the `limits` keys are the controller
+    or file names within that cgroup, not literal `/sys/fs/cgroup/...` strings.
+    A bare controller name defaults to the main control file for that controller,
+    so `cpu => "max 100000 100000"` maps to `cpu.max`, `memory => "512M"` maps
+    to `memory.max`, and `pids => 256` maps to `pids.max`. If a specific file is
+    needed, the map key may also be a full file name such as `"memory.high" =>
+    "1G"` or `"memory.low" => "128M"`. For the authoritative rules for each
+    controller file and valid limit formats, see the Linux kernel documentation at
+    [cgroup-v2](https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v2.html) and
+    [cgroups](https://man7.org/linux/man-pages/man7/cgroups.7.html). There is no separate
+    `controllers` list in this API: the effective controller or file names are the
+    keys inside `limits`. This form is also Linux-only and best-effort: failures
+    are ignored unless they are clearly fatal to the port itself.
+
+    Example:
+    ```erlang
+    {cgroup, #{create => true,
+               clear => true,
+               limits => #{cpu => "max 100000 100000",
+                           memory => "512M",
+                           pids => 256,
+                           io => "8:0 rbps=1048576"}}}
+    ```
 - `{user, RunAsUser}`
   : When exec-port was compiled with capability (Linux) support
     enabled and has a suid bit set, it's capable of running
@@ -374,6 +415,10 @@ Command options:
     | {kill_timeout, Sec::non_neg_integer()}
     | kill_group
     | {group, GID :: string()|binary() | integer()}
+    | {cgroup, Path :: string()|binary()}
+    | {cgroup, #{create := boolean(),
+                 clear := boolean(),
+                 limits := #{atom() | string() | binary() => string() | binary() | integer()}}}
     | {user, RunAsUser :: string()|binary()}
     | {nice, Priority :: integer()}
     | {success_exit_code, ExitCode :: integer() }
@@ -1702,7 +1747,7 @@ exec_test_() ->
             Opts =
                 case os:getenv("TEST_USER") of
                     false -> [];
-                    User  -> 
+                    User  ->
                         [root, {limit_users, [User]}, {user, User}]
                 end,
             Opts1 =
@@ -1912,7 +1957,7 @@ test_executable() ->
         {ok, [{stdout,[<<"XYZ\n">>]}]},
         exec:run(["/bin/echoXXXX abc", "XYZ"],
                  [sync, {executable, "/bin/echo"}, stdout, stderr])),
-    
+
     % Cmd given as a unicode string
     File = unicode:characters_to_binary(filename:join(temp_dir(), "тест-эрл")),
     try
