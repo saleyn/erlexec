@@ -120,7 +120,6 @@ jobs:
 
           git tag "$VERSION" "$COMMIT"
           git push "$REMOTE" "$VERSION"
-          echo "### :label: Created tag \`$VERSION\` at \`$(git rev-parse --short "$COMMIT")\`" >> $GITHUB_STEP_SUMMARY
 
   create-github-release:
     name: Create GitHub Release
@@ -134,7 +133,7 @@ jobs:
           fetch-depth: 0
           ref: ${{ needs.detect.outputs.commit }}
 
-      - name: Get changelog entry
+      - name: Get optional changelog entry
         id: changelog
         run: |
           # Extract changelog for this version
@@ -162,3 +161,9 @@ jobs:
           prerelease: ${{ contains(needs.detect.outputs.version, 'alpha') || contains(needs.detect.outputs.version, 'beta') || contains(needs.detect.outputs.version, 'rc') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Summary for Release ${{ needs.detect.outputs.version }}
+        run: |
+          VERSION="${{ needs.detect.outputs.version }}"
+          COMMIT="${{ needs.detect.outputs.commit }}"
+          echo "### :label: Created a tagged release \`$VERSION\` at \`${COMMIT:0:7}\`" >> $GITHUB_STEP_SUMMARY
