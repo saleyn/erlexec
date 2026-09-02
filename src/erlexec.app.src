@@ -11,7 +11,7 @@
   {licenses,["BSD-2-Clause"]},
   {links,[{"GitHub","https://github.com/saleyn/erlexec"}]},
   {files,    [
-    "src", "c_src", "Makefile", "rebar.config", "rebar.lock",
+    "src", "include", "c_src", "Makefile", "rebar.config", "rebar.lock",
     "README.md", "LICENSE", "assets"
   ]}
 ]}.
