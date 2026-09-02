@@ -16,6 +16,46 @@ void safe_close_fd(int& fd)
   }
 }
 
+class FileDescriptor {
+public:
+  FileDescriptor() noexcept : m_fd(-1) {}
+
+  FileDescriptor(const std::string& path, int flags, mode_t mode = 0) noexcept
+    : m_fd(open(path.c_str(), flags, mode)) {}
+
+  FileDescriptor(const char* path, int flags, mode_t mode = 0) noexcept
+    : m_fd(path ? open(path, flags, mode) : -1) {}
+
+  ~FileDescriptor() { safe_close_fd(m_fd); }
+
+  FileDescriptor(const FileDescriptor&) = delete;
+  FileDescriptor& operator=(const FileDescriptor&) = delete;
+
+  FileDescriptor(FileDescriptor&& other) noexcept : m_fd(other.m_fd) {
+    other.m_fd = -1;
+  }
+
+  FileDescriptor& operator=(FileDescriptor&& other) noexcept {
+    if (this != &other) {
+      safe_close_fd(m_fd);
+      m_fd = other.m_fd;
+      other.m_fd = -1;
+    }
+    return *this;
+  }
+
+  int get() const noexcept { return m_fd; }
+  explicit operator bool() const noexcept { return m_fd >= 0; }
+  int release() noexcept {
+    int fd = m_fd;
+    m_fd   = -1;
+    return fd;
+  }
+
+private:
+  int m_fd;
+};
+
 bool is_valid_fd(int fd)
 {
   return fd >= 0 && fcntl(fd, F_GETFD) != -1;
@@ -203,6 +243,245 @@ int set_nice(pid_t pid,int nice, std::string& error)
     return -1;
   }
   return 0;
+}
+
+//------------------------------------------------------------------------------
+static bool ensure_cgroup_dir(const std::string& path, std::string& error)
+{
+#ifdef __linux__
+  std::string p = path;
+  if (p.empty()) {
+    error = "cgroup path is empty";
+    return false;
+  }
+
+  while (!p.empty() && p.back() == '/')
+    p.pop_back();
+  if (p.empty()) {
+    error = "cgroup path is empty";
+    return false;
+  }
+
+  std::string current = "/";
+  size_t start = 0;
+  while (start < p.size()) {
+    size_t end = p.find('/', start);
+    if (end == std::string::npos)
+      end = p.size();
+    if (end > start) {
+      std::string part = p.substr(start, end - start);
+      if (!part.empty()) {
+        current += part;
+        struct stat st;
+        if (stat(current.c_str(), &st) != 0) {
+          if (mkdir(current.c_str(), 0755) != 0 && errno != EEXIST) {
+            error = "Cannot create cgroup directory '" + current + "': " + strerror(errno);
+            return false;
+          }
+        } else if (!S_ISDIR(st.st_mode)) {
+          error = "Cgroup path component is not a directory: " + current;
+          return false;
+        }
+        current += "/";
+      }
+    }
+    start = end + 1;
+  }
+  return true;
+#else
+  error = "cgroup option is supported only on Linux";
+  return false;
+#endif
+}
+
+static std::string resolve_cgroup_limit_file(const std::string& key)
+{
+  if (key.empty())
+    return key;
+
+  if (key.find('.') != std::string::npos || key.find('/') != std::string::npos)
+    return key;
+
+  return key + ".max";
+}
+
+static std::string cgroup_controller_name(const std::string& key)
+{
+  if (key.empty())
+    return key;
+
+  std::string normalized = key;
+  while (!normalized.empty() && normalized.front() == '/')
+    normalized.erase(normalized.begin());
+
+  size_t pos = normalized.find('.');
+  if (pos != std::string::npos)
+    normalized = normalized.substr(0, pos);
+
+  pos = normalized.find('/');
+  if (pos != std::string::npos)
+    normalized = normalized.substr(0, pos);
+
+  return normalized;
+}
+
+static bool enable_cgroup_controllers(const std::string& cgroup_path,
+    const std::map<std::string, std::string>& limits,
+    std::string& error)
+{
+#ifdef __linux__
+  if (cgroup_path.empty() || limits.empty())
+    return true;
+
+  std::set<std::string> controllers;
+  for (const auto& it : limits) {
+    auto controller = cgroup_controller_name(it.first);
+    if (!controller.empty())
+      controllers.insert(controller);
+  }
+  if (controllers.empty())
+    return true;
+
+  auto path = cgroup_path;
+  while (!path.empty() && path.back() == '/')
+    path.pop_back();
+  if (path.empty())
+    return true;
+
+  auto parent = path;
+  size_t slash = parent.find_last_of('/');
+  if (slash == std::string::npos)
+    parent = "/";
+  else if (slash == 0)
+    parent = "/";
+  else
+    parent = parent.substr(0, slash);
+
+  auto subtree_file = parent == "/"
+      ? std::string("/cgroup.subtree_control")
+      : parent + "/cgroup.subtree_control";
+
+  std::string enable = "";
+  for (const auto& c : controllers)
+    enable += enable.empty() ? ("+" + c) : (" +" + c);
+
+  // Enable the controllers you need (must be done on the parent), e.g.:
+  // `echo "+cpu +memory +pids" | sudo tee /sys/fs/cgroup/cgroup.subtree_control`
+  FileDescriptor subtree_fd(subtree_file, O_WRONLY | O_CREAT | O_CLOEXEC, 0644);
+  if (!subtree_fd) {
+    error = std::string("Failed to open cgroup.subtree_control at '") + subtree_file + "': " + strerror(errno);
+    return false;
+  }
+
+  auto n = write(subtree_fd.get(), enable.c_str(), enable.size());
+  if (n < 0) {
+    error = std::string("Failed to enable cgroup controllers in '") + subtree_file + "': " + strerror(errno);
+    return false;
+  }
+
+  return true;
+#else
+  // cgroup is not supported on this platform
+  return true;
+#endif
+}
+
+static bool apply_cgroup_limits(const std::string& cgroup_path,
+    const std::map<std::string, std::string>& limits,
+    std::string& error)
+{
+#ifdef __linux__
+  if (cgroup_path.empty())
+    return true;
+
+  std::string path = cgroup_path;
+  if (path[0] != '/')
+    path = std::string("/") + path;
+
+  if (!enable_cgroup_controllers(path, limits, error))
+    return false;
+
+  for (const auto& it : limits) {
+    auto& controller = it.first;
+    auto& value      = it.second;
+    auto  key        = resolve_cgroup_limit_file(controller);
+    auto  file       = path + "/" + key;
+    FileDescriptor limit_fd(file, O_WRONLY | O_CREAT | O_CLOEXEC, 0644);
+    if (limit_fd) {
+      auto n = write(limit_fd.get(), value.c_str(), value.size());
+      if (n < 0) {
+        error = std::string("Failed to write to cgroup limit file: ") + strerror(errno);
+        return false;
+      }
+    }
+  }
+  return true;
+#else
+  // cgroup is not supported on this platform
+  return true;
+#endif
+}
+
+static bool attach_pid_to_cgroup(const std::string& cgroup_path,
+    const std::map<std::string, std::string>& limits,
+    bool create,
+    bool clear,
+    pid_t pid,
+    std::string& error)
+{
+#ifdef __linux__
+  if (cgroup_path.empty())
+    return true;
+
+  std::string path = cgroup_path;
+  if (path[0] != '/')
+    path = std::string("/") + path;
+
+  if (create || clear || !limits.empty()) {
+    if (!ensure_cgroup_dir(path, error)) {
+      DEBUG(debug, "Ignoring cgroup attach failure for path '%s': %s",
+            path.c_str(), error.c_str());
+      return true;
+    }
+    if (!apply_cgroup_limits(path, limits, error)) {
+      DEBUG(debug, "Ignoring cgroup limit application failure for path '%s': %s",
+            path.c_str(), error.c_str());
+      return true;
+    }
+  } else {
+    int saved_errno = 0;
+    if (!ensure_cgroup_dir(path, error)) {
+      saved_errno = errno;
+      DEBUG(debug, "Ignoring cgroup attach failure for path '%s': %s",
+            path.c_str(), error.c_str());
+      errno = saved_errno;
+      return true;
+    }
+  }
+
+  std::string procs_file = path + "/cgroup.procs";
+  int fd = open(procs_file.c_str(), O_WRONLY | O_CLOEXEC);
+  if (fd < 0) {
+    error = "Cannot open cgroup.procs for '" + path + "': " + strerror(errno);
+    DEBUG(debug, "%s", error.c_str());
+    return true;
+  }
+
+  char pidbuf[32];
+  snprintf(pidbuf, sizeof(pidbuf), "%ld", (long)pid);
+  ssize_t n = write(fd, pidbuf, strlen(pidbuf));
+  close(fd);
+  if (n < 0) {
+    error = "Cannot add pid " + std::to_string(pid) + " to cgroup '" + path + "': " + strerror(errno);
+    DEBUG(debug, "%s", error.c_str());
+    return true;
+  }
+  return true;
+#else
+  error = "cgroup option is supported only on Linux";
+  DEBUG(debug, "%s", error.c_str());
+  return true;
+#endif
 }
 
 //------------------------------------------------------------------------------
@@ -865,6 +1144,17 @@ pid_t start_child(CmdOptions& op, std::string& error)
     }
     #endif
 
+    if (!op.cgroup().empty()) {
+      std::string cgroup_err;
+      if (!attach_pid_to_cgroup(op.cgroup(), op.cgroup_limits(),
+            op.cgroup_create(), op.cgroup_clear(), getpid(), cgroup_err)) {
+        err.write("Cannot attach pid %d to cgroup '%s': %s",
+            getpid(), op.cgroup().c_str(), cgroup_err.c_str());
+        perror(err.c_str());
+        exit(EXIT_FAILURE);
+      }
+    }
+
     // Execute the process
     if (execve(executable, (char* const*)argv, op.env()) < 0) {
       err.write("Pid %d: cannot execute '%s'", getpid(), executable);
@@ -1480,14 +1770,16 @@ int CmdOptions::ei_decode(bool getcmd)
     PTY,        SUCCESS_EXIT_CODE, CD,     ENV,
     EXECUTABLE, KILL,              KILL_TIMEOUT,
     KILL_GROUP, NICE,              USER,    GROUP,
-    DEBUG_OPT,  PTY_ECHO,          WINSZ,   CAPABILITIES
+    DEBUG_OPT,  PTY_ECHO,          WINSZ,   CAPABILITIES,
+    CGROUP
   } opt;
   const char* opts[] = {
     "stdin",      "stdout",            "stderr",
     "pty",        "success_exit_code", "cd", "env",
     "executable", "kill",              "kill_timeout",
     "kill_group", "nice",              "user",  "group",
-    "debug",      "pty_echo",          "winsz", "capabilities"
+    "debug",      "pty_echo",          "winsz", "capabilities",
+    "cgroup"
   };
 
   bool seen_opt[sizeof(opts) / sizeof(char*)] = {false};
@@ -1558,6 +1850,122 @@ int CmdOptions::ei_decode(bool getcmd)
           m_err << op << " - bad group value type (expected int or string)";
           return -1;
         }
+        break;
+      }
+      case CGROUP: {
+        int type = eis.decodeType(arity);
+        if (type == etString || type == etBinary) {
+          if (eis.decodeStringOrBinary(m_cgroup) < 0) {
+            m_err << op << " - bad option value";
+            return -1;
+          }
+          break;
+        }
+        if (type != etMap) {
+          m_err << op << " - expected cgroup path or map value";
+          return -1;
+        }
+
+        int map_arity = 0;
+        if (ei_decode_map_header(eis.read_buffer(), eis.read_index(), &map_arity) < 0) {
+          m_err << op << " - bad cgroup map value";
+          return -1;
+        }
+
+        for (int i = 0; i < map_arity; ++i) {
+          std::string key;
+          int key_type = eis.decodeType(arity);
+          if ((key_type == etAtom && eis.decodeAtom(key) < 0) ||
+              ((key_type == etString || key_type == etBinary) && eis.decodeStringOrBinary(key) < 0)) {
+            m_err << op << " - bad cgroup map key";
+            return -1;
+          }
+
+          std::string value_s;
+          int value_type = eis.decodeType(arity);
+          if (value_type == etAtom) {
+            std::string value_atom;
+            if (eis.decodeAtom(value_atom) < 0) {
+              m_err << op << " - bad cgroup map value";
+              return -1;
+            }
+            value_s = value_atom;
+          } else if (value_type == etString || value_type == etBinary) {
+            if (eis.decodeStringOrBinary(value_s) < 0) {
+              m_err << op << " - bad cgroup map value";
+              return -1;
+            }
+          } else if (value_type == etInt || value_type == etSmallInt) {
+            long n = 0;
+            if (eis.decodeInt(n) < 0) {
+              m_err << op << " - bad cgroup numeric value";
+              return -1;
+            }
+            value_s = std::to_string(n);
+          } else if (value_type == etMap) {
+            std::string limits_key;
+            int limit_arity = 0;
+            if (ei_decode_map_header(eis.read_buffer(), eis.read_index(), &limit_arity) < 0) {
+              m_err << op << " - bad cgroup limits map";
+              return -1;
+            }
+            for (int j = 0; j < limit_arity; ++j) {
+              std::string limit_key;
+              int limit_key_type = eis.decodeType(arity);
+              if ((limit_key_type == etAtom && eis.decodeAtom(limit_key) < 0) ||
+                  ((limit_key_type == etString || limit_key_type == etBinary) && eis.decodeStringOrBinary(limit_key) < 0)) {
+                m_err << op << " - bad cgroup limits key";
+                return -1;
+              }
+              std::string limit_value;
+              int limit_value_type = eis.decodeType(arity);
+              if (limit_value_type == etString || limit_value_type == etBinary) {
+                if (eis.decodeStringOrBinary(limit_value) < 0) {
+                  m_err << op << " - bad cgroup limit value";
+                  return -1;
+                }
+              } else if (limit_value_type == etAtom) {
+                std::string val_atom;
+                if (eis.decodeAtom(val_atom) < 0) {
+                  m_err << op << " - bad cgroup limit value";
+                  return -1;
+                }
+                limit_value = val_atom;
+              } else if (limit_value_type == etInt || limit_value_type == etSmallInt) {
+                long n = 0;
+                if (eis.decodeInt(n) < 0) {
+                  m_err << op << " - bad cgroup limit numeric value";
+                  return -1;
+                }
+                limit_value = std::to_string(n);
+              } else {
+                m_err << op << " - unsupported cgroup limit value type";
+                return -1;
+              }
+              m_cgroup_limits[limit_key] = limit_value;
+            }
+            continue;
+          } else {
+            m_err << op << " - unsupported cgroup map value type";
+            return -1;
+          }
+
+          if (key == "path" || key == "cgroup") {
+            m_cgroup = value_s;
+          } else if (key == "create") {
+            m_cgroup_create = (value_s == "true");
+          } else if (key == "clear") {
+            m_cgroup_clear = (value_s == "true");
+          } else if (key == "controllers") {
+            m_err << op << " - unsupported cgroup option 'controllers'; use limits => #{controller => value}";
+            return -1;
+          } else if (key == "limits") {
+            // value was already processed in the map branch above
+          }
+        }
+
+        if (m_cgroup.empty() && (!m_cgroup_limits.empty() || m_cgroup_create || m_cgroup_clear))
+          m_cgroup = "/erlexec";
         break;
       }
       case USER:
@@ -1878,7 +2286,7 @@ int CmdOptions::init_cenv()
         m_env[key] = s.substr(pos+1);
     }
 
-  if ((m_cenv = (const char**) new char* [m_env.size()+1]) == NULL) {
+  if ((m_cenv = (const char**) calloc(m_env.size() + 1, sizeof(*m_cenv))) == NULL) {
     m_err << "Cannot allocate memory for " << m_env.size()+1 << " environment entries";
     return -1;
   }

@@ -341,6 +341,7 @@ namespace ei {
     , etString      = ERL_STRING_EXT        // 'k'
     , etList        = ERL_LIST_EXT          // 'l'
     , etBinary      = ERL_BINARY_EXT        // 'm'
+    , etMap         = ERL_MAP_EXT           // 't'
     , etBignum      = ERL_SMALL_BIG_EXT     // 'n'
     , etBignumLarge = ERL_LARGE_BIG_EXT     // 'o'
     , etFun         = ERL_NEW_FUN_EXT       // 'p'
