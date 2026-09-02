@@ -12,6 +12,8 @@ on:
 env:
   OTP_LATEST: "29"
   MIN_AGE_HOURS: 1
+  # Number of most-recent Hex.pm releases to keep active (not retire).
+  KEEP_RELEASES: 3
 
 jobs:
   linux:
@@ -259,39 +261,38 @@ jobs:
           set +e
           APP=$(sed -nE '/\{application/{s/.*\{application,\s*([a-z_]+)\s*,.*/\1/p; q}' src/erlexec.app.src)
 
-          mix hex.info $APP
-
-          INFO=$(mix hex.info $APP)
-          VSNS=$(printf '%s\n' "$INFO" | awk '
-            /^Releases:/ { sub(/^Releases:[[:space:]]*/, ""); print; exit }
-            /^Recent releases:/ { recent=1; next }
-            recent && /^[[:space:]]*[0-9]/ { sub(/^[[:space:]]*/, ""); print; next }
-            recent && !/^[[:space:]]/ { exit }
-          ')
+          # Releases are returned newest-first.
+          VSNS=$(curl -fsS "https://hex.pm/api/packages/$APP" | jq -r '.releases[].version')
 
           if [ -z "$VSNS" ]; then
             echo "$APP: no releases were found on Hex"
             exit 0
           fi
 
-          RELEASES=$(printf '%s\n' "$VSNS" | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$')
-          echo "Raw release lines:"
-          printf '%s\n' "$RELEASES"
+          echo "Releases (newest first):"
+          printf '%s\n' "$VSNS"
 
-          KEEP=$(printf '%s\n' "$RELEASES" | awk 'NR==1 {print $1}')
-          TO_RETIRE=$(printf '%s\n' "$RELEASES" | tail -n +2 | grep -v '(retired)' | awk '{print $1}')
+          # Keep the KEEP_RELEASES most recent versions untouched; only
+          # consider retiring anything older than that.
+          KEEP=$(printf '%s\n' "$VSNS" | head -n "$KEEP_RELEASES")
+          CANDIDATES=$(printf '%s\n' "$VSNS" | tail -n +"$((KEEP_RELEASES + 1))")
 
-          if [ -z "$TO_RETIRE" ]; then
-            echo "$APP: no prior versions need to be retired"
+          if [ -z "$CANDIDATES" ]; then
+            echo "$APP: $KEEP_RELEASES or fewer releases, nothing to retire"
             exit 0
           fi
 
-          echo "Keeping latest version: $KEEP"
-          echo -n "Versions to retire:\n$TO_RETIRE\n"
+          echo "Keeping latest versions:"
+          printf '%s\n' "$KEEP"
 
-          for VSN in $TO_RETIRE; do
-            echo "Retiring version $VSN of $APP on Hex..."
-            mix hex.retire $APP $VSN deprecated --message "Deprecated"
+          for VSN in $CANDIDATES; do
+            RETIREMENT=$(curl -fsS "https://hex.pm/api/packages/$APP/releases/$VSN" | jq -r '.retirement')
+            if [ "$RETIREMENT" = "null" ]; then
+              echo "Retiring version $VSN of $APP on Hex..."
+              mix hex.retire $APP $VSN deprecated --message "Deprecated"
+            else
+              echo "$APP $VSN is already retired, skipping"
+            fi
           done
         env:
           HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
