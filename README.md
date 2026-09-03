@@ -464,8 +464,8 @@ writes `pids.max`. When a specific cgroup file is needed, use the full file name
 in the key instead, e.g. `"memory.high" => "1G"` or `"memory.low" => "128M"`.
 For the authoritative descriptions of the supported controller files and their
 value formats, see the Linux kernel documentation for cgroups:
-<https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v2.html> and
-<https://man7.org/linux/man-pages/man7/cgroups.7.html>.
+[cgroup-v2](https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v2.html){:target="_blank"} and
+[cgroups](https://man7.org/linux/man-pages/man7/cgroups.7.html){:target="_blank"}.
 
 Implementation details:
 
