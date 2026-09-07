@@ -265,7 +265,7 @@ cgroup_map_rejects_controllers_field_test() ->
 
 cgroup_option_accepts_map_test() ->
     application:ensure_all_started(erlexec),
-    case exec:run("echo ok", [sync, stdout,
+    case exec:run("cat /proc/self/cgroup", [sync, stdout,
         {cgroup, #{create => true,
                    clear => true,
                    limits => #{cpu => "max 100000 100000",
@@ -752,7 +752,7 @@ capabilities_test_() ->
                  {"Test child propagates all capabilities", ?_test(test_child_propagates_all())},
                  {"Test capability inheritance across executions", ?_test(test_child_cap_inheritance_across_exec())},
                  {"Test cgroup option acceptance", ?_test(cgroup_option_accepts_path_test())},
-                {"Test cgroup map option acceptance", ?_test(cgroup_option_accepts_map_test())}
+                 {"Test cgroup map option acceptance", ?_test(cgroup_option_accepts_map_test())}
              ];
          _ ->
              []
