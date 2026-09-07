@@ -443,9 +443,10 @@ cgroup directory relative to the mounted cgroup filesystem root (typically
 
 2> exec:run("/usr/bin/bash -lc 'echo ready'",
 2>          [sync, stdout,
-2>           {cgroup, #{create => true,
-2>                      clear => true,
-2>                      limits => #{cpu => "max 100000 100000",
+2>           {cgroup, #{path   => "/erlexec/demo",
+                        create => true,
+2>                      clear  => true,
+2>                      limits => #{cpu => "max 100000",
 2>                                  memory => "512M",
 2>                                  pids => 256,
 2>                                  io => "8:0 rbps=1048576"}}}]).
@@ -454,14 +455,13 @@ cgroup directory relative to the mounted cgroup filesystem root (typically
 
 The simple path form may be absolute or relative; if the directory does not yet
 exist, `exec-port` will attempt to create it as needed. The map form allows
-`create`, `clear`, and `limits` to be specified together for controller-specific
-resource tuning. In cgroup v2, the kernel writes limits through controller files
-such as `cpu.max`, `memory.max`, `pids.max`, and `io.max`; the implementation
-accepts either a bare controller name or an explicit file name. For convenience, a
-bare controller name defaults to its main control file, so `cpu => "max 100000 100000"`
-writes `cpu.max`, `memory => "512M"` writes `memory.max`, and `pids => 256`
-writes `pids.max`. When a specific cgroup file is needed, use the full file name
-in the key instead, e.g. `"memory.high" => "1G"` or `"memory.low" => "128M"`.
+`path`, `create`, `clear`, and `limits` to be specified together for controller-specific resource tuning. In cgroup v2, the kernel writes limits
+through controller files such as `cpu.max`, `memory.max`, `pids.max`, and `io.max`; the implementation accepts either a bare controller name or an explicit
+file name. For convenience, a bare controller name defaults to its main control
+file, so `cpu => "max 100000 100000"` writes `cpu.max`, `memory => "512M"`
+writes `memory.max`, and `pids => 256` writes `pids.max`. When a specific cgroup
+file is needed, use the full file name in the key instead, e.g.
+`"memory.high" => "1G"` or `"memory.low" => "128M"`.
 For the authoritative descriptions of the supported controller files and their
 value formats, see the Linux kernel documentation for cgroups:
 [cgroup-v2](https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v2.html){:target="_blank"} and

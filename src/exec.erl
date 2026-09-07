@@ -327,9 +327,10 @@ Command options:
     This feature is Linux-only and best-effort: if the current user does not have
     permission or the system does not expose cgroups, the option is ignored without
     failing the command.
-- `{cgroup, #{create => true|false,
-             clear => true|false,
-             limits => #{cgroup_controller() => string()|binary()|integer()}}}`
+- `{cgroup, #{path   => string()|binary(),
+              create => true|false,
+              clear  => true|false,
+              limits => #{cgroup_controller() => string()|binary()|integer()}}}`
   : Attach the child process to a Linux cgroup using a structured configuration.
     `create` creates the target cgroup hierarchy if it does not yet exist,
     `clear` removes any existing contents in the cgroup before starting the child,
@@ -351,8 +352,9 @@ Command options:
 
     Example:
     ```erlang
-    {cgroup, #{create => true,
-               clear => true,
+    {cgroup, #{path   => "/erlexec/myjob",
+               create => true,
+               clear  => true,
                limits => #{cpu => "max 100000 100000",
                            memory => "512M",
                            pids => 256,
@@ -1522,6 +1524,9 @@ check_cmd_options([{capabilities, all}=H|T], Pid, State, PortOpts, OtherOpts) ->
     check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
 check_cmd_options([{capabilities, Caps}=H|T], Pid, State, PortOpts, OtherOpts) when is_list(Caps) ->
     exec_util:validate_capabilities(Caps),
+    check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+check_cmd_options([{cgroup, PathOrMap}=H|T], Pid, State, PortOpts, OtherOpts)
+  when is_binary(PathOrMap); is_list(PathOrMap); is_map(PathOrMap) ->
     check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
 check_cmd_options([{stdin, I}=H|T], Pid, State, PortOpts, OtherOpts)
         when I=:=null; I=:=close; is_list(I); is_binary(I) ->
