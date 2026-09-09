@@ -246,9 +246,9 @@ int set_nice(pid_t pid,int nice, std::string& error)
 }
 
 //------------------------------------------------------------------------------
+#ifdef __linux__
 static bool ensure_cgroup_dir(const std::string& path, std::string& error)
 {
-#ifdef __linux__
   std::string p = path;
   if (p.empty()) {
     error = "cgroup path is empty";
@@ -288,10 +288,6 @@ static bool ensure_cgroup_dir(const std::string& path, std::string& error)
     start = end + 1;
   }
   return true;
-#else
-  error = "cgroup option is supported only on Linux";
-  return false;
-#endif
 }
 
 static std::string resolve_cgroup_limit_file(const std::string& key)
@@ -329,7 +325,6 @@ static bool enable_cgroup_controllers(const std::string& cgroup_path,
     const std::map<std::string, std::string>& limits,
     std::string& error)
 {
-#ifdef __linux__
   if (cgroup_path.empty() || limits.empty())
     return true;
 
@@ -380,17 +375,12 @@ static bool enable_cgroup_controllers(const std::string& cgroup_path,
   }
 
   return true;
-#else
-  // cgroup is not supported on this platform
-  return true;
-#endif
 }
 
 static bool apply_cgroup_limits(const std::string& cgroup_path,
     const std::map<std::string, std::string>& limits,
     std::string& error)
 {
-#ifdef __linux__
   if (cgroup_path.empty())
     return true;
 
@@ -416,10 +406,6 @@ static bool apply_cgroup_limits(const std::string& cgroup_path,
     }
   }
   return true;
-#else
-  // cgroup is not supported on this platform
-  return true;
-#endif
 }
 
 static bool attach_pid_to_cgroup(const std::string& cgroup_path,
@@ -429,7 +415,6 @@ static bool attach_pid_to_cgroup(const std::string& cgroup_path,
     pid_t pid,
     std::string& error)
 {
-#ifdef __linux__
   if (cgroup_path.empty())
     return true;
 
@@ -477,12 +462,8 @@ static bool attach_pid_to_cgroup(const std::string& cgroup_path,
     return true;
   }
   return true;
-#else
-  error = "cgroup option is supported only on Linux";
-  DEBUG(debug, "%s", error.c_str());
-  return true;
-#endif
 }
+#endif
 
 //------------------------------------------------------------------------------
 bool set_winsz(int fd, int rows, int cols) {
@@ -1145,6 +1126,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
     #endif
 
     if (!op.cgroup().empty()) {
+    #ifdef __linux__
       std::string cgroup_err;
       if (!attach_pid_to_cgroup(op.cgroup(), op.cgroup_limits(),
             op.cgroup_create(), op.cgroup_clear(), getpid(), cgroup_err)) {
@@ -1153,6 +1135,12 @@ pid_t start_child(CmdOptions& op, std::string& error)
         perror(err.c_str());
         exit(EXIT_FAILURE);
       }
+    #else
+      err.write("Cannot attach pid %d to cgroup '%s': not supported on this platform",
+        getpid(), op.cgroup().c_str());
+      perror(err.c_str());
+      exit(EXIT_FAILURE);
+    #endif
     }
 
     // Execute the process
@@ -1902,7 +1890,7 @@ int CmdOptions::ei_decode(bool getcmd)
               return -1;
             }
             value_s = std::to_string(n);
-          } else if (value_type == etMap) {
+          } else if (value_type == etMap && key == "limits") {
             std::string limits_key;
             int limit_arity = 0;
             if (ei_decode_map_header(eis.read_buffer(), eis.read_index(), &limit_arity) < 0) {
@@ -1944,23 +1932,23 @@ int CmdOptions::ei_decode(bool getcmd)
               }
               m_cgroup_limits[limit_key] = limit_value;
             }
-            continue;
-          } else {
-            m_err << op << " - unsupported cgroup map value type";
-            return -1;
-          }
 
-          if (key == "path" || key == "cgroup") {
-            m_cgroup = value_s;
-          } else if (key == "create") {
-            m_cgroup_create = (value_s == "true");
-          } else if (key == "clear") {
-            m_cgroup_clear = (value_s == "true");
-          } else if (key == "controllers") {
-            m_err << op << " - unsupported cgroup option 'controllers'; use limits => #{controller => value}";
+            if (key == "path" || key == "cgroup")
+              m_cgroup = value_s;
+            else if (key == "create")
+              m_cgroup_create = (value_s == "true");
+            else if (key == "clear")
+              m_cgroup_clear = (value_s == "true");
+            else if (key == "controllers") {
+              m_err << op << " - unsupported cgroup option 'controllers'; use limits => #{Controller => Value}";
+              return -1;
+            } else if (key != "limits") {
+              m_err << op << " - invalid cgroup option '" << key << "'; use: path, create, clear, limits";
+              return -1;
+            }
+          } else {
+            m_err << op << " - unsupported cgroup value type (key=" << key << ", value_type=" << value_type << ")";
             return -1;
-          } else if (key == "limits") {
-            // value was already processed in the map branch above
           }
         }
 
