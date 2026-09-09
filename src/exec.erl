@@ -1527,7 +1527,10 @@ check_cmd_options([{capabilities, Caps}=H|T], Pid, State, PortOpts, OtherOpts) w
     check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
 check_cmd_options([{cgroup, PathOrMap}=H|T], Pid, State, PortOpts, OtherOpts)
   when is_binary(PathOrMap); is_list(PathOrMap); is_map(PathOrMap) ->
-    check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+    case os:type() of
+        {unix, linux} -> check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+        {_,       OS} -> throw({error, ?FMT("Invalid ~w option for ~w: ~p", [cgroup, OS, PathOrMap])})
+    end;
 check_cmd_options([{stdin, I}=H|T], Pid, State, PortOpts, OtherOpts)
         when I=:=null; I=:=close; is_list(I); is_binary(I) ->
     check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);

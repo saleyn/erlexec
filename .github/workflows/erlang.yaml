@@ -13,7 +13,7 @@ env:
   OTP_LATEST: "29"
   MIN_AGE_HOURS: 1
   # Number of most-recent Hex.pm releases to keep active (not retire).
-  KEEP_RELEASES: 3
+  KEEP_RELEASES: 7
 
 jobs:
   linux:

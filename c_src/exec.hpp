@@ -135,7 +135,7 @@ enum FileOpenFlag {
 // Forward declarations
 //-------------------------------------------------------------------------
 struct CmdInfo;
-struct CmdOptions;
+class  CmdOptions;
 
 //-------------------------------------------------------------------------
 // Types

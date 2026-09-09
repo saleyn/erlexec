@@ -236,10 +236,9 @@ extract_cap_value_with_fallback(OutputStr) ->
 %% Regression: the cgroup option must be parsed in the native command parser.
 %% Before implementation it is rejected as a generic badarg; after implementation
 %% it should get past parsing even if the system cannot actually create the cgroup.
-cgroup_option_accepts_path_test() ->
-    application:ensure_all_started(erlexec),
+test_cgroup_option_accepts_path() ->
     case exec:run("echo ok", [sync, stdout, {cgroup, "/erlexec/test"}]) of
-        {ok, _} ->
+        {ok, [{stdout,[<<"ok\n">>]}]} ->
             ok;
         {error, _} ->
             ok;
@@ -247,8 +246,7 @@ cgroup_option_accepts_path_test() ->
             ?assert(false, {unexpected_result, Other})
     end.
 
-cgroup_map_rejects_controllers_field_test() ->
-    application:ensure_all_started(erlexec),
+test_cgroup_map_rejects_controllers_field() ->
     case exec:run("echo ok", [sync, stdout,
         {cgroup, #{create => true,
                    clear => true,
@@ -257,14 +255,13 @@ cgroup_map_rejects_controllers_field_test() ->
                                memory => "512M"}}}]) of
         {ok, _} ->
             ?assert(false, "controllers field should be rejected in final API");
-        {error, _} ->
-            ok;
+        {error, Reason} ->
+            ?assertEqual("cgroup - unsupported cgroup value type (key=controllers, value_type=108)", Reason);
         Other ->
             ?assert(false, {unexpected_result, Other})
     end.
 
-cgroup_option_accepts_map_test() ->
-    application:ensure_all_started(erlexec),
+test_cgroup_option_accepts_map() ->
     case exec:run("cat /proc/self/cgroup", [sync, stdout,
         {cgroup, #{create => true,
                    clear => true,
@@ -272,10 +269,10 @@ cgroup_option_accepts_map_test() ->
                                memory => "512M",
                                pids => 256,
                                io => "8:0 rbps=1048576"}}}]) of
-        {ok, _} ->
-            ok;
+        {ok, Result} ->
+            ?assertMatch([{stdout,[<<"0::/", _/binary>>]}], Result);
         {error, _} ->
-            ok;
+            ?assert(false, "unexpected error in applying cgroup limits");
         Other ->
             ?assert(false, {unexpected_result, Other})
     end.
@@ -750,9 +747,23 @@ capabilities_test_() ->
                  {"Test child propagates cap_kill", ?_test(test_child_propagates_kill())},
                  {"Test child propagates multiple capabilities", ?_test(test_child_propagates_multiple())},
                  {"Test child propagates all capabilities", ?_test(test_child_propagates_all())},
-                 {"Test capability inheritance across executions", ?_test(test_child_cap_inheritance_across_exec())},
-                 {"Test cgroup option acceptance", ?_test(cgroup_option_accepts_path_test())},
-                 {"Test cgroup map option acceptance", ?_test(cgroup_option_accepts_map_test())}
+                 {"Test capability inheritance across executions", ?_test(test_child_cap_inheritance_across_exec())}
+             ];
+         _ ->
+             []
+     end
+    }.
+
+cgroup_test_() ->
+    {setup,
+     fun()  -> application:ensure_all_started(erlexec), ok end,
+     fun(_) -> ok end,
+     case os:type() of
+         {unix, linux} ->
+             [
+                 {"Test cgroup option acceptance",     ?_test(test_cgroup_option_accepts_path())},
+                 {"Test cgroup map controllers",       ?_test(test_cgroup_map_rejects_controllers_field())},
+                 {"Test cgroup map option acceptance", ?_test(test_cgroup_option_accepts_map())}
              ];
          _ ->
              []
