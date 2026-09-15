@@ -811,6 +811,12 @@ exec:run("echo Test\necho ERR 1>&2", [sync, stdout, stderr]).
 ```
 
 ### Kill a process group at process exit
+
+Passing `{group, 0}` makes the parent process the leader of a new process group.
+The value returned as the process identifier for the given process can be used in
+other commands as the group identifier if you want them to belong to the same
+process group. E.g.:
+
 ```erlang
 % In the following scenario the process P0 will create a new process group
 % equal to the OS pid of that process (value = GID). The next two commands
