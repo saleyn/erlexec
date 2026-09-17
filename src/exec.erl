@@ -1785,6 +1785,8 @@ exec_test_() ->
             ?tt(test_env()),
             ?tt(test_kill_timeout()),
             ?tt(test_setpgid()),
+            ?tt(test_kill_group_with_arbitrary_group()),
+            ?tt(test_kill_group_with_nonzero_group()),
             ?tt(test_pty()),
             ?tt(test_pty_echo()),
             ?tt(test_pty_opts()),
@@ -2018,6 +2020,24 @@ test_setpgid() ->
     ?receivePattern({'DOWN',_,process, P0, normal}, 5000),
     ?receivePattern({'DOWN',_,process, P1, {exit_status, 15}}, 5000),
     ?receivePattern({'DOWN',_,process, P2, {exit_status, 15}}, 5000).
+
+test_kill_group_with_arbitrary_group() ->
+    % Regression test: Verify that kill_group with an arbitrary group doesn't kill the port
+    % This test ensures the port process stays alive after a kill_group operation.
+    % The child process should be killed with kill_group, but the port should stay alive.
+    {ok, P, _OsPid} = exec:run("sleep 1", [stdout, kill_group, monitor]),
+    ?receivePattern({'DOWN', _, process, P, normal}, 5000),
+    % Verify the exec port is still alive by running another command
+    % If the port crashed, this next command would fail with 'noproc'
+    ?AssertMatch({ok, [{stdout, [<<"ok\n">>]}]},
+        exec:run("echo ok", [stdout, sync])).
+
+test_kill_group_with_nonzero_group() ->
+    % Verify that kill_group with a non-zero group doesn't kill the port.
+    % The returned error is due to the fact that the child process doesn't have
+    % permissions to set group ID to 100.
+    ?AssertMatch({error, [{exit_status, 256}]},
+        exec:run("sleep 1", [stdout, {group, 100}, kill_group, sync])).
 
 test_pty() ->
     ?AssertMatch({error,[{exit_status,256},{stdout,[<<"not a tty\n">>]}]},
