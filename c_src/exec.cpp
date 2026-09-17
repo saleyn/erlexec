@@ -434,7 +434,13 @@ bool process_command(bool is_err)
         send_error_str(transId, false, "Couldn't start pid: %s", err.c_str());
       else {
         // PTY children create their own session/process group via setsid().
-        pid_t gid = po.pty_owns_group() ? pid : getpgid(pid);
+        // When kill_group is set and a specific group is requested, use the requested group
+        // instead of the actual current group. This prevents scenarios where the child inherits
+        // the port's group and kill_group ends up killing the port process itself.
+        pid_t gid = po.pty_owns_group() ? pid :
+                    (po.kill_group() && po.group() == 0) ? pid :
+                    (po.kill_group() && po.group() > 0) ? po.group() :
+                    getpgid(pid);
         // Block SIGCHLD during children map modification to prevent race conditions
         sigprocmask(SIG_BLOCK, &sigchld_mask, NULL);
         children.emplace(pid, CmdInfo(po.cmd(), po.kill_cmd(), pid,
