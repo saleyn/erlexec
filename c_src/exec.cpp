@@ -1,4 +1,4 @@
-// vim:ts=4:sw=4:et
+// vim:ts=2:sw=2:et
 /*
   exec.cpp
 
@@ -19,38 +19,67 @@
       | ---- {TransId::integer(), Instruction::tuple()} ---> |
       | <----------- {TransId::integer(), Reply} ----------- |
 
-  Instruction = {manage, OsPid::integer(), Options} |
-          {run,   Cmd::string(), Options}   |
-          {list}                            |
-          {debug,Level::integer()}          |
-          {stop, OsPid::integer()}          |
-          {kill, OsPid::integer(), Signal::integer()} |
-          {stdin, OsPid::integer(), Data::binary()}
+  Instruction =
+    {manage, OsPid::integer(), Options}              |
+    {run,   Cmd::string(), Options}                  |
+    {list}                                           |
+    {debug,Level::integer()}                         |
+    {stop, OsPid::integer()}                         |
+    {kill, OsPid::integer(), Signal::integer()}      |
+    {stdin, OsPid::integer(), Data::binary()}        |
+    {write_file, Path::string()|binary(), Data::binary()} | // Append Data to Path
+    {open_pipe}                                        // Graph-internal: allocate a
+                                                         // sibling-to-sibling pipe; see
+                                                         // exec_graph:allocate_sibling_pipes/1
 
   Options = [Option]
-  Option  = {cd, Dir::string()} |
-        {env, [clear | string() | {string(), string()}]} |
-        {kill, Cmd::string()} |
-        {kill_timeout, Sec::integer()} |
-        kill_group |
-        {group, integer() | string()} |
-        {user, User::string()} |
-        {nice, Priority::integer()} |
-        stdin  | {stdin, null | close | File::string()} |
-        stdout | {stdout, Device::string()} |
-        stderr | {stderr, Device::string()} |
-        pty    | {pty, [{echo, 1}, ...]}    |
-        pty_echo |
-        {success_exit_code, N::integer()}
+  Option  =
+    {cd, Dir::string()}                              |
+    {env, [clear | string() | {string(), string()}]} |
+    {kill, Cmd::string()}                            |
+    {kill_timeout, Sec::integer()}                   |
+    kill_group                                       |
+    {timeout, Ms::integer()}                         | // Wall-clock watchdog: kill the
+                                                       // process if still running Ms ms
+                                                       // after spawn. Distinct from
+                                                       // kill_timeout, which only governs
+                                                       // the escalation window *after* a
+                                                       // stop/kill was already requested.
+    stats                                            | // Deliver {pid_stats, ...} (rusage +
+                                                       // wall time) just before exit_status
+    {group, integer() | string()}                    |
+    {user, User::string()}                           |
+    {nice, Priority::integer()}                      |
+    stdin  | {stdin, null | close | File::string()}  |
+    stdout | {stdout, Device::string()}              |
+    stderr | {stderr, Device::string()}              |
+    {stdout_files, [{Path, [Option]} | Path]}        | // Native multi-destination fanout:
+    {stderr_files, [{Path, [Option]} | Path]}        | // fan out to extra files beyond the
+                                                       // primary stdout/stderr redirect
+    pty    | {pty, [{echo, 1}, ...]}                 |
+    pty_echo                                         |
+    {success_exit_code, N::integer()}                |
+    {graph_group}                                    | // Graph-internal: on *abnormal* exit
+                                                       // only, kill the rest of this task's
+                                                       // process group (see CmdInfo::graph_group)
+    {stdout_sibling_pipes, [{ConsumerId, WriteFd}]}  | // Graph-internal: native sibling-pipe
+    {stderr_sibling_pipes, [{ConsumerId, WriteFd}]}  | // fanout write-ends (see
+                                                       // exec_graph:add_sibling_pipe_opts/3)
+    {stdin_from_sibling, ReadFd::integer()}            // Graph-internal: use this
+                                                       // pre-opened read-end as stdin
+                                                       // instead of creating a new pipe
 
   Device  = close | null | stderr | stdout | File::string() | {append, File::string()}
 
-  Reply = ok                      |       // For kill/stop commands
-      {pid, OsPid}            |       // For run command
-      {ok, [OsPid]}           |       // For list command
-      {ok, Int}               |       // For debug command
-      {error, Reason}         |
-      {exit_status, OsPid, Status}    // OsPid terminated with Status
+  Reply = ok                    |   // For kill/stop commands
+    {pid, OsPid}                |   // For run command
+    {ok, [OsPid]}               |   // For list command
+    {ok, Int}                   |   // For debug command
+    {ok, ReadFd, WriteFd}       |   // For open_pipe command
+    {error, Reason}             |
+    {pid_stats, OsPid, WallMs, HaveRusage, UtimeUs, StimeUs, MaxrssKb} | // Sent just before
+                                     // the exit_status below, only if `stats` was requested
+    {exit_status, OsPid, Status}    // OsPid terminated with Status
 
   Reason = atom() | string()
   OsPid  = integer()
@@ -72,22 +101,23 @@ ei::Serializer ei::eis(/* packet header size */ 2);
 
 int   ei::debug           = 0;
 int   ei::alarm_max_time  = FINALIZE_DEADLINE_SEC + 5;
-bool  ei::terminated      = false; // indicates that we got a SIGINT / SIGTERM signal
+bool  ei::terminated      = false;       // indicates that we got a SIGINT/SIGTERM
 bool  ei::pipe_valid      = true;
 int   ei::max_fds;
 int   ei::dev_null;
-int   ei::sigchld_pipe[2] = { -1, -1 }; // Pipe for delivering sig child details
+int   ei::sigchld_pipe[2] = { -1, -1 };  // Pipe for delivering sig child details
 static bool finalize_group_isolated = false;
 
 static int run_as_euid    = std::numeric_limits<int>::max();
 static std::string g_capabilities = "";  // Custom capabilities to set on startup
+static std::map<std::string, int> g_file_sinks;
 
 //-------------------------------------------------------------------------
 // Types & variables
 //-------------------------------------------------------------------------
 
 MapChildrenT    ei::children;       // Map containing all managed processes
-                    // started by this port program.
+                                    // started by this port program.
 MapKillPidT     ei::transient_pids; // Map of pids of custom kill commands.
 ExitedChildrenT ei::exited_children;// Set of processed SIGCHLD events
 pid_t           ei::self_pid;
@@ -100,6 +130,60 @@ bool    process_command(bool is_err);
 void    initialize(int userid, bool use_alt_fds, bool is_root,
            bool requested_root);
 int     finalize();
+
+static int get_or_open_file_sink_fd(const std::string& path)
+{
+  if (path.empty())
+    return -1;
+
+  auto it = g_file_sinks.find(path);
+  if (it != g_file_sinks.end()) {
+    if (it->second >= 0)
+      return it->second;
+    g_file_sinks.erase(it);
+  }
+
+  int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0644);
+  if (fd < 0)
+    return -1;
+
+  g_file_sinks[path] = fd;
+  return fd;
+}
+
+static bool append_file_chunk(const std::string& path, const std::string& data)
+{
+  int fd = get_or_open_file_sink_fd(path);
+  if (fd < 0)
+    return false;
+
+  const char* buf = data.data();
+  ssize_t remaining = static_cast<ssize_t>(data.size());
+
+  while (remaining > 0) {
+    ssize_t n = write(fd, buf, static_cast<size_t>(remaining));
+    if (n < 0) {
+      if (errno == EINTR)
+        continue;
+      close(fd);
+      g_file_sinks.erase(path);
+      return false;
+    }
+    buf += n;
+    remaining -= n;
+  }
+
+  return true;
+}
+
+static void close_file_sinks()
+{
+  for (auto& it : g_file_sinks) {
+    if (it.second >= 0)
+      close(it.second);
+  }
+  g_file_sinks.clear();
+}
 
 //-------------------------------------------------------------------------
 // Local Functions
@@ -264,6 +348,11 @@ int main(int argc, char* argv[])
       it.second.include_stream_fd(fdhandler);
       if (!it.second.deadline.zero())
         wakeup = std::max(0.1, std::min(wakeup, it.second.deadline.diff(now)));
+      // Fold the {timeout, Ms} watchdog deadline into the wakeup calculation too, or a
+      // process could run up to SLEEP_TIMEOUT_SEC past its deadline before check_child()
+      // gets a chance to notice and stop it.
+      if (!it.second.run_deadline.zero())
+        wakeup = std::max(0.1, std::min(wakeup, it.second.run_deadline.diff(now)));
     }
 
     if (terminated || wakeup < 0) break;
@@ -366,8 +455,8 @@ bool process_command(bool is_err)
     return false;
   }
 
-  enum CmdTypeT        {  MANAGE,  RUN,  STOP,  KILL,  LIST,  SHUTDOWN,  STDIN,  DEBUG,  WINSZ,  PTY_OPTS  } cmd;
-  const char* cmds[] = { "manage","run","stop","kill","list","shutdown","stdin","debug","winsz","pty_opts" };
+  enum CmdTypeT        {  MANAGE,  RUN,  STOP,  KILL,  LIST,  SHUTDOWN,  STDIN,  DEBUG,  WINSZ,  PTY_OPTS,  WRITE_FILE,  OPEN_PIPE  } cmd;
+  const char* cmds[] = { "manage","run","stop","kill","list","shutdown","stdin","debug","winsz","pty_opts","write_file","open_pipe" };
 
   /* Determine the command */
   if ((int)(cmd = (CmdTypeT) eis.decodeAtomIndex(cmds, command)) < 0) {
@@ -451,7 +540,14 @@ bool process_command(bool is_err)
                               po.stream_fd(STDERR_FILENO),
                               po.kill_timeout(),
                               po.kill_group(),
-                              po.dbg()));
+                              po.dbg(),
+                              po.graph_group(),
+                              po.opened_fanout_fds(STDOUT_FILENO),
+                              po.opened_fanout_fds(STDERR_FILENO),
+                              po.fanout_forced(STDOUT_FILENO),
+                              po.fanout_forced(STDERR_FILENO),
+                              po.timeout_ms(),
+                              po.want_stats()));
         sigprocmask(SIG_UNBLOCK, &sigchld_mask, NULL);
         send_pid(transId, pid);
       }
@@ -613,6 +709,46 @@ bool process_command(bool is_err)
       int old = debug;
       debug   = level;
       send_ok(transId, old);
+      break;
+    }
+    case WRITE_FILE: {
+      // {write_file, Path::string()|binary(), Data::binary()}
+      std::string path;
+      std::string data;
+      if (arity != 3 || eis.decodeStringOrBinary(path) < 0 || eis.decodeBinary(data) < 0) {
+        send_error_str(transId, true, "badarg");
+        break;
+      }
+
+      if (!append_file_chunk(path, data)) {
+        DEBUG(debug, "write_file failed for '%s': %s", path.c_str(), strerror(errno));
+      }
+      break;
+    }
+    case OPEN_PIPE: {
+      // {open_pipe}
+      // Graph-only: pre-allocate a pipe for sibling-to-sibling piping
+      // (exec_graph:allocate_sibling_pipes/1). Returns {ReadFd, WriteFd} to Erlang, which
+      // threads them into {stdin_from_sibling, ReadFd} / {sibling_pipes, [{Id,WriteFd},...]}
+      // spawn options for the consumer/producer tasks respectively. Both fds are marked
+      // non-blocking and CLOEXEC-safe: the read-end survives in the consumer's child
+      // (dup2'd onto its real stdin, close-on-exec cleared for fd 0 as usual), the write-end
+      // is used directly by process_pid_output's existing fanout loop in the producer's
+      // parent process.
+      int fds[2];
+      ei::StringBuffer<128> err;
+      if (open_pipe(fds, "sibling_pipe", err) < 0) {
+        send_error_str(transId, false, "%s", err.c_str());
+        break;
+      }
+      eis.reset();
+      eis.encodeTupleSize(2);
+      eis.encode(transId);
+      eis.encodeTupleSize(3);
+      eis.encode(atom_t("ok"));
+      eis.encode(fds[0]);
+      eis.encode(fds[1]);
+      eis.write();
       break;
     }
   }
@@ -878,6 +1014,8 @@ int finalize()
   }
 
   DEBUG(debug, "Exiting (%d)", old_terminated);
+
+  close_file_sinks();
 
   return old_terminated;
 }

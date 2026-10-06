@@ -97,20 +97,20 @@ ifeq ($(TARGET_SYS),linux)
   #endif
 
   SYSROOT  := $(shell $(CXX) -print-sysroot)
-  CXXFLAGS += -DHAVE_SETRESUID -DHAVE_PIPE2 $(X64)
+  CXXFLAGS += -DHAVE_SETRESUID -DHAVE_PIPE2 -DHAVE_WAIT4 $(X64)
   # Check for Linux capability API (Install package: libcap-devel)
   ifneq ($(wildcard $(SYSROOT)/usr/include/sys/capability.h),)
     CXXFLAGS += -DHAVE_CAP
     LDFLAGS  += -lcap
   endif
 else ifeq ($(TARGET_SYS),darwin)
-  CXXFLAGS += -DHAVE_SETREUID
+  CXXFLAGS += -DHAVE_SETREUID -DHAVE_WAIT4
   LDFLAGS  += -flat_namespace -undefined suppress $(X64)
 else ifeq ($(TARGET_SYS),solaris)
   CXXFLAGS += -dhave_setreuid
   LDFLAGS  += -lrt $(x64)
 else ifneq ($(filter $(TARGET_SYS),freebsd openbsd dragonfly),)
-  CXXFLAGS += -DHAVE_SETRESUID -DHAVE_PIPE2 $(X64)
+  CXXFLAGS += -DHAVE_SETRESUID -DHAVE_PIPE2 -DHAVE_WAIT4 $(X64)
   LDFLAGS  += $(X64)
 else
   $(error Architecture $(TARGET_SYS) not supported!)

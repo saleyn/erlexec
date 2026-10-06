@@ -29,3 +29,4 @@ test/memory_leak_test
 test/race_condition_test
 test/security_tests
 test/test_report.txt
+specs/

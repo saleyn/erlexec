@@ -1,7 +1,8 @@
+%%% vim:ts=2:sw=2:et
 -module(exec_util).
 -export([
-    capability_to_index/1, index_to_capability/1, index_to_capability/2,
-    is_capability_set/2, validate_capabilities/1
+  capability_to_index/1, index_to_capability/1, index_to_capability/2,
+  is_capability_set/2, validate_capabilities/1
 ]).
 
 -doc "Map capability names to their bit indices".
@@ -96,43 +97,43 @@ Check if a capability bit is set in hex value.
 Hex value is a string like "0000003fffffffff" (read right to left, LSB first)
 
 %% Example usage:
-    is_capability_set("0000003fffffffff", kill) -> true
-    is_capability_set("0000003fffffffff", sys_admin) -> false
+  is_capability_set("0000003fffffffff", kill) -> true
+  is_capability_set("0000003fffffffff", sys_admin) -> false
 """.
 is_capability_set(Hex, CapName) when (is_list(Hex) orelse is_binary(Hex)), is_atom(CapName) ->
-    case capability_to_index(CapName) of
-        BitIndex when BitIndex < 0 ->
-            false;
-        BitIndex ->
-            % Convert hex string to integer (handle as 64-bit number)
-            % Reverse the string because the kernel shows them in a specific format
-            HexInt = erlang:list_to_integer(Hex, 16),
-            % Check if the bit at BitIndex is set
-            (HexInt band (1 bsl BitIndex)) =/= 0
-    end.
+  case capability_to_index(CapName) of
+    BitIndex when BitIndex < 0 ->
+      false;
+    BitIndex ->
+      % Convert hex string to integer (handle as 64-bit number)
+      % Reverse the string because the kernel shows them in a specific format
+      HexInt = erlang:list_to_integer(Hex, 16),
+      % Check if the bit at BitIndex is set
+      (HexInt band (1 bsl BitIndex)) =/= 0
+  end.
 
 -doc """
 Validate capability names and convert to proper format (cap_ prefix).
 
 %% Example usage:
-    validate_capabilities([cap_kill, cap_sys_admin]) -> [kill, sys_admin]
-    validate_capabilities([kill, sys_admin]) -> [kill, sys_admin]
-    validate_capabilities([invalid]) -> error({invalid_capability, invalid})
+  validate_capabilities([cap_kill, cap_sys_admin]) -> [kill, sys_admin]
+  validate_capabilities([kill, sys_admin]) -> [kill, sys_admin]
+  validate_capabilities([invalid]) -> error({invalid_capability, invalid})
 """.
 validate_capabilities(CapList) when is_list(CapList) ->
-    lists:map(fun(C) ->
-        Cap =
-            case atom_to_list(C) of
-                "cap_" ++ Name -> Name;
-                Other          -> Other
-            end,
-        maybe
-            {ok, ACap} ?= try {ok, erlang:list_to_existing_atom(Cap)}
-                          catch _:_ -> error
-                          end,
-            Index       = capability_to_index(ACap),
-            true       ?= (Index >= 0)
-        else
-            _ -> error({invalid_capability, C})
-        end
-    end, CapList).
+  lists:map(fun(C) ->
+    Cap =
+      case atom_to_list(C) of
+        "cap_" ++ Name -> Name;
+        Other          -> Other
+      end,
+    maybe
+      {ok, ACap} ?= try {ok, erlang:list_to_existing_atom(Cap)}
+                    catch _:_ -> error
+                    end,
+      Index = capability_to_index(ACap),
+      true ?= (Index >= 0)
+    else
+      _ -> error({invalid_capability, C})
+    end
+  end, CapList).

@@ -770,6 +770,81 @@ cgroup_test_() ->
      end
     }.
 
+timeout_stats_test_() ->
+    {setup,
+     fun()  -> application:ensure_all_started(erlexec), ok end,
+     fun(_) -> ok end,
+     case os:type() of
+         {unix, _} ->
+             [
+                 {"timeout kills a long-running process promptly",
+                     {timeout, 10, ?_test(test_timeout_kills_promptly())}},
+                 {"timeout does not fire for a process that finishes in time",
+                     ?_test(test_timeout_does_not_fire_early())},
+                 {"stats attaches wall-clock duration and rusage to the 'DOWN' reason",
+                     {timeout, 10, ?_test(test_stats_attached_to_down_reason())}},
+                 {"stats is absent from 'DOWN' reason when not requested (regression)",
+                     ?_test(test_no_stats_reason_unchanged())}
+             ];
+         _ ->
+             []
+     end
+    }.
+
+%% {timeout, Ms} should kill a long-running process well before its natural
+%% completion, reporting an abnormal (signaled) exit reason -- not masked to `normal`
+%% the way an explicit exec:stop/1 request would be (see CmdInfo::timed_out in
+%% exec_impl.cpp, which exists specifically to prevent that misreporting).
+test_timeout_kills_promptly() ->
+    T0 = erlang:monotonic_time(millisecond),
+    {ok, _Pid, _OsPid} = exec:run("sleep 10", [{timeout, 200}, monitor]),
+    Reason = receive
+        {'DOWN', _, process, _, R} -> R
+    after 5000 ->
+        ?assert(false, missing_down)
+    end,
+    Elapsed = erlang:monotonic_time(millisecond) - T0,
+    ?assert(Elapsed < 2000, {timeout_did_not_fire_promptly, Elapsed}),
+    ?assertMatch({exit_status, _}, Reason).
+
+%% A process that finishes well within its {timeout, Ms} budget should complete
+%% normally -- the watchdog must not fire early or interfere with a fast process.
+test_timeout_does_not_fire_early() ->
+    {ok, _Pid, _OsPid} = exec:run("true", [{timeout, 5000}, monitor]),
+    Reason = receive
+        {'DOWN', _, process, _, R} -> R
+    after 5000 ->
+        ?assert(false, missing_down)
+    end,
+    ?assertEqual(normal, Reason).
+
+%% `stats` folds wall-clock duration + rusage into the 'DOWN' reason itself, as
+%% {PlainReason, StatsMap} (see exec:notify_and_exit/5) -- no separate message type.
+%% A clean exit's PlainReason is still exactly `normal`; StatsMap carries the metrics.
+%% Rusage fields (utime_us/stime_us/maxrss_kb) are included on platforms with wait4()
+%% (Linux/macOS/BSD, i.e. this test environment).
+test_stats_attached_to_down_reason() ->
+    {ok, _Pid, _OsPid} = exec:run("sleep 0.1", [stats, monitor]),
+    Reason = receive
+        {'DOWN', _, process, _, R} -> R
+    after 5000 ->
+        ?assert(false, missing_down)
+    end,
+    ?assertMatch({normal, #{wall_time_ms := Ms}} when is_integer(Ms), Reason),
+    {normal, #{wall_time_ms := WallMs}} = Reason,
+    ?assert(WallMs >= 50 andalso WallMs < 5000, {unexpected_wall_time, WallMs}).
+
+%% Regression: a process spawned WITHOUT `stats` must still report the plain,
+%% unwrapped reason it always did -- the stats feature must be fully opt-in.
+test_no_stats_reason_unchanged() ->
+    {ok, _Pid, _OsPid} = exec:run("echo hi", [stdout, monitor]),
+    Reason = receive
+        {'DOWN', _, process, _, R} -> R
+    after 5000 ->
+        ?assert(false, missing_down)
+    end,
+    ?assertEqual(normal, Reason).
+
 setup() ->
     application:ensure_all_started(erlexec),
     setup_capabilities(),

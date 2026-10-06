@@ -1,3 +1,4 @@
+// vim:ts=2:sw=2:et
 /*
   ei++.h
 
@@ -38,9 +39,7 @@
   NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
   EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
-
-#ifndef _EMARSHAL_H_
-#define _EMARSHAL_H_
+#pragma once
 
 #include <ei.h>
 #include <stdarg.h>
@@ -611,6 +610,4 @@ namespace ei {
   bool dump(const char* header, std::ostream& os, const ei_x_buff& buf, bool condition);
 
 } // namespace
-
-#endif
 
