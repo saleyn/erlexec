@@ -770,6 +770,267 @@ cgroup_test_() ->
      end
     }.
 
+graph_test_() ->
+    {setup,
+     fun() -> application:ensure_all_started(erlexec), ok end,
+     fun(_) -> ok end,
+     case os:type() of
+         {unix, _} ->
+             [
+                 {"Run graph pipeline", ?_test(test_run_graph_pipeline())},
+                 {"Run graph pipeline with shorthand edge", ?_test(test_run_graph_pipeline_shorthand_edge())},
+                 {"Run graph with optional stdin annotation", ?_test(test_run_graph_optional_stdin_annotation())},
+                 {"Run graph async native monitor", ?_test(test_run_graph_async_native_monitor())},
+                 {"Run graph async fanout monitor", ?_test(test_run_graph_async_fanout_monitor())},
+                 {"Run graph async erl sink shorthand", ?_test(test_run_graph_async_erl_sink_shorthand())},
+                 {"Graph stdin mismatch returns error", ?_test(test_run_graph_stdin_mismatch())},
+                 {"Graph stdout list targets accepted", ?_test(test_run_graph_stdout_list_targets())},
+                 {"Graph stdout file destination accepts string path", ?_test(test_run_graph_stdout_file_destination_string())},
+                 {"Graph stdout file destination accepts binary path", ?_test(test_run_graph_stdout_file_destination_binary())},
+                 {"Graph stderr edge routes through graph", ?_test(test_run_graph_stderr_edge_routes_through_graph())},
+                 {"Graph erl sink shorthand receives payload", ?_test(test_run_graph_erl_sink_shorthand())},
+                 {"Graph stderr list targets accepted", ?_test(test_run_graph_stderr_list_targets())}
+             ];
+         _ ->
+             []
+     end
+    }.
+
+test_run_graph_pipeline() ->
+    Graph = [
+        #{id => producer,
+          cmd => "printf 'a\\nb\\nc\\n'",
+          stdout => {to, filter, stdin}},
+        #{id => filter,
+          cmd => "grep '^b$'"}
+    ],
+    case exec:run_graph(Graph, [sync, stdout]) of
+        {ok, [{stdout, [<<"b\n">>]}]} ->
+            ok;
+        Other ->
+            ?assert(false, {unexpected_result, Other})
+    end.
+
+test_run_graph_pipeline_shorthand_edge() ->
+    Graph = [
+        #{id => producer,
+          cmd => "printf 'a\\nb\\nc\\n'",
+          stdout => filter},
+        #{id => filter,
+          cmd => "grep '^b$'"}
+    ],
+    case exec:run_graph(Graph, [sync, stdout]) of
+        {ok, [{stdout, [<<"b\n">>]}]} ->
+            ok;
+        Other ->
+            ?assert(false, {unexpected_result, Other})
+    end.
+
+test_run_graph_optional_stdin_annotation() ->
+    Graph = [
+        #{id => producer,
+          cmd => "printf 'x\\ny\\n'",
+          stdout => {to, filter, stdin}},
+        #{id => filter,
+          cmd => "grep '^y$'",
+          stdin => {from, producer, stdout}}
+    ],
+    case exec:run_graph(Graph, [sync, stdout]) of
+        {ok, [{stdout, [<<"y\n">>]}]} ->
+            ok;
+        Other ->
+            ?assert(false, {unexpected_result, Other})
+    end.
+
+test_run_graph_async_native_monitor() ->
+    Graph = [
+        #{id => producer,
+          cmd => "printf 'ok\\n'",
+          stdout => consumer},
+        #{id => consumer,
+          cmd => "cat"}
+    ],
+    case exec:run_graph(Graph, [stdout, monitor]) of
+        {ok, Pid, GraphOsPid} when is_pid(Pid), is_integer(GraphOsPid) ->
+            receive
+                {stdout, GraphOsPid, <<"ok\n">>} -> ok
+            after 5000 ->
+                ?assert(false, {missing_stdout, GraphOsPid})
+            end,
+            receive
+                {'DOWN', GraphOsPid, process, Pid, normal} -> ok
+            after 5000 ->
+                ?assert(false, {missing_down, GraphOsPid})
+            end;
+        Other ->
+            ?assert(false, {unexpected_result, Other})
+    end.
+
+test_run_graph_async_fanout_monitor() ->
+    Graph = [
+        #{id => producer,
+          cmd => "printf 'x\\n'",
+          stdout => [left, right]},
+        #{id => left,
+          cmd => "cat"},
+        #{id => right,
+          cmd => "cat"}
+    ],
+    case exec:run_graph(Graph, [monitor]) of
+        {ok, Pid, GraphOsPid} when is_pid(Pid), is_integer(GraphOsPid) ->
+            receive
+                {'DOWN', GraphOsPid, process, Pid, normal} -> ok
+            after 5000 ->
+                ?assert(false, {missing_down, GraphOsPid})
+            end;
+        Other ->
+            ?assert(false, {unexpected_result, Other})
+    end.
+
+test_run_graph_async_erl_sink_shorthand() ->
+    Graph = [
+        #{id => producer,
+          cmd => "printf 's1\\n'",
+          stdout => erl}
+    ],
+    case exec:run_graph(Graph, [stdout, monitor]) of
+        {ok, Pid, GraphOsPid} when is_pid(Pid), is_integer(GraphOsPid) ->
+            receive
+                {stdout, GraphOsPid, <<"s1\n">>} -> ok
+            after 5000 ->
+                ?assert(false, {missing_stdout, GraphOsPid})
+            end,
+            receive
+                {'DOWN', GraphOsPid, process, Pid, normal} -> ok
+            after 5000 ->
+                ?assert(false, {missing_down, GraphOsPid})
+            end;
+        Other ->
+            ?assert(false, {unexpected_result, Other})
+    end.
+
+test_run_graph_stdin_mismatch() ->
+    Graph = [
+        #{id => producer,
+          cmd => "echo ok",
+          stdout => {to, filter, stdin}},
+        #{id => filter,
+          cmd => "cat",
+          stdin => {from, wrong_sender, stdout}}
+    ],
+    ?assertMatch(
+        {error, {graph_validation, {edge_conflict, filter, _, _}}},
+        exec:run_graph(Graph, [sync, stdout])
+    ).
+
+test_run_graph_stdout_list_targets() ->
+        Graph = [
+                #{id => producer,
+                    cmd => "printf 'a\\nb\\n'",
+                    stdout => [left, right]},
+                #{id => left,
+                    cmd => "cat"},
+                #{id => right,
+                    cmd => "cat"}
+        ],
+        case exec:run_graph(Graph, [sync, stdout]) of
+            {ok, [{stdout, Chunks}]} ->
+                Joined = iolist_to_binary(Chunks),
+                ?assertEqual(2, length(binary:matches(Joined, <<"a\n">>))),
+                ?assertEqual(2, length(binary:matches(Joined, <<"b\n">>)));
+            Other ->
+                ?assert(false, {unexpected_result, Other})
+        end.
+
+test_run_graph_stdout_file_destination_string() ->
+    FilePath = graph_temp_file("stdout-string"),
+    Graph = [
+        #{id => producer,
+          cmd => "printf 'file-string\\n'",
+          stdout => [collector, FilePath]},
+        #{id => collector,
+          cmd => "cat"}
+    ],
+    try
+        case exec:run_graph(Graph, [sync, stdout]) of
+            {ok, [{stdout, [<<"file-string\n">>]}]} ->
+                {ok, FileBin} = file:read_file(FilePath),
+                ?assertEqual(<<"file-string\n">>, FileBin);
+            Other ->
+                ?assert(false, {unexpected_result, Other})
+        end
+    after
+        _ = file:delete(FilePath)
+    end.
+
+test_run_graph_stdout_file_destination_binary() ->
+    FilePath = graph_temp_file("stdout-binary"),
+    FilePathBin = list_to_binary(FilePath),
+    Graph = [
+        #{id => producer,
+          cmd => "printf 'file-binary\\n'",
+          stdout => [collector, FilePathBin]},
+        #{id => collector,
+          cmd => "cat"}
+    ],
+    try
+        case exec:run_graph(Graph, [sync, stdout]) of
+            {ok, [{stdout, [<<"file-binary\n">>]}]} ->
+                {ok, FileBin} = file:read_file(FilePath),
+                ?assertEqual(<<"file-binary\n">>, FileBin);
+            Other ->
+                ?assert(false, {unexpected_result, Other})
+        end
+    after
+        _ = file:delete(FilePath)
+    end.
+
+test_run_graph_stderr_edge_routes_through_graph() ->
+    Graph = [
+        #{id => src,
+            cmd => "echo err 1>&2",
+            stderr => collector},
+        #{id => collector,
+            cmd => "cat"}
+    ],
+    case exec:run_graph(Graph, [sync, stdout]) of
+        {ok, [{stdout, [<<"err\n">>]}]} ->
+            ok;
+        Other ->
+            ?assert(false, {unexpected_result, Other})
+    end.
+
+test_run_graph_erl_sink_shorthand() ->
+    Graph = [
+        #{id => src,
+            cmd => "printf 's1\\n'",
+            stdout => erl}
+    ],
+    case exec:run_graph(Graph, [sync, stdout]) of
+        {ok, [{stdout, [<<"s1\n">>]}]} ->
+            ok;
+        Other ->
+            ?assert(false, {unexpected_result, Other})
+    end.
+
+test_run_graph_stderr_list_targets() ->
+        Graph = [
+                #{id => producer,
+                    cmd => "echo ok",
+                    stderr => [consumer]},
+                #{id => consumer,
+                    cmd => "cat"}
+        ],
+        ?assertMatch(
+                {ok, [{stdout, [<<"ok\n">>]}]},
+                exec:run_graph(Graph, [sync, stdout])
+        ).
+
+        graph_temp_file(Suffix) ->
+        	Name = lists:flatten(io_lib:format("/tmp/erlexec-graph-~s-~p", [Suffix, erlang:unique_integer([positive])])),
+        	_ = file:delete(Name),
+        	Name.
+
 setup() ->
     application:ensure_all_started(erlexec),
     setup_capabilities(),

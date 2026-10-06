@@ -64,7 +64,9 @@ versa.
 %% External exports
 -export([
     start/0, start/1, start_link/1, run/2, run/3,
+    run_graph/2,
     run_link/2, run_link/3,
+    write_file/2,
     manage/2, send/2, winsz/3, pty_opts/2,
     which_children/0, kill/2,       setpgid/2, stop/1, stop_and_wait/2,
     ospid/1, pid/1,   status/1,     signal/1,  signal_to_int/1, debug/1
@@ -627,6 +629,31 @@ run(Exe, Options) ->
     run(Exe, Options, ?TIMEOUT).
 
 %%-------------------------------------------------------------------------
+-doc """
+Run a graph of shell commands connected by OS pipes.
+
+The default engine executes process nodes natively and routes stream payloads
+according to validated graph edges.
+Edges are declared on sender nodes using forms such as:
+- `stdout => RecipientId`
+- `stdout => {to, RecipientId, stdin}`
+- `stdout => [RecipientId1, RecipientId2]`
+- `stderr => RecipientId`
+- `stderr => [RecipientId1, RecipientId2]`
+
+Recipient-side stdin declarations are optional (`stdin => {from, SenderId, stdout}`)
+and are validated for consistency when present.
+
+Current limitations:
+- native runtime supports sync and async graph runs;
+- shell engine supports only linear stdout->stdin pipelines.
+""".
+-spec run_graph([map()], cmd_options() | map()) ->
+    {ok, pid(), ospid()} | {ok, [{stdout | stderr, [binary()]}]} | {error, any()}.
+run_graph(Graph, GraphOpts) when is_list(Graph) ->
+    exec_graph:run_graph(Graph, GraphOpts).
+
+%%-------------------------------------------------------------------------
 -doc #{equiv => run/2}.
 -doc """
 Run an external program and link to the OsPid. If OsPid exits,
@@ -770,6 +797,12 @@ send(OsPid, Data)
   when (is_integer(OsPid) orelse is_pid(OsPid)),
        (is_binary(Data)   orelse Data =:= eof) ->
     gen_server:call(?MODULE, {port, {send, OsPid, Data}}).
+
+%%-------------------------------------------------------------------------
+-doc "Append binary data to a file via the port process.".
+-spec write_file(Path :: string() | binary(), Data :: binary()) -> ok.
+write_file(Path, Data) when (is_list(Path) orelse is_binary(Path)), is_binary(Data) ->
+    gen_server:call(?MODULE, {port, {write_file, Path, Data}}).
 
 %%-------------------------------------------------------------------------
 -doc """
@@ -1436,6 +1469,9 @@ is_port_command({send, Pid, Data}, _Pid, _State)
 is_port_command({send, OsPid, Data}, _Pid, _State)
   when is_integer(OsPid), is_binary(Data) orelse Data =:= eof ->
     {ok, {stdin, OsPid, Data}};
+is_port_command({write_file, Path, Data}, _Pid, _State)
+    when (is_list(Path) orelse is_binary(Path)), is_binary(Data) ->
+        {ok, {write_file, Path, Data}};
 is_port_command({winsz, Pid, Rows, Cols}, _Pid, _State)
   when is_pid(Pid), is_integer(Rows), is_integer(Cols) ->
     case ets:lookup(exec_mon, Pid) of

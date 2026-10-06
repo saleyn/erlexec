@@ -101,6 +101,7 @@ and is considered stable.
     - [Communicating with an OS process via STDIN](#communicating-with-an-os-process-via-stdin)
     - [Communicating with an OS process via STDIN and sending end-of-file](#communicating-with-an-os-process-via-stdin-and-sending-end-of-file)
     - [Running OS commands synchronously](#running-os-commands-synchronously)
+    - [Running Process Graphs](#running-process-graphs)
     - [Running OS commands with/without shell](#running-os-commands-withwithout-shell)
     - [Running OS commands with pseudo terminal (pty)](#running-os-commands-with-pseudo-terminal-pty)
       - [Important Note: PTY stdout/stderr Separation](#important-note-pty-stdoutstderr-separation)
@@ -714,6 +715,85 @@ Got: {stdout,26143,<<"baz\nbar\nfoo\n">>}
 % Redirect stderr to stdout
 33> exec:run("echo Test 1>&2", [{stderr, stdout}, stdout, sync]).
 {ok, [{stdout, [<<"Test\n">>]}]}
+```
+
+### Running Process Graphs
+
+`exec:run_graph/2` executes validated process graphs.
+
+```erlang
+% 1) Sync linear pipeline
+Graph1 = [
+    #{id  => producer, cmd => "printf 'a\\nb\\nc\\n'", stdout => filter},
+    #{id  => filter,   cmd => "grep '^b$'"}
+],
+exec:run_graph(Graph1, [sync, stdout]).
+% => {ok, [{stdout, [<<"b\n">>]}]}
+
+% 2) Async native graph with monitor
+Graph2 = [
+    #{id => p, cmd => "printf 'ok\\n'", stdout => c},
+    #{id => c, cmd => "cat"}
+],
+{ok, GraphPid, GraphOsPid} = exec:run_graph(Graph2, [stdout, monitor]),
+receive {stdout, GraphOsPid, Bin} -> io:format("~p~n", [Bin]) end,
+receive {'DOWN', GraphOsPid, process, GraphPid, normal} -> ok end.
+
+% 3) Fanout from one stdout stream to two process nodes
+Graph3 = [
+    #{id => src,   cmd => "printf 'x\\n'", stdout => [left, right]},
+    #{id => left,  cmd => "cat"},
+    #{id => right, cmd => "cat >&2"}
+],
+exec:run_graph(Graph3, [sync, stdout, stderr]).
+% => {ok, [{stdout, [<<"x\n">>, <<"x\n">>]}]}
+
+% 4) Route stderr through graph edge
+Graph4 = [
+    #{id => src,       cmd => "echo err 1>&2", stderr => collector},
+    #{id => collector, cmd => "cat"}
+],
+exec:run_graph(Graph4, [sync, stdout]).
+% => {ok, [{stdout, [<<"err\n">>]}]}
+
+% 5) Erlang sink shorthand receives stdout payloads
+Graph5 = [
+    #{id => src,
+      cmd => "printf 's1\\n'",
+      stdout => erl}
+],
+exec:run_graph(Graph5, [sync, stdout]).
+% => {ok, [{stdout, [<<"s1\n">>]}]}
+
+% 6) Async fanout graph with monitor
+Graph6 = [
+    #{id => src,   cmd => "printf 'x\\n'", stdout => [left, right]},
+    #{id => left,  cmd => "cat"},
+    #{id => right, cmd => "cat"}
+],
+{ok, GraphPid6, GraphOsPid6} = exec:run_graph(Graph6, [monitor]),
+receive {'DOWN', GraphOsPid6, process, GraphPid6, normal} -> ok end.
+
+% 7) Async Erlang sink shorthand receives stdout payloads
+Graph7 = [
+    #{id => src,
+      cmd => "printf 's2\\n'",
+      stdout => erl}
+],
+{ok, GraphPid7, GraphOsPid7} = exec:run_graph(Graph7, [stdout, monitor]),
+receive {stdout, GraphOsPid7, <<"s2\n">>} -> ok end,
+receive {'DOWN', GraphOsPid7, process, GraphPid7, normal} -> ok end.
+
+% 8) Route stdout to a file destination by path
+Graph8 = [
+    #{id => src,
+      cmd => "printf 's3\\n'",
+      stdout => [collector, "/dev/stdout"]},
+    #{id => collector,
+      cmd => "cat"}
+],
+exec:run_graph(Graph8, [sync, stdout]).
+% => {ok, [{stdout, [<<"s3\n">>]}]}
 ```
 
 ### Running OS commands with/without shell

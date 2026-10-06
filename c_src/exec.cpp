@@ -81,6 +81,7 @@ static bool finalize_group_isolated = false;
 
 static int run_as_euid    = std::numeric_limits<int>::max();
 static std::string g_capabilities = "";  // Custom capabilities to set on startup
+static std::map<std::string, int> g_file_sinks;
 
 //-------------------------------------------------------------------------
 // Types & variables
@@ -100,6 +101,60 @@ bool    process_command(bool is_err);
 void    initialize(int userid, bool use_alt_fds, bool is_root,
            bool requested_root);
 int     finalize();
+
+static int get_or_open_file_sink_fd(const std::string& path)
+{
+  if (path.empty())
+    return -1;
+
+  auto it = g_file_sinks.find(path);
+  if (it != g_file_sinks.end()) {
+    if (it->second >= 0)
+      return it->second;
+    g_file_sinks.erase(it);
+  }
+
+  int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0644);
+  if (fd < 0)
+    return -1;
+
+  g_file_sinks[path] = fd;
+  return fd;
+}
+
+static bool append_file_chunk(const std::string& path, const std::string& data)
+{
+  int fd = get_or_open_file_sink_fd(path);
+  if (fd < 0)
+    return false;
+
+  const char* buf = data.data();
+  ssize_t remaining = static_cast<ssize_t>(data.size());
+
+  while (remaining > 0) {
+    ssize_t n = write(fd, buf, static_cast<size_t>(remaining));
+    if (n < 0) {
+      if (errno == EINTR)
+        continue;
+      close(fd);
+      g_file_sinks.erase(path);
+      return false;
+    }
+    buf += n;
+    remaining -= n;
+  }
+
+  return true;
+}
+
+static void close_file_sinks()
+{
+  for (auto& it : g_file_sinks) {
+    if (it.second >= 0)
+      close(it.second);
+  }
+  g_file_sinks.clear();
+}
 
 //-------------------------------------------------------------------------
 // Local Functions
@@ -366,8 +421,8 @@ bool process_command(bool is_err)
     return false;
   }
 
-  enum CmdTypeT        {  MANAGE,  RUN,  STOP,  KILL,  LIST,  SHUTDOWN,  STDIN,  DEBUG,  WINSZ,  PTY_OPTS  } cmd;
-  const char* cmds[] = { "manage","run","stop","kill","list","shutdown","stdin","debug","winsz","pty_opts" };
+  enum CmdTypeT        {  MANAGE,  RUN,  STOP,  KILL,  LIST,  SHUTDOWN,  STDIN,  DEBUG,  WINSZ,  PTY_OPTS,  WRITE_FILE  } cmd;
+  const char* cmds[] = { "manage","run","stop","kill","list","shutdown","stdin","debug","winsz","pty_opts","write_file" };
 
   /* Determine the command */
   if ((int)(cmd = (CmdTypeT) eis.decodeAtomIndex(cmds, command)) < 0) {
@@ -613,6 +668,20 @@ bool process_command(bool is_err)
       int old = debug;
       debug   = level;
       send_ok(transId, old);
+      break;
+    }
+    case WRITE_FILE: {
+      // {write_file, Path::string()|binary(), Data::binary()}
+      std::string path;
+      std::string data;
+      if (arity != 3 || eis.decodeStringOrBinary(path) < 0 || eis.decodeBinary(data) < 0) {
+        send_error_str(transId, true, "badarg");
+        break;
+      }
+
+      if (!append_file_chunk(path, data)) {
+        DEBUG(debug, "write_file failed for '%s': %s", path.c_str(), strerror(errno));
+      }
       break;
     }
   }
@@ -878,6 +947,8 @@ int finalize()
   }
 
   DEBUG(debug, "Exiting (%d)", old_terminated);
+
+  close_file_sinks();
 
   return old_terminated;
 }

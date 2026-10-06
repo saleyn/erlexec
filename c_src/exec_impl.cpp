@@ -1,5 +1,6 @@
 // vim:ts=4:sw=4:et
 #include "exec.hpp"
+#include "fd_raii.hpp"
 #include <errno.h>
 #include <fcntl.h>
 
@@ -10,51 +11,8 @@ namespace ei {
 //------------------------------------------------------------------------------
 void safe_close_fd(int& fd)
 {
-  if (fd >= 0) {
-    close(fd);
-    fd = -1;  // Atomically mark as closed to prevent double-close
-  }
+  close_fd_if_open(fd);
 }
-
-class FileDescriptor {
-public:
-  FileDescriptor() noexcept : m_fd(-1) {}
-
-  FileDescriptor(const std::string& path, int flags, mode_t mode = 0) noexcept
-    : m_fd(open(path.c_str(), flags, mode)) {}
-
-  FileDescriptor(const char* path, int flags, mode_t mode = 0) noexcept
-    : m_fd(path ? open(path, flags, mode) : -1) {}
-
-  ~FileDescriptor() { safe_close_fd(m_fd); }
-
-  FileDescriptor(const FileDescriptor&) = delete;
-  FileDescriptor& operator=(const FileDescriptor&) = delete;
-
-  FileDescriptor(FileDescriptor&& other) noexcept : m_fd(other.m_fd) {
-    other.m_fd = -1;
-  }
-
-  FileDescriptor& operator=(FileDescriptor&& other) noexcept {
-    if (this != &other) {
-      safe_close_fd(m_fd);
-      m_fd = other.m_fd;
-      other.m_fd = -1;
-    }
-    return *this;
-  }
-
-  int get() const noexcept { return m_fd; }
-  explicit operator bool() const noexcept { return m_fd >= 0; }
-  int release() noexcept {
-    int fd = m_fd;
-    m_fd   = -1;
-    return fd;
-  }
-
-private:
-  int m_fd;
-};
 
 bool is_valid_fd(int fd)
 {
@@ -455,7 +413,7 @@ static bool attach_pid_to_cgroup(const std::string& cgroup_path,
   char pidbuf[32];
   snprintf(pidbuf, sizeof(pidbuf), "%ld", (long)pid);
   ssize_t n = write(fd, pidbuf, strlen(pidbuf));
-  close(fd);
+  close_fd_if_open(fd);
   if (n < 0) {
     error = "Cannot add pid " + std::to_string(pid) + " to cgroup '" + path + "': " + strerror(errno);
     DEBUG(debug, "%s", error.c_str());
@@ -478,7 +436,7 @@ bool set_winsz(int fd, int rows, int cols) {
     DEBUG(debug, "TIOCSWINSZ rows=%d cols=%d tty=%d ret=%d", ws.ws_row, ws.ws_col, r, tty);
     if (tty != -1) {
       r = ioctl(tty, TIOCGWINSZ, &ws);
-      close(tty);
+      close_fd_if_open(tty);
     }
   }
 
@@ -637,14 +595,14 @@ static int getpty(int& fdmp, ei::StringBuffer<128>& err) {
 
   rc = grantpt(fdm);
   if (rc != 0) {
-    close(fdm);
+    close_fd_if_open(fdm);
     err.write("error %d on grantpt: %s\n", errno, strerror(errno));
     return -1;
   }
 
   rc = unlockpt(fdm);
   if (rc != 0) {
-    close(fdm);
+    close_fd_if_open(fdm);
     err.write("error %d on unlockpt: %s\n", errno, strerror(errno));
     return -1;
   }
@@ -1158,7 +1116,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
   #ifdef __APPLE__
   // Close the pre-opened slave fd; the child has inherited it and uses it directly.
   if (op.pty() && fds_pre >= 0)
-    close(fds_pre);
+    close_fd_if_open(fds_pre);
   #endif
 
   DEBUG(debug > 1, "Spawned child pid %d", pid);
@@ -1193,7 +1151,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
     if (fd >= 0 && fd != dev_null) {
       DEBUG(debug, "  Parent closing pid %d pipe %s end (fd=%d)",
           pid, i==STDIN_FILENO ? "reading" : "writing", fd);
-      close(fd); // Close stdin/reading or stdout(err)/writing end of the child pipe
+      close_fd_if_open(fd); // Close stdin/reading or stdout(err)/writing end of the child pipe
     }
 
     if (sfd[wr] >= 0 && sfd[wr] != dev_null) {
@@ -1375,7 +1333,7 @@ void close_stdin(CmdInfo& ci)
   DEBUG(debug, "Eof writing pid %d's stdin, closing fd=%d: %s",
       ci.cmd_pid, fd, strerror(errno));
   ci.stdin_wr_pos = 0;
-  close(fd);
+  close_fd_if_open(fd);
   fd = REDIRECT_CLOSE;
   ci.stdin_queue.clear();
 }
@@ -1651,8 +1609,8 @@ int open_pipe(int fds[2], const char* stream, ei::StringBuffer<128>& err)
     return -1;
   }
   if (fds[1] > max_fds) {
-    close(fds[0]);
-    close(fds[1]);
+    close_fd_if_open(fds[0]);
+    close_fd_if_open(fds[1]);
     err.write("Exceeded number of available file descriptors (fd=%d)", fds[1]);
     return -1;
   }
