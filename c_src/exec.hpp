@@ -1,4 +1,4 @@
-// vim:ts=4:sw=4:et
+// vim:ts=2:sw=2:et
 /*
 Author: Serge Aleynikov
 Date:   2016-11-14
@@ -173,10 +173,55 @@ extern MapChildrenT    children;       // Map containing all managed processes s
 extern MapKillPidT     transient_pids; // Map of pids of custom kill commands.
 extern ExitedChildrenT exited_children;// Set of processed SIGCHLD events
 extern pid_t           self_pid;
-extern sigset_t        sigchld_mask;  // Signal mask for SIGCHLD synchronization
+extern sigset_t        sigchld_mask;   // Signal mask for SIGCHLD synchronization
 
 /// Convert file descriptor to a meaningful string
 std::string fd_type(int tp);
+
+//-------------------------------------------------------------------------
+// Graph Execution Plan Structures
+//-------------------------------------------------------------------------
+struct GraphFileDestination {
+  std::string path;
+  bool append = false;      // "append" atom
+  int  mode   = DEF_MODE;   // {mode, Value} tuple
+};
+
+struct GraphTaskDestination {
+  enum class Type { TASK, SINK };
+
+  // For TASK: sibling task id, used to look up its stdin pipe fd.
+  // For SINK: informational only (debug/logging) — all sinks fan out to the
+  // same Erlang-facing fd; resolving the delivery target (self/Pid/Fun) is
+  // done in Erlang's deliver_sink/5, not here.
+  std::string id;
+  Type type;
+};
+
+struct GraphStreamRedirect {
+  enum class Type {
+    EXPOSED,      // no destinations
+    PURE_FILE,    // [{file, Path, [Options]}, ...]
+    PURE_TASK,    // [{task, TaskId}, {sink, SinkId}, ...]
+    MIXED         // both files and tasks
+  } type;
+  std::vector<GraphFileDestination> files;
+  std::vector<GraphTaskDestination> tasks;
+};
+
+struct GraphTaskPlan {
+  std::string id;
+  GraphStreamRedirect stdout_redirect;
+  GraphStreamRedirect stderr_redirect;
+};
+
+struct GraphIOPlan {
+  std::vector<GraphTaskPlan> tasks;
+  // Note: sink delivery targets (self/Pid/{'fun', Fun}) are resolved entirely
+  // in Erlang (exec_graph:deliver_sink/5) and never decoded here. C++ only
+  // needs to know *that* a stream has a sink destination (to include the
+  // Erlang-facing fd in its fanout set), not *who* receives it.
+};
 
 //-------------------------------------------------------------------------
 // Structs
@@ -184,6 +229,8 @@ std::string fd_type(int tp);
 class CmdOptions {
   using StrSet          = std::set<std::string>;
   using StrMap          = std::map<std::string, std::string>;
+  using StrIntVec       = std::vector<std::pair<std::string, int>>;
+  using GraphFileVec    = std::vector<GraphFileDestination>;
 
   ei::StringBuffer<256>   m_tmp;
   std::stringstream       m_err;
@@ -196,7 +243,16 @@ class CmdOptions {
   std::string             m_cd;
   std::string             m_kill_cmd;
   int                     m_kill_timeout = KILL_TIMEOUT_SEC;
+  int                     m_timeout_ms = -1; // wall-clock watchdog: kill if still running after
+                                              // this many ms since spawn; -1 = disabled. Distinct
+                                              // from m_kill_timeout, which only governs the
+                                              // SIGTERM->SIGKILL escalation *after* a stop/kill
+                                              // was already requested.
+  bool                    m_want_stats = false; // deliver {stats, OsPid, StatsMap} (rusage +
+                                              // wall time) to the owner just before the final
+                                              // exit notification.
   bool                    m_kill_group = false;
+  bool                    m_graph_group = false; // kill group on *abnormal* exit only (graph pipelines)
   bool                    m_is_kill_cmd; // true if this represents a custom kill command
   MapEnv                  m_env;
   const char**            m_cenv = NULL;
@@ -213,6 +269,28 @@ class CmdOptions {
   bool                    m_std_stream_append[3];
   int                     m_std_stream_fd[3];
   int                     m_std_stream_mode[3];
+  // Multi-destination file fanout (e.g. {stdout_files, [{Path, [Options]}, ...]}).
+  // Index 0 (stdin) unused. m_std_stream_extra_files is the requested spec (pre-spawn);
+  // m_std_stream_extra_fds is populated by start_child() with the opened fds, in the
+  // same order, for the RUN case in exec.cpp to thread into CmdInfo.
+  GraphFileVec            m_std_stream_extra_files[3];
+  std::vector<int>        m_std_stream_extra_fds[3];
+  bool                    m_fanout_forced[3] = {false, false, false};  // For each stream,
+                          // true if we forced a pipe into existence for fanout purposes,
+                          // but the user did NOT explicitly request that stream (e.g.,
+                          // stdout_files without stdout). Passed to CmdInfo so that
+                          // process_pid_output knows not to send data to Erlang.
+  // Sibling-to-sibling piping (graph tasks only; see exec_graph:allocate_sibling_pipes/1).
+  // m_sibling_stdin_writes[3]: per-stream (index 0/stdin unused), write-ends of downstream
+  // siblings' stdin pipes that this task's stdout/stderr should be fanned out to (consumer
+  // id is informational, only the fd is used). These get folded into
+  // m_std_stream_extra_fds[i] at spawn time (start_child), so process_pid_output's existing
+  // fanout loop handles them with zero extra code.
+  StrIntVec               m_sibling_stdin_writes[3];
+  // m_stdin_from_sibling: read-end of this task's own stdin pipe, already connected to an
+  // upstream sibling's fanout list by Erlang. When >= 0, start_child uses this fd directly
+  // instead of creating a new REDIRECT_ERL pipe for stdin.
+  int                     m_stdin_from_sibling = -1;
   int                     m_debug = 0;
   int                     m_winsz_rows;
   int                     m_winsz_cols;
@@ -221,12 +299,17 @@ class CmdOptions {
   std::set<cap_value_t>   m_caps;
   #endif
 
+  std::optional<GraphIOPlan>  m_graph_plan;  // I/O routing plan for graph execution (if present)
+
   void init_streams() {
     for (int i=STDIN_FILENO; i <= STDERR_FILENO; i++) {
       m_std_stream_append[i] = false;
       m_std_stream_mode[i]   = DEF_MODE;
       m_std_stream_fd[i]     = REDIRECT_NULL;
       m_std_stream[i]        = CS_DEV_NULL;
+      m_std_stream_extra_files[i].clear();
+      m_std_stream_extra_fds[i].clear();
+      m_fanout_forced[i] = false;
     }
   }
 
@@ -263,9 +346,8 @@ public:
   ~CmdOptions() {
     // Fix memory management - check if m_cenv was allocated with new[]
     // and use proper deallocation method
-    if (m_cenv && m_cenv != (const char**)environ) {
+    if (m_cenv && m_cenv != (const char**)environ)
       free((void*)m_cenv);  // Use free() since it's allocated with malloc() family
-    }
     m_cenv = NULL;
   }
 
@@ -286,7 +368,10 @@ public:
   int           dbg()                 const { return m_debug;                 }
   const char*   kill_cmd()            const { return m_kill_cmd.c_str();      }
   int           kill_timeout()        const { return m_kill_timeout;          }
+  int           timeout_ms()          const { return m_timeout_ms;            }
+  bool          want_stats()          const { return m_want_stats;            }
   bool          kill_group()          const { return m_kill_group;            }
+  bool          graph_group()         const { return m_graph_group;           }
   bool          is_kill_cmd()         const { return m_is_kill_cmd;           }
   int           group()               const { return m_group;                 }
   int           user()                const { return m_user;                  }
@@ -303,6 +388,33 @@ public:
   int&          stream_fd(int i)            { return m_std_stream_fd[i];      }
   std::string   stream_fd_type(int i) const { return fd_type(stream_fd(i));   }
 
+  // Multi-destination file fanout (stdout_files/stderr_files option).
+  const std::vector<GraphFileDestination>& stream_extra_files(int i) const {
+    return m_std_stream_extra_files[i];
+  }
+  void add_stream_extra_file(int i, const std::string& path, bool append = false, int mode = DEF_MODE) {
+    m_std_stream_extra_files[i].push_back(GraphFileDestination{path, append, mode});
+  }
+  // Opened fds (populated by start_child(), same order as stream_extra_files(i));
+  // read back by the RUN case in exec.cpp to thread into CmdInfo::fanout_fds.
+  const std::vector<int>& opened_fanout_fds(int i) const { return m_std_stream_extra_fds[i]; }
+  void add_opened_fanout_fd(int i, int fd) { m_std_stream_extra_fds[i].push_back(fd); }
+
+  // Flag: for each stream, true if we forced a pipe for fanout purposes only
+  // (user didn't explicitly request that stream, so don't send to Erlang).
+  bool fanout_forced(int i) const { return m_fanout_forced[i]; }
+  void set_fanout_forced(int i, bool forced) { m_fanout_forced[i] = forced; }
+
+  // Sibling-to-sibling piping (graph tasks only). i is STDOUT_FILENO or STDERR_FILENO.
+  const std::vector<std::pair<std::string, int>>& sibling_stdin_writes(int i) const {
+    return m_sibling_stdin_writes[i];
+  }
+  void add_sibling_stdin_write(int i, const std::string& consumer_id, int write_fd) {
+    m_sibling_stdin_writes[i].emplace_back(consumer_id, write_fd);
+  }
+  int  stdin_from_sibling() const { return m_stdin_from_sibling; }
+  void stdin_from_sibling(int fd) { m_stdin_from_sibling = fd; }
+
   #ifdef HAVE_CAP
   bool                         caps_all() const { return m_caps_all; }
   std::set<cap_value_t> const& caps()     const { return m_caps;     }
@@ -311,6 +423,9 @@ public:
 
   bool has_cap(cap_value_t v) const { return m_caps_all || m_caps.find(v) != m_caps.end(); }
   #endif
+
+  const std::optional<GraphIOPlan>& graph_plan() const { return m_graph_plan; }
+  void graph_plan(const GraphIOPlan& plan) { m_graph_plan = plan; }
 
   void executable(const std::string& s) { m_executable = s; }
 
@@ -354,11 +469,43 @@ struct CmdInfo {
   ei::TimeVal     deadline;           // Time when the <cmd_pid> is supposed to be killed using SIGTERM.
   bool            sigterm = false;    // <true> if sigterm was issued.
   bool            sigkill = false;    // <true> if sigkill was issued.
+  bool            timed_out = false;  // <true> if the kill was triggered by the {timeout, Ms}
+                                       // watchdog (run_deadline), as opposed to an explicit
+                                       // exec:stop/1 or exec:kill/2 request. Used to avoid the
+                                       // exit-status-override-to-0 logic below (meant for
+                                       // explicit user-requested stops) misreporting a timeout
+                                       // kill as a normal/clean exit.
   int             kill_timeout;       // Pid shutdown interval in sec before it's killed with SIGKILL
-  bool            kill_group;         // Indicates if at exit the whole group needs to be killed
+  bool            kill_group;         // Indicates if at exit (any exit) the whole group needs to be killed
+  bool            graph_group = false;// Indicates this pid is part of a graph's process group:
+                                       // on *abnormal* exit only (signaled, or non-zero exit code),
+                                       // kill the rest of the group. Unlike kill_group, does NOT
+                                       // fire on normal (zero-exit-code) completion -- a graph
+                                       // pipeline's early stages are expected to finish before
+                                       // later ones.
   int             success_code;       // Exit code to use on success
   bool            managed;            // <true> if this pid is started externally, but managed by erlexec
   int             stream_fd[3];       // Pipe fd getting   process's stdin/stdout/stderr
+  std::vector<int> fanout_fds[3];     // Extra destination fds for stdout/stderr fanout (index 0 unused).
+                                       // Opened at spawn time, written on every chunk alongside
+                                       // stream_fd (via ei::tee_buffer_to_many), closed once at reap.
+                                       // Independent of stream_fd's EOF/REDIRECT_CLOSE lifecycle.
+  bool            fanout_forced[3] = {false, false, false};  // For each stream, true if we
+                                       // forced a pipe into existence for fanout purposes, but the user
+                                       // did NOT explicitly request that stream (e.g., stdout_files without stdout).
+                                       // When true, don't send data to Erlang via send_ospid_output.
+  ei::TimeVal     run_deadline;       // Wall-clock watchdog deadline (zero = disabled). Set once
+                                       // at spawn time from the {timeout, Ms} option; independent
+                                       // of `deadline` above, which only tracks the post-stop
+                                       // SIGTERM->SIGKILL escalation window.
+  bool            want_stats = false; // Deliver {stats, OsPid, StatsMap} to the owner just
+                                       // before the final exit notification.
+  ei::TimeVal     start_time;         // Spawn time; used to compute wall-clock duration for
+                                       // the stats message regardless of rusage portability.
+  struct rusage   last_rusage{};      // Captured at reap time via wait4() when available and
+                                       // want_stats is set; see HAVE_WAIT4 in exec_impl.cpp.
+  bool            have_rusage = false;// True if last_rusage was actually populated (wait4()
+                                       // succeeded on a platform that has it).
   int             stdin_wr_pos   = 0; // Offset of the unwritten portion of the head item of stdin_queue
   int             dbg            = 0; // Debug flag
   Queue           stdin_queue;
@@ -376,28 +523,40 @@ struct CmdInfo {
   CmdInfo(CmdInfo&& ci) = default;
 
   CmdInfo(bool _managed, const char* _kill_cmd, pid_t _cmd_pid, int _ok_code,
-      bool _kill_group, int _debug, int _kill_timeout)
+      bool _kill_group, int _debug, int _kill_timeout, bool _graph_group = false)
     : CmdInfo(cmd, _kill_cmd, _cmd_pid, getpgid(_cmd_pid), _ok_code, _managed,
           REDIRECT_NULL, REDIRECT_NONE, REDIRECT_NONE, _kill_timeout,
-          _kill_group, _debug)
+          _kill_group, _debug, _graph_group)
   {}
 
   CmdInfo(const CmdArgsList& _cmd, const char* _kill_cmd, pid_t _cmd_pid, pid_t _cmd_gid,
       int _success_code, bool _managed, int _stdin_fd, int _stdout_fd, int _stderr_fd,
-      int _kill_timeout, bool _kill_group, int _debug)
+      int _kill_timeout, bool _kill_group, int _debug, bool _graph_group = false,
+      std::vector<int> _stdout_fanout_fds = {}, std::vector<int> _stderr_fanout_fds = {},
+      bool _stdout_forced_for_fanout = false, bool _stderr_forced_for_fanout = false,
+      int _timeout_ms = -1, bool _want_stats = false)
     : cmd(_cmd)
     , cmd_pid(_cmd_pid)
     , cmd_gid(_cmd_gid)
     , kill_cmd(_kill_cmd)
     , kill_timeout(_kill_timeout)
     , kill_group(_kill_group)
+    , graph_group(_graph_group)
     , success_code(_success_code)
     , managed(_managed)
+    , want_stats(_want_stats)
     , dbg(_debug)
   {
-    stream_fd[STDIN_FILENO]  = _stdin_fd;
-    stream_fd[STDOUT_FILENO] = _stdout_fd;
-    stream_fd[STDERR_FILENO] = _stderr_fd;
+    stream_fd[STDIN_FILENO]      = _stdin_fd;
+    stream_fd[STDOUT_FILENO]     = _stdout_fd;
+    stream_fd[STDERR_FILENO]     = _stderr_fd;
+    fanout_fds[STDOUT_FILENO]    = std::move(_stdout_fanout_fds);
+    fanout_fds[STDERR_FILENO]    = std::move(_stderr_fanout_fds);
+    fanout_forced[STDOUT_FILENO] = _stdout_forced_for_fanout;
+    fanout_forced[STDERR_FILENO] = _stderr_forced_for_fanout;
+    start_time.now();
+    if (_timeout_ms >= 0)
+      run_deadline.set(start_time, _timeout_ms/1000, (_timeout_ms%1000)*1000);
   }
 
   void include_stream_fd(FdHandler &fdhandler);
@@ -417,12 +576,12 @@ struct Caps {
 
   static const std::string& value_to_string(cap_value_t v) {
     static const std::string s_empty;
-    auto it = s_cap_i2s.find(v);
+    auto   it =  s_cap_i2s.find(v);
     return it == s_cap_i2s.end() ? s_empty : it->second;
   }
 
   static const cap_value_t string_to_value(const std::string& cap) {
-    auto it = s_cap_s2i.find(cap);
+    auto   it =  s_cap_s2i.find(cap);
     return it == s_cap_s2i.end() ? -1 : it->second;
   }
 
@@ -485,6 +644,7 @@ void    process_pid_output(CmdInfo& ci, int stream_id, int maxsize = 4096);
 int     send_ok(int transId, long value = -1);
 int     send_pid(int transId, pid_t pid);
 int     send_pid_status_term(const PidStatusT& stat);
+int     send_pid_stats_term(pid_t pid, int64_t wall_ms, bool have_rusage, const struct rusage& ru);
 int     send_error_str(int transId, bool asAtom, const char* fmt, ...);
 int     send_pid_list(int transId, const MapChildrenT& children);
 int     send_ospid_output(int pid, const char* type, const char* data, int len);

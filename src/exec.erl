@@ -1,4 +1,4 @@
-%%% vim:ts=4:sw=4:et
+%%% vim:ts=2:sw=:et
 -module(exec).
 -moduledoc """
 OS shell command runner.
@@ -63,13 +63,13 @@ versa.
 
 %% External exports
 -export([
-    start/0, start/1, start_link/1, run/2, run/3,
-    run_graph/2,
-    run_link/2, run_link/3,
-    write_file/2,
-    manage/2, send/2, winsz/3, pty_opts/2,
-    which_children/0, kill/2,       setpgid/2, stop/1, stop_and_wait/2,
-    ospid/1, pid/1,   status/1,     signal/1,  signal_to_int/1, debug/1
+  start/0, start/1, start_link/1, run/2, run/3,
+  run_graph/2,
+  run_link/2, run_link/3,
+  write_file/2, open_pipe/0,
+  manage/2, send/2, winsz/3, pty_opts/2,
+  which_children/0, kill/2,       setpgid/2, stop/1, stop_and_wait/2,
+  ospid/1, pid/1,   status/1,     signal/1,  signal_to_int/1, debug/1
 ]).
 
 %% Internal exports
@@ -90,13 +90,13 @@ versa.
 -define(MAX_PACKET_SIZE, 16#FFFF - 200). % UINT16, and keep some bytes for the header (24 should be enough).
 
 -record(state, {
-    port,
-    last_trans  = 0,            % Last transaction number sent to port
-    trans       = queue:new(),  % Queue of outstanding transactions sent to port
-    limit_users = [],           % Restricted list of users allowed to run commands
-    registry,                   % Pids to notify when an OsPid exits
-    debug       = false,
-    root        = false
+  port,
+  last_trans  = 0,            % Last transaction number sent to port
+  trans       = queue:new(),  % Queue of outstanding transactions sent to port
+  limit_users = [],           % Restricted list of users allowed to run commands
+  registry,                   % Pids to notify when an OsPid exits
+  debug       = false,
+  root        = false
 }).
 
 -type exec_options() :: [exec_option()].
@@ -165,58 +165,58 @@ sudo pkg ins valgrind                # FreeBSD
     and its options (e.g. "/path/to/valgrind --leak-check=full")
 """.
 -type exec_option()  ::
-      debug
-    | {debug, integer()}
-    | root | {root, boolean()}
-    | verbose
-    | {args, [string()|binary(), ...]}
-    | {alarm, non_neg_integer()}
-    | {user, string()|binary()}
-    | {limit_users, [string()|binary(), ...]}
-    | {capabilities, all | [
-        chown            |
-        dac_override     |
-        dac_read_search  |
-        fowner           |
-        fsetid           |
-        kill             |
-        setgid           |
-        setuid           |
-        setpcap          |
-        linux_immutable  |
-        net_bind_service |
-        net_broadcast    |
-        net_admin        |
-        net_raw          |
-        ipc_lock         |
-        ipc_owner        |
-        sys_module       |
-        sys_rawio        |
-        sys_chroot       |
-        sys_ptrace       |
-        sys_pacct        |
-        sys_admin        |
-        sys_boot         |
-        sys_nice         |
-        sys_resource     |
-        sys_time         |
-        sys_tty_config   |
-        mknod            |
-        lease            |
-        audit_write      |
-        audit_control    |
-        setfcap          |
-        mac_override     |
-        mac_admin        |
-        syslog           |
-        wake_alarm       |
-        block_suspend
-      ]}
-    | {portexe, string()|binary()}
-    | {env, [{string()|binary(), string()|binary()|false}, ...]}
-    | valgrind
-    | {valgrind, string()}
-    .
+    debug
+  | {debug, integer()}
+  | root | {root, boolean()}
+  | verbose
+  | {args, [string()|binary(), ...]}
+  | {alarm, non_neg_integer()}
+  | {user, string()|binary()}
+  | {limit_users, [string()|binary(), ...]}
+  | {capabilities, all | [
+      chown            |
+      dac_override     |
+      dac_read_search  |
+      fowner           |
+      fsetid           |
+      kill             |
+      setgid           |
+      setuid           |
+      setpcap          |
+      linux_immutable  |
+      net_bind_service |
+      net_broadcast    |
+      net_admin        |
+      net_raw          |
+      ipc_lock         |
+      ipc_owner        |
+      sys_module       |
+      sys_rawio        |
+      sys_chroot       |
+      sys_ptrace       |
+      sys_pacct        |
+      sys_admin        |
+      sys_boot         |
+      sys_nice         |
+      sys_resource     |
+      sys_time         |
+      sys_tty_config   |
+      mknod            |
+      lease            |
+      audit_write      |
+      audit_control    |
+      setfcap          |
+      mac_override     |
+      mac_admin        |
+      syslog           |
+      wake_alarm       |
+      block_suspend
+    ]}
+  | {portexe, string()|binary()}
+  | {env, [{string()|binary(), string()|binary()|false}, ...]}
+  | valgrind
+  | {valgrind, string()}
+  .
 -export_type([exec_option/0, exec_options/0]).
 
 -doc """
@@ -314,6 +314,19 @@ Command options:
 - `kill_group`
   : At process exit kill the whole process group associated with this pid.
     The process group is obtained by the call to getpgid(3).
+- `{timeout, Ms::non_neg_integer()}`
+  : Wall-clock watchdog: kill the process (SIGTERM followed by SIGKILL after
+    `kill_timeout` seconds, same escalation as `stop/1`) if it is still running
+    `Ms` milliseconds after being spawned. Distinct from `kill_timeout`, which
+    only governs the escalation window *after* a stop/kill has already been
+    requested -- this timer starts counting from spawn time.
+- `stats`
+  : Deliver resource-usage statistics to the monitoring process just before the
+    final `'DOWN'` notification, in the form `{stats, OsPid::integer(), StatsMap}`
+    where `StatsMap` is a map with `wall_time_ms` (always present) and, on
+    platforms with `wait4(2)` support (Linux/macOS/BSD; absent on Cygwin/Solaris/
+    Windows), `utime_us`, `stime_us`, and `maxrss_kb` (process rusage captured at
+    reap time). On platforms without `wait4(2)`, only `wall_time_ms` is included.
 - `{group, GID}`
   : Sets the effective group ID of the spawned process. The value 0
     means to create a new group ID equal to the OS pid of the process.
@@ -409,33 +422,35 @@ Command options:
   : Enable debug printing in port program for this command
 """.
 -type cmd_option()  ::
-      monitor
-    | sync
-    | link
-    | {executable, string()|binary()}
-    | {cd, WorkDir::string()|binary()}
-    | {env, [string() | clear | {Name::string()|binary(), Val::string()|binary()|false}, ...]}
-    | {kill, KillCmd::string()|binary()}
-    | {kill_timeout, Sec::non_neg_integer()}
-    | kill_group
-    | {group, GID :: string()|binary() | integer()}
-    | {cgroup, Path :: string()|binary()}
-    | {cgroup, #{create := boolean(),
-                 clear := boolean(),
-                 limits := #{atom() | string() | binary() => string() | binary() | integer()}}}
-    | {user, RunAsUser :: string()|binary()}
-    | {nice, Priority :: integer()}
-    | {success_exit_code, ExitCode :: integer() }
-    | stdin  | {stdin, null | close | string()|binary()}
-    | stdout | stderr
-    | {stdout, stderr | output_dev_opt()}
-    | {stderr, stdout | output_dev_opt()}
-    | {stdout | stderr, string()|binary(), [output_file_opt()]}
-    | {winsz, {Rows::non_neg_integer(), Cols::non_neg_integer()}}
-    | pty | {pty, pty_opts()}
-    | pty_echo
-    | {capabilities, all | [capability()]}
-    | debug | {debug, integer()}.
+    monitor
+  | sync
+  | link
+  | {executable, string()|binary()}
+  | {cd, WorkDir::string()|binary()}
+  | {env, [string() | clear | {Name::string()|binary(), Val::string()|binary()|false}, ...]}
+  | {kill, KillCmd::string()|binary()}
+  | {kill_timeout, Sec::non_neg_integer()}
+  | kill_group
+  | {timeout, Ms::non_neg_integer()}
+  | stats
+  | {group, GID :: string()|binary() | integer()}
+  | {cgroup, Path :: string()|binary()}
+  | {cgroup, #{create := boolean(),
+                clear := boolean(),
+                limits := #{atom() | string() | binary() => string() | binary() | integer()}}}
+  | {user, RunAsUser :: string()|binary()}
+  | {nice, Priority :: integer()}
+  | {success_exit_code, ExitCode :: integer() }
+  | stdin  | {stdin, null | close | string()|binary()}
+  | stdout | stderr
+  | {stdout, stderr | output_dev_opt()}
+  | {stderr, stdout | output_dev_opt()}
+  | {stdout | stderr, string()|binary(), [output_file_opt()]}
+  | {winsz, {Rows::non_neg_integer(), Cols::non_neg_integer()}}
+  | pty | {pty, pty_opts()}
+  | pty_echo
+  | {capabilities, all | [capability()]}
+  | debug | {debug, integer()}.
 -export_type([cmd_option/0, cmd_options/0]).
 
 -doc """
@@ -499,15 +514,15 @@ capability options.
 
 """.
 -type capability() ::
-    chown | dac_override | dac_read_search | fowner |
-    fsetid | kill | setgid | setuid | setpcap |
-    linux_immutable | net_bind_service | net_broadcast |
-    net_admin | net_raw | ipc_lock | ipc_owner | sys_module |
-    sys_rawio | sys_chroot | sys_ptrace | sys_pacct |
-    sys_admin | sys_boot | sys_nice | sys_resource | sys_time |
-    sys_tty_config | mknod | lease | audit_write | audit_control | setfcap |
-    mac_override | mac_admin | syslog | wake_alarm | block_suspend | audit_read |
-    perfmon | bpf | checkpoint_restore.
+  chown | dac_override | dac_read_search | fowner |
+  fsetid | kill | setgid | setuid | setpcap |
+  linux_immutable | net_bind_service | net_broadcast |
+  net_admin | net_raw | ipc_lock | ipc_owner | sys_module |
+  sys_rawio | sys_chroot | sys_ptrace | sys_pacct |
+  sys_admin | sys_boot | sys_nice | sys_resource | sys_time |
+  sys_tty_config | mknod | lease | audit_write | audit_control | setfcap |
+  mac_override | mac_admin | syslog | wake_alarm | block_suspend | audit_read |
+  perfmon | bpf | checkpoint_restore.
 -export_type([capability/0]).
 
 -doc """
@@ -547,15 +562,15 @@ Defines file opening attributes:
 -export_type([ospid/0, osgid/0]).
 
 -type tty_char() ::
-    vintr  | vquit  | verase  | vkill  | veof     | veol    | veol2  |
-    vstart | vstop  | vsusp   | vdsusp | vreprint | vwerase | vlnext |
-    vflush | vswtch | vstatus | vdiscard.
+  vintr  | vquit  | verase  | vkill  | veof     | veol    | veol2  |
+  vstart | vstop  | vsusp   | vdsusp | vreprint | vwerase | vlnext |
+  vflush | vswtch | vstatus | vdiscard.
 -type tty_mode() ::
-    ignpar | parmrk | inpck  | istrip | inlcr   | igncr  | icrnl  | xcase   |
-    iuclc  | ixon   | ixany  | ixoff  | imaxbel | iutf8  | isig   | icanon  |
-    echo   | echoe  | echok  | echonl | noflsh  | tostop | iexten | echoctl |
-    echoke | pendin | opost  | olcuc  | onlcr   | ocrnl  | onocr  | onlret  |
-    cs7    | cs8    | parenb | parodd.
+  ignpar | parmrk | inpck  | istrip | inlcr   | igncr  | icrnl  | xcase   |
+  iuclc  | ixon   | ixany  | ixoff  | imaxbel | iutf8  | isig   | icanon  |
+  echo   | echoe  | echok  | echonl | noflsh  | tostop | iexten | echoctl |
+  echoke | pendin | opost  | olcuc  | onlcr   | ocrnl  | onocr  | onlret  |
+  cs7    | cs8    | parenb | parodd.
 -type tty_speed() :: tty_op_ispeed | tty_op_ospeed.
 
 -doc """
@@ -573,8 +588,8 @@ See [RFC4254](https://datatracker.ietf.org/doc/html/rfc4254#section-8).
     completeness. Not useful for pseudo terminals.
 """.
 -type pty_opt()   :: {tty_char(), byte()}
-    | {tty_mode(),  boolean()|0|1}
-    | {tty_speed(), non_neg_integer()}.
+  | {tty_mode(),  boolean()|0|1}
+  | {tty_speed(), non_neg_integer()}.
 
 -doc "List of pty options".
 -type pty_opts() :: list(pty_opt()).
@@ -589,8 +604,8 @@ Note that the port program requires `SHELL` environment variable to be set.
 """.
 -spec start_link(exec_options()) -> {ok, pid()} | {error, any()}.
 start_link(Options) when is_list(Options) ->
-    % Debug = {debug, [trace, log, statistics, {log_to_file, "./execserver.log"}]},
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [Options], []). % , [Debug]).
+  % Debug = {debug, [trace, log, statistics, {log_to_file, "./execserver.log"}]},
+  gen_server:start_link({local, ?MODULE}, ?MODULE, [Options], []). % , [Debug]).
 
 %%-------------------------------------------------------------------------
 -doc #{equiv => start_link/1}.
@@ -601,16 +616,16 @@ be set.
 """.
 -spec start() -> {ok, pid()} | {error, any()}.
 start() ->
-    start([]).
+  start([]).
 
 -spec start(exec_options()) -> {ok, pid()} | {error, any()}.
 start(Options) when is_list(Options) ->
-    case check_options(Options) of
-        ok ->
-            gen_server:start({local, ?MODULE}, ?MODULE, [Options], []);
-        {error, Reason} ->
-            {error, Reason}
-    end.
+  case check_options(Options) of
+    ok ->
+      gen_server:start({local, ?MODULE}, ?MODULE, [Options], []);
+    {error, Reason} ->
+      {error, Reason}
+  end.
 
 %%-------------------------------------------------------------------------
 -doc """
@@ -624,9 +639,9 @@ process's exit code and if it was killed by signal.
     {ok, pid(), ospid()} | {ok, [{stdout | stderr, [binary()]}]} | {error, any()}.
 run(Exe, Options, Timeout) when (is_binary(Exe)  orelse  is_list(Exe))
                         andalso is_list(Options) andalso is_integer(Timeout) ->
-    do_run({run, Exe, Options}, Options, Timeout).
+  do_run({run, Exe, Options}, Options, Timeout).
 run(Exe, Options) ->
-    run(Exe, Options, ?TIMEOUT).
+  run(Exe, Options, ?TIMEOUT).
 
 %%-------------------------------------------------------------------------
 -doc """
@@ -651,7 +666,7 @@ Current limitations:
 -spec run_graph([map()], cmd_options() | map()) ->
     {ok, pid(), ospid()} | {ok, [{stdout | stderr, [binary()]}]} | {error, any()}.
 run_graph(Graph, GraphOpts) when is_list(Graph) ->
-    exec_graph:run_graph(Graph, GraphOpts).
+  exec_graph:run_graph(Graph, GraphOpts).
 
 %%-------------------------------------------------------------------------
 -doc #{equiv => run/2}.
@@ -667,9 +682,9 @@ process's exit code and if it was killed by signal.
     {ok, pid(), ospid()} | {ok, [{stdout | stderr, [binary()]}]} | {error, any()}.
 run_link(Exe, Options, Timeout) when (is_binary(Exe)  orelse  is_list(Exe))
                              andalso is_list(Options) andalso is_integer(Timeout) ->
-    do_run({run, Exe, Options}, [link | Options], Timeout).
+  do_run({run, Exe, Options}, [link | Options], Timeout).
 run_link(Exe, Options) ->
-    run_link(Exe, Options, ?TIMEOUT).
+  run_link(Exe, Options, ?TIMEOUT).
 
 %%-------------------------------------------------------------------------
 -doc """
@@ -680,30 +695,30 @@ would be managed by erlexec.
 -spec manage(ospid() | port(), Options::cmd_options(), Timeout::integer()) ->
     {ok, pid(), ospid()} | {error, any()}.
 manage(Pid, Options, Timeout) when is_integer(Pid), is_integer(Timeout) ->
-    do_run({manage, Pid, Options}, Options, Timeout);
+  do_run({manage, Pid, Options}, Options, Timeout);
 manage(Port, Options, Timeout) when is_port(Port), is_integer(Timeout) ->
-    {os_pid, OsPid} = erlang:port_info(Port, os_pid),
-    manage(OsPid, Options, Timeout).
+  {os_pid, OsPid} = erlang:port_info(Port, os_pid),
+  manage(OsPid, Options, Timeout).
 manage(Port, Options) ->
-    manage(Port, Options, ?TIMEOUT).
+  manage(Port, Options, ?TIMEOUT).
 
 %%-------------------------------------------------------------------------
 -doc "Get a list of children managed by port program".
 -spec which_children() -> [ospid(), ...].
 which_children() ->
-    gen_server:call(?MODULE, {port, {list}}).
+  gen_server:call(?MODULE, {port, {list}}).
 
 %%-------------------------------------------------------------------------
 -doc "Send a `Signal` to a child `Pid`, `OsPid` or an Erlang `Port`".
 -spec kill(pid() | ospid(), atom()|integer()) -> ok | {error, any()}.
 kill(Pid, Signal) when is_atom(Signal) ->
-    kill(Pid, signal_to_int(Signal));
+  kill(Pid, signal_to_int(Signal));
 kill(Pid, Signal) when (is_pid(Pid) orelse is_integer(Pid))
-                       andalso is_integer(Signal) ->
-    gen_server:call(?MODULE, {port, {kill, Pid, Signal}});
+                        andalso is_integer(Signal) ->
+  gen_server:call(?MODULE, {port, {kill, Pid, Signal}});
 kill(Port, Signal) when is_port(Port) ->
-    {os_pid, Pid} = erlang:port_info(Port, os_pid),
-    kill(Pid, Signal).
+  {os_pid, Pid} = erlang:port_info(Port, os_pid),
+  kill(Pid, Signal).
 
 %%-------------------------------------------------------------------------
 -doc "Change group ID of a given `OsPid` to `Gid`".
@@ -723,10 +738,10 @@ killed.
 """.
 -spec stop(pid() | ospid() | port()) -> ok | {error, any()}.
 stop(Pid) when is_pid(Pid); is_integer(Pid) ->
-    gen_server:call(?MODULE, {port, {stop, Pid}}, 30000);
+  gen_server:call(?MODULE, {port, {stop, Pid}}, 30000);
 stop(Port) when is_port(Port) ->
-    {os_pid, Pid} = erlang:port_info(Port, os_pid),
-    stop(Pid).
+  {os_pid, Pid} = erlang:port_info(Port, os_pid),
+  stop(Pid).
 
 %%-------------------------------------------------------------------------
 -doc """
@@ -735,27 +750,25 @@ Terminate a managed `Pid`, `OsPid`, or `Port` process, like
 """.
 -spec stop_and_wait(pid() | ospid() | port(), integer()) -> term() | {error, any()}.
 stop_and_wait(Port, Timeout) when is_port(Port) ->
-    {os_pid, OsPid} = erlang:port_info(Port, os_pid),
-    stop_and_wait(OsPid, Timeout);
+  {os_pid, OsPid} = erlang:port_info(Port, os_pid),
+  stop_and_wait(OsPid, Timeout);
 
 stop_and_wait(OsPid, Timeout) when is_integer(OsPid) ->
-    case ets:lookup(exec_mon, OsPid) of
-    [{_, Pid}] ->
-        stop_and_wait(Pid, Timeout);
-    [] ->
-        {error, not_found}
-    end;
+  case ets:lookup(exec_mon, OsPid) of
+    [{_, Pid}] -> stop_and_wait(Pid, Timeout);
+    []         -> {error, not_found}
+  end;
 
 stop_and_wait(Pid, Timeout) when is_pid(Pid) ->
-    gen_server:call(?MODULE, {port, {stop, Pid}}, Timeout),
-    receive
+  gen_server:call(?MODULE, {port, {stop, Pid}}, Timeout),
+  receive
     {'DOWN', _Ref, process, Pid, ExitStatus} -> ExitStatus
     after Timeout                            -> {error, timeout}
-    end;
+  end;
 
 stop_and_wait(Port, Timeout) when is_port(Port) ->
-    {os_pid, Pid} = erlang:port_info(Port, os_pid),
-    stop_and_wait(Pid, Timeout).
+  {os_pid, Pid} = erlang:port_info(Port, os_pid),
+  stop_and_wait(Pid, Timeout).
 
 %%-------------------------------------------------------------------------
 -doc """
@@ -764,13 +777,13 @@ previously by running the run/2 or run_link/2 commands.
 """.
 -spec ospid(pid()) -> ospid() | {error, Reason::any()}.
 ospid(Pid) when is_pid(Pid) ->
-    Ref = make_ref(),
-    Pid ! {{self(), Ref}, ospid},
-    receive
+  Ref = make_ref(),
+  Pid ! {{self(), Ref}, ospid},
+  receive
     {Ref, Reply} -> Reply;
     Other        -> Other
     after 5000   -> {error, timeout}
-    end.
+  end.
 
 %%-------------------------------------------------------------------------
 -doc """
@@ -796,13 +809,29 @@ send(OsPid, <<Chunk:(?MAX_PACKET_SIZE)/binary, Tail/binary>>)
 send(OsPid, Data)
   when (is_integer(OsPid) orelse is_pid(OsPid)),
        (is_binary(Data)   orelse Data =:= eof) ->
-    gen_server:call(?MODULE, {port, {send, OsPid, Data}}).
+  gen_server:call(?MODULE, {port, {send, OsPid, Data}}).
 
 %%-------------------------------------------------------------------------
 -doc "Append binary data to a file via the port process.".
 -spec write_file(Path :: string() | binary(), Data :: binary()) -> ok.
 write_file(Path, Data) when (is_list(Path) orelse is_binary(Path)), is_binary(Data) ->
-    gen_server:call(?MODULE, {port, {write_file, Path, Data}}).
+  gen_server:call(?MODULE, {port, {write_file, Path, Data}}).
+
+%%-------------------------------------------------------------------------
+-doc """
+Create an OS pipe via the port process, returning its read and write
+file descriptors.
+
+This is primarily intended for internal use by `run_graph/2` to wire up
+native sibling-to-sibling piping between graph tasks (connecting one
+task's stdout/stderr directly to another task's stdin, bypassing Erlang
+entirely for that stream's data). The returned fds are later passed back
+to `run/2` via the `{stdin_from_sibling, ReadFd}` and
+`{stdout_sibling_pipes, [{ConsumerId, WriteFd}, ...]}` (or `stderr_sibling_pipes`) options.
+""".
+-spec open_pipe() -> {ok, ReadFd :: integer(), WriteFd :: integer()} | {error, term()}.
+open_pipe() ->
+  gen_server:call(?MODULE, {port, {open_pipe}}).
 
 %%-------------------------------------------------------------------------
 -doc """
@@ -813,9 +842,9 @@ The process must have been created with the `pty` option.
 -spec winsz(OsPid :: ospid() | pid(), integer(), integer()) -> ok | {error, Reason::any()}.
 winsz(OsPid, Rows, Cols)
   when (is_integer(OsPid) orelse is_pid(OsPid)),
-       is_integer(Rows),
-       is_integer(Cols) ->
-    gen_server:call(?MODULE, {port, {winsz, OsPid, Rows, Cols}}).
+        is_integer(Rows),
+        is_integer(Cols) ->
+  gen_server:call(?MODULE, {port, {winsz, OsPid, Rows, Cols}}).
 
 %%-------------------------------------------------------------------------
 -doc """
@@ -826,14 +855,14 @@ The process must have been created with the `pty` option.
 -spec pty_opts(OsPid :: ospid() | pid(), pty_opts()) -> ok | {error, Reason::any()}.
 pty_opts(OsPid, Opts)
   when (is_integer(OsPid) orelse is_pid(OsPid)),
-       is_list(Opts) ->
-    gen_server:call(?MODULE, {port, {pty_opts, OsPid, Opts}}).
+        is_list(Opts) ->
+  gen_server:call(?MODULE, {port, {pty_opts, OsPid, Opts}}).
 
 %%-------------------------------------------------------------------------
 -doc "Set debug level of the port process".
 -spec debug(Level::integer()) -> {ok, OldLevel::integer()} | {error, timeout}.
 debug(Level) when is_integer(Level), Level >= 0, Level =< 10 ->
-    gen_server:call(?MODULE, {port, {debug, Level}}).
+  gen_server:call(?MODULE, {port, {debug, Level}}).
 
 %%-------------------------------------------------------------------------
 -doc """
@@ -846,16 +875,16 @@ was generated.
         {status, ExitStatus :: integer()} |
         {signal, Signal :: integer() | atom(), Core :: boolean()}.
 status(Status) when is_integer(Status) ->
-    TermSignal = Status band 16#7F,
-    IfSignaled = ((TermSignal + 1) bsr 1) > 0,
-    ExitStatus = (Status band 16#FF00) bsr 8,
-    case IfSignaled of
+  TermSignal = Status band 16#7F,
+  IfSignaled = ((TermSignal + 1) bsr 1) > 0,
+  ExitStatus = (Status band 16#FF00) bsr 8,
+  case IfSignaled of
     true ->
-        CoreDump = (Status band 16#80) =:= 16#80,
-        {signal, signal(TermSignal), CoreDump};
+      CoreDump = (Status band 16#80) =:= 16#80,
+      {signal, signal(TermSignal), CoreDump};
     false ->
-        {status, ExitStatus}
-    end.
+      {status, ExitStatus}
+  end.
 
 %%-------------------------------------------------------------------------
 -doc "Convert a signal number to atom".
@@ -930,57 +959,57 @@ signal_to_int(sigrtmax)   -> 64.
 %%-------------------------------------------------------------------------
 -spec default() -> [{atom(), term()}].
 default() ->
-    [{debug, 0},        % Debug mode of the port program.
-     {verbose, false},  % Verbose print of events on the Erlang side.
-     {root, false},     % Allow running processes as root.
-     {args, ""},        % Extra arguments that can be passed to port program
-     {alarm, 12},
-     {portexe, noportexe},
-     {user, ""},        % Run port program as this user
-     {limit_users, []}, % Restricted list of users allowed to run commands
-     {capabilities, []}]. % Capabilities to set on port program (empty = defaults)
+  [{debug, 0},        % Debug mode of the port program.
+   {verbose, false},  % Verbose print of events on the Erlang side.
+   {root, false},     % Allow running processes as root.
+   {args, ""},        % Extra arguments that can be passed to port program
+   {alarm, 12},
+   {portexe, noportexe},
+   {user, ""},        % Run port program as this user
+   {limit_users, []}, % Restricted list of users allowed to run commands
+   {capabilities, []}]. % Capabilities to set on port program (empty = defaults)
 default(portexe) ->
-    % Retrieve the Priv directory
-    case code:priv_dir(erlexec) of
+  % Retrieve the Priv directory
+  case code:priv_dir(erlexec) of
     {error, _} ->
-        error_logger:warning_msg("Priv directory not available", []),
-        "";
+      error_logger:warning_msg("Priv directory not available", []),
+      "";
     Priv ->
-        % Find all ports using wildcard for resiliency
-        case filelib:wildcard("*/exec-port", Priv) of
+      % Find all ports using wildcard for resiliency
+      case filelib:wildcard("*/exec-port", Priv) of
         [Port] ->
-            % Exactly one match, use it as is (could be wrong arch)
-            filename:join([Priv, Port]);
+          % Exactly one match, use it as is (could be wrong arch)
+          filename:join([Priv, Port]);
         [] ->
-            error_logger:warning_msg("No exec-port files found in ~p directory", [Priv]),
-            "";
+          error_logger:warning_msg("No exec-port files found in ~p directory", [Priv]),
+          "";
         Ports ->
-            % More than one match: try to find one matching system architecture
-            Arch = erlang:system_info(system_architecture),
-            % Check if the Path contains Arch as a subdirectory component
-            case [P || P <- Ports, string:str(P, Arch) > 0] of
+          % More than one match: try to find one matching system architecture
+          Arch = erlang:system_info(system_architecture),
+          % Check if the Path contains Arch as a subdirectory component
+          case [P || P <- Ports, string:str(P, Arch) > 0] of
             [Match] ->
-                filename:join([Priv, Match]);
+              filename:join([Priv, Match]);
             _ ->
-                error_logger:warning_msg("Multiple exec-port files found but none match architecture ~s", [Arch]),
-                ""
-            end
-        end
-    end;
+              error_logger:warning_msg("Multiple exec-port files found but none match architecture ~s", [Arch]),
+              ""
+          end
+      end
+  end;
 default(valgrind) ->
-    {{Y,M,D},{H,Mi,S}} = {date(), time()},
-    Exe =
-        case os:find_executable("valgrind") of
-        false ->
-            error("ERROR: valgrind not found! Please use package manager to install it!");
-        Str ->
-            Str
-        end,
-    T = lists:flatten(io_lib:format("~w~.2.0w~.2.0w~.2.0w~.2.0w~.2.0w", [Y,M,D,H,Mi,S])),
-    Exe ++ " --leak-check=full --show-leak-kinds=all " ++
-    "--track-origins=yes --verbose --log-file=valgrind." ++ T ++ ".log ";
+  {{Y,M,D},{H,Mi,S}} = {date(), time()},
+  Exe =
+    case os:find_executable("valgrind") of
+      false ->
+          error("ERROR: valgrind not found! Please use package manager to install it!");
+      Str ->
+          Str
+    end,
+  T = lists:flatten(io_lib:format("~w~.2.0w~.2.0w~.2.0w~.2.0w~.2.0w", [Y,M,D,H,Mi,S])),
+  Exe ++ " --leak-check=full --show-leak-kinds=all " ++
+  "--track-origins=yes --verbose --log-file=valgrind." ++ T ++ ".log ";
 default(Option) ->
-    proplists:get_value(Option, default()).
+  proplists:get_value(Option, default()).
 
 %%%----------------------------------------------------------------------
 %%% Callback functions from gen_server
@@ -994,97 +1023,97 @@ default(Option) ->
 %%          {stop, Reason}
 %%-----------------------------------------------------------------------
 init([Options]) ->
-    process_flag(trap_exit, true),
-    Opts0 = proplists:expand([{debug,   [{debug, 1}]},
-                              {root,    [{root, true}]},
-                              {verbose, [{verbose, true}]}], Options),
-    Opts1 = [T || T = {O,_} <- Opts0,
-                lists:member(O, [debug, verbose, root, args, alarm, user, valgrind])],
-    Opts  = proplists:normalize(Opts1, [{aliases, [{args, ''}]}]),
-    Args0 = lists:foldl(
-        fun
-           (Opt, Acc) when is_atom(Opt) ->
-                [" -"++atom_to_list(Opt)++" " | Acc];
-           ({Opt, I}, Acc) when is_atom(I) ->
-                [" -"++atom_to_list(Opt)++" "++atom_to_list(I) | Acc];
-           ({Opt, I}, Acc) when is_list(I), I /= ""; is_binary(I), I /= <<"">> ->
-                [" -"++atom_to_list(Opt)++" "++to_list(I) | Acc];
-           ({Opt, I}, Acc) when is_integer(I) ->
-                [" -"++atom_to_list(Opt)++" "++integer_to_list(I) | Acc];
-           (_, Acc) -> Acc
-        end, [], Opts),
-    Exe0  = case proplists:get_value(portexe, Options, noportexe) of
+  process_flag(trap_exit, true),
+  Opts0 = proplists:expand([{debug,   [{debug, 1}]},
+                            {root,    [{root, true}]},
+                            {verbose, [{verbose, true}]}], Options),
+  Opts1 = [T || T = {O,_} <- Opts0,
+              lists:member(O, [debug, verbose, root, args, alarm, user, valgrind])],
+  Opts  = proplists:normalize(Opts1, [{aliases, [{args, ''}]}]),
+  Args0 = lists:foldl(
+      fun
+          (Opt, Acc) when is_atom(Opt) ->
+              [" -"++atom_to_list(Opt)++" " | Acc];
+          ({Opt, I}, Acc) when is_atom(I) ->
+              [" -"++atom_to_list(Opt)++" "++atom_to_list(I) | Acc];
+          ({Opt, I}, Acc) when is_list(I), I /= ""; is_binary(I), I /= <<"">> ->
+              [" -"++atom_to_list(Opt)++" "++to_list(I) | Acc];
+          ({Opt, I}, Acc) when is_integer(I) ->
+              [" -"++atom_to_list(Opt)++" "++integer_to_list(I) | Acc];
+          (_, Acc) -> Acc
+      end, [], Opts),
+  Exe0  = case proplists:get_value(portexe, Options, noportexe) of
             noportexe -> default(portexe);
             UserExe   -> to_list(UserExe)
-            end,
-    Exe1  = ?FMT("~p", [Exe0]),
-    Args  = lists:flatten(Args0),
-    Users = case proplists:get_value(limit_users, Options, default(limit_users)) of
+          end,
+  Exe1  = ?FMT("~p", [Exe0]),
+  Args  = lists:flatten(Args0),
+  Users = case proplists:get_value(limit_users, Options, default(limit_users)) of
             [] -> [];
             L  -> [to_list(I) || I <- L]
-            end,
-    User  = to_list(proplists:get_value(user,Options)),
-    Debug = proplists:get_value(verbose,     Options, default(verbose)),
-    Root  = proplists:get_value(root,        Options, default(root)),
-    Caps  = case proplists:get_value(capabilities, Options, default(capabilities)) of
+          end,
+  User  = to_list(proplists:get_value(user,Options)),
+  Debug = proplists:get_value(verbose,     Options, default(verbose)),
+  Root  = proplists:get_value(root,        Options, default(root)),
+  Caps  = case proplists:get_value(capabilities, Options, default(capabilities)) of
             all -> " -cap all";
             []  -> "";
             CapList when is_list(CapList) ->
                 CL = exec_util:validate_capabilities(CapList),
                 " -cap " ++ lists:flatten(lists:join(",", [atom_to_list(C) || C <- CL]))
-            end,
-    Valgr = case proplists:get_value(valgrind, Options) of
+          end,
+  Valgr = case proplists:get_value(valgrind, Options) of
             true                  -> default(valgrind);
             Vg when is_list(Vg)   -> Vg ++ " ";
             Vg when is_binary(Vg) -> binary_to_list(Vg) ++ " ";
             undefined             -> []
-            end,
-    Env   = case proplists:get_value(env, Options) of
+          end,
+  Env   = case proplists:get_value(env, Options) of
             undefined -> [];
             Other     -> [{env, parse_env(Other)}]
-            end,
-    % When instructing to run as root, check that the port program has
-    % the SUID bit set or else use "sudo"
-    {SUID,NeedSudo} = is_suid_and_root_owner(Exe0),
-    EffUsr= os:getenv("USER"),
-    IsRoot= EffUsr =:= "root",
-    Exe   = if not Root ->
-                Valgr++Exe1++Args++Caps;
-            Root, IsRoot, User/=undefined, User/="", ((SUID     andalso Users/=[]) orelse
-                                                      (not SUID andalso Users==[])) ->
-                Valgr++Exe1++Args++Caps;
-            %Root, not IsRoot, NeedSudo, User/=undefined, User/="" ->
-                % Asked to enable root, but running as non-root, and have no SUID: use sudo.
-            %    lists:append(["/usr/bin/sudo -u ", to_list(User), " ", Exe1, Args, Caps]);
-            Root, not IsRoot, NeedSudo, ((User/=undefined andalso User/="") orelse
-                                         (EffUsr/=User andalso User/=undefined
-                                                       andalso User/=root
-                                                       andalso User/="root")) ->
-                % Asked to enable root, but running as non-root, and have SUID: use sudo.
-                lists:append(["/usr/bin/sudo ", Valgr, Exe1, Args, Caps]);
-            true ->
-                Valgr++Exe1++Args++Caps
-            end,
-    debug(Debug, "exec: ~s~sport program: ~s\n~s",
-        [if SUID -> "[SUID] "; true -> "" end,
-         if (Root orelse IsRoot) andalso User =:= [] -> "[ROOT] "; true -> "" end,
-         Exe,
-         if Env =/= [] -> "  env: "++?FMT("~p", Env)++"\n"; true -> "" end]),
-    try
-        PortOpts = Env ++ [binary, exit_status, {packet, 2}, hide],
-        Port = erlang:open_port({spawn, Exe}, PortOpts),
-        receive
-            {Port, {exit_status, Status}} ->
-                {stop, {port_exited_with_status, Status}}
-        after 350 ->
-            Tab = ets:new(exec_mon, [protected,named_table]),
-            {ok, #state{port=Port, limit_users=Users, debug=Debug, registry=Tab, root=Root}}
-        end
-    catch
-        ?EXCEPTION(_, Reason, Stacktrace) ->
-            {stop, ?FMT("Error starting port '~s': ~200p\n  ~p\n",
-                [Exe, Reason, ?GET_STACK(Stacktrace)])}
-    end.
+          end,
+  % When instructing to run as root, check that the port program has
+  % the SUID bit set or else use "sudo"
+  {SUID,NeedSudo} = is_suid_and_root_owner(Exe0),
+  EffUsr= os:getenv("USER"),
+  IsRoot= EffUsr =:= "root",
+  Exe   = if not Root ->
+            Valgr++Exe1++Args++Caps;
+          Root, IsRoot, User/=undefined, User/="", ((SUID     andalso Users/=[]) orelse
+                                                    (not SUID andalso Users==[])) ->
+            Valgr++Exe1++Args++Caps;
+          %Root, not IsRoot, NeedSudo, User/=undefined, User/="" ->
+          % Asked to enable root, but running as non-root, and have no SUID: use sudo.
+          %    lists:append(["/usr/bin/sudo -u ", to_list(User), " ", Exe1, Args, Caps]);
+          Root, not IsRoot, NeedSudo, ((User/=undefined andalso User/="") orelse
+                                       (EffUsr/=User andalso User/=undefined
+                                                     andalso User/=root
+                                                     andalso User/="root")) ->
+            % Asked to enable root, but running as non-root, and have SUID: use sudo.
+            lists:append(["/usr/bin/sudo ", Valgr, Exe1, Args, Caps]);
+          true ->
+            Valgr++Exe1++Args++Caps
+          end,
+  debug(Debug, "exec: ~s~sport program: ~s\n~s",
+    [if SUID -> "[SUID] "; true -> "" end,
+     if (Root orelse IsRoot) andalso User =:= [] -> "[ROOT] "; true -> "" end,
+     Exe,
+     if Env =/= [] -> "  env: "++?FMT("~p", Env)++"\n"; true -> "" end]),
+  try
+    PortOpts = Env ++ [binary, exit_status, {packet, 2}, hide],
+    Port = erlang:open_port({spawn, Exe}, PortOpts),
+    receive
+      {Port, {exit_status, Status}} ->
+          {stop, {port_exited_with_status, Status}}
+    after 350 ->
+      Tab = ets:new(exec_mon, [protected,named_table]),
+      {ok, #state{port=Port, limit_users=Users, debug=Debug, registry=Tab, root=Root}}
+    end
+  catch
+    ?EXCEPTION(_, Reason, Stacktrace) ->
+        {stop, ?FMT("Error starting port '~s': ~200p\n  ~p\n",
+            [Exe, Reason, ?GET_STACK(Stacktrace)])}
+  end.
 
 %%----------------------------------------------------------------------
 %% Func: handle_call/3
@@ -1096,26 +1125,26 @@ init([Options]) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%----------------------------------------------------------------------
 handle_call({port, Instruction}, From, #state{last_trans=Last} = State) ->
-    try is_port_command(Instruction, element(1, From), State) of
+  try is_port_command(Instruction, element(1, From), State) of
     {ok, Term} ->
-        erlang:port_command(State#state.port, term_to_binary({0, Term})),
-        {reply, ok, State};
+      erlang:port_command(State#state.port, term_to_binary({0, Term})),
+      {reply, ok, State};
     {ok, Term, Link, Sync, PidOpts} ->
-        Next = next_trans(Last),
-        erlang:port_command(State#state.port, term_to_binary({Next, Term})),
-        {noreply, State#state{trans = queue:in({Next, From, Link, Sync, PidOpts}, State#state.trans)}}
+      Next = next_trans(Last),
+      erlang:port_command(State#state.port, term_to_binary({Next, Term})),
+      {noreply, State#state{trans = queue:in({Next, From, Link, Sync, PidOpts}, State#state.trans)}}
     catch _:{error, Why} ->
-        {reply, {error, Why}, State}
-    end;
+      {reply, {error, Why}, State}
+  end;
 
 handle_call({pid, OsPid}, _From, State) ->
-    case ets:lookup(exec_mon, OsPid) of
+  case ets:lookup(exec_mon, OsPid) of
     [{_, Pid}] -> {reply, Pid, State};
     _          -> {reply, undefined, State}
-    end;
+  end;
 
 handle_call(Request, _From, _State) ->
-    {stop, {not_implemented, Request}}.
+  {stop, {not_implemented, Request}}.
 
 %%----------------------------------------------------------------------
 %% Func: handle_cast/2
@@ -1124,7 +1153,7 @@ handle_call(Request, _From, _State) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%----------------------------------------------------------------------
 handle_cast(_Msg, State) ->
-    {noreply, State}.
+  {noreply, State}.
 
 %%----------------------------------------------------------------------
 %% Func: handle_info/2
@@ -1133,47 +1162,59 @@ handle_cast(_Msg, State) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%----------------------------------------------------------------------
 handle_info({Port, {data, Bin}}, #state{port=Port, debug=Debug} = State) ->
-    Msg = binary_to_term(Bin),
-    debug(Debug, "~w got msg from port: ~p\n", [?MODULE, Msg]),
-    case Msg of
+  Msg = binary_to_term(Bin),
+  debug(Debug, "~w got msg from port: ~p\n", [?MODULE, Msg]),
+  case Msg of
     {N, Reply} when N =/= 0 ->
-        case get_transaction(State#state.trans, N) of
+      case get_transaction(State#state.trans, N) of
         {true, {Pid,_} = From, MonType, Sync, PidOpts, Q} ->
-            NewReply = maybe_add_monitor(Reply, Pid, MonType, Sync, PidOpts, Debug),
-            gen_server:reply(From, NewReply);
+          NewReply = maybe_add_monitor(Reply, Pid, MonType, Sync, PidOpts, Debug),
+          gen_server:reply(From, NewReply);
         {false, Q} ->
-            ok
-        end,
+          ok
+      end,
         {noreply, State#state{trans=Q}};
     {0, {Stream, OsPid, Data}} when Stream =:= stdout; Stream =:= stderr ->
-        send_to_ospid_owner(OsPid, {Stream, Data}),
-        {noreply, State};
+      send_to_ospid_owner(OsPid, {Stream, Data}),
+      {noreply, State};
+    {0, {pid_stats, OsPid, WallMs, HaveRusage, UtimeUs, StimeUs, MaxrssKb}} ->
+      %% Delivered just before the exit_status for the same OsPid (port write-order
+      %% guarantees it arrives first). See exec:cmd_option()'s `stats` doc.
+      StatsMap = case HaveRusage of
+        true ->
+          #{wall_time_ms => WallMs, utime_us => UtimeUs, stime_us => StimeUs,
+            maxrss_kb => MaxrssKb};
+        false ->
+          #{wall_time_ms => WallMs}
+      end,
+      send_to_ospid_owner(OsPid, {stats, StatsMap}),
+      {noreply, State};
     {0, {exit_status, OsPid, Status}} ->
-        debug(Debug, "Pid ~w exited with status: ~s{~w,~w}\n",
+      debug(Debug, "Pid ~w exited with status: ~s{~w,~w}\n",
             [OsPid, if (((Status band 16#7F)+1) bsr 1) > 0 -> "signaled "; true -> "" end,
-             (Status band 16#FF00 bsr 8), Status band 127]),
-        notify_ospid_owner(OsPid, Status),
-        {noreply, State};
+            (Status band 16#FF00 bsr 8), Status band 127]),
+      notify_ospid_owner(OsPid, Status),
+      {noreply, State};
     {0, ok} ->
-        {noreply, State};
+      {noreply, State};
     {0, Ignore} ->
-        error_logger:warning_msg("~w [~w] unknown msg: ~p\n", [self(), ?MODULE, Ignore]),
-        {noreply, State}
-    end;
+      error_logger:warning_msg("~w [~w] unknown msg: ~p\n", [self(), ?MODULE, Ignore]),
+      {noreply, State}
+  end;
 
 handle_info({Port, {exit_status, 0}}, #state{port=Port} = State) ->
-    {stop, normal, State};
+  {stop, normal, State};
 handle_info({Port, {exit_status, Status}}, #state{port=Port} = State) ->
-    {stop, {exit_status, Status}, State};
+  {stop, {exit_status, Status}, State};
 handle_info({'EXIT', Port, Reason}, #state{port=Port} = State) ->
-    {stop, Reason, State};
+  {stop, Reason, State};
 handle_info({'EXIT', Pid, Reason}, State) ->
-    % OsPid's Pid owner died. Kill linked OsPid.
-    do_unlink_ospid(Pid, Reason, State),
-    {noreply, State};
+  % OsPid's Pid owner died. Kill linked OsPid.
+  do_unlink_ospid(Pid, Reason, State),
+  {noreply, State};
 handle_info(_Info, State) ->
-    error_logger:info_msg("~w - unhandled message: ~p\n", [?MODULE, _Info]),
-    {noreply, State}.
+  error_logger:info_msg("~w - unhandled message: ~p\n", [?MODULE, _Info]),
+  {noreply, State}.
 
 %%----------------------------------------------------------------------
 %% Func: code_change/3
@@ -1181,7 +1222,7 @@ handle_info(_Info, State) ->
 %% Returns: {ok, NewState}
 %%----------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
+  {ok, State}.
 
 %%----------------------------------------------------------------------
 %% Func: terminate/2
@@ -1189,16 +1230,16 @@ code_change(_OldVsn, State, _Extra) ->
 %% Returns: any (ignored by gen_server)
 %%----------------------------------------------------------------------
 terminate(_Reason, State) ->
-    try
-        erlang:port_command(State#state.port, term_to_binary({0, {shutdown}})),
-        case wait_port_exit(State#state.port) of
-        0 -> ok;
-        S -> error_logger:warning_msg("~w - exec process terminated (status: ~w)\n",
-                [self(), S])
-        end
-    catch _:_ ->
-        ok
-    end.
+  try
+    erlang:port_command(State#state.port, term_to_binary({0, {shutdown}})),
+    case wait_port_exit(State#state.port) of
+      0 -> ok;
+      S -> error_logger:warning_msg("~w - exec process terminated (status: ~w)\n",
+                                    [self(), S])
+    end
+  catch _:_ ->
+    ok
+  end.
 
 to_list(undefined)           -> [];
 to_list(A) when is_atom(A)   -> atom_to_list(A);
@@ -1206,12 +1247,12 @@ to_list(L) when is_list(L)   -> L;
 to_list(B) when is_binary(B) -> binary_to_list(B).
 
 wait_port_exit(Port) ->
-    receive
+  receive
     {Port,{exit_status,Status}} ->
-        Status;
+      Status;
     _ ->
-        wait_port_exit(Port)
-    end.
+      wait_port_exit(Port)
+  end.
 
 %%%---------------------------------------------------------------------
 %%% Internal functions
@@ -1220,37 +1261,37 @@ wait_port_exit(Port) ->
 -spec do_run(Cmd::any(), Options::cmd_options(), Timeout::integer()) ->
     {ok, pid(), ospid()} | {ok, [{stdout | stderr, [binary()]}]} | {error, any()}.
 do_run(Cmd, Options, Timeout) when is_integer(Timeout) ->
-    Link = case {proplists:get_bool(link,    Options),
-                 proplists:get_bool(monitor, Options)} of
-           {true, _} -> link;
-           {_, true} -> monitor;
-           _         -> undefined
-           end,
-    Sync = proplists:get_value(sync, Options, false),
-    Cmd2 = {port, {Cmd, Link, Sync}},
-    case gen_server:call(?MODULE, Cmd2, Timeout) of
+  Link = case {proplists:get_bool(link,    Options),
+                proplists:get_bool(monitor, Options)} of
+          {true, _} -> link;
+          {_, true} -> monitor;
+          _         -> undefined
+          end,
+  Sync = proplists:get_value(sync, Options, false),
+  Cmd2 = {port, {Cmd, Link, Sync}},
+  case gen_server:call(?MODULE, Cmd2, Timeout) of
     {ok, Pid, OsPid, _Sync = true} ->
-        wait_for_ospid_exit(OsPid, Pid, [], []);
+      wait_for_ospid_exit(OsPid, Pid, [], []);
     {ok, Pid, OsPid, _} ->
-        {ok, Pid, OsPid};
+      {ok, Pid, OsPid};
     {error, Reason} ->
-        {error, Reason}
-    end.
+      {error, Reason}
+  end.
 
 wait_for_ospid_exit(OsPid, Pid, OutAcc, ErrAcc) ->
-    % Note when a monitored process exits
-    receive
+  % Note when a monitored process exits
+  receive
     {stdout, OsPid, Data} ->
-        wait_for_ospid_exit(OsPid, Pid, [Data | OutAcc], ErrAcc);
+      wait_for_ospid_exit(OsPid, Pid, [Data | OutAcc], ErrAcc);
     {stderr, OsPid, Data} ->
-        wait_for_ospid_exit(OsPid, Pid, OutAcc, [Data | ErrAcc]);
+      wait_for_ospid_exit(OsPid, Pid, OutAcc, [Data | ErrAcc]);
     {'DOWN', OsPid, process, Pid, normal} ->
-        {ok, sync_res(OutAcc, ErrAcc)};
+      {ok, sync_res(OutAcc, ErrAcc)};
     {'DOWN', OsPid, process, Pid, noproc} ->
-        {ok, sync_res(OutAcc, ErrAcc)};
+      {ok, sync_res(OutAcc, ErrAcc)};
     {'DOWN', OsPid, process, Pid, {exit_status,_}=R} ->
-        {error, [R | sync_res(OutAcc, ErrAcc)]}
-    end.
+      {error, [R | sync_res(OutAcc, ErrAcc)]}
+  end.
 
 sync_res([], []) -> [];
 sync_res([], L)  -> [{stderr, lists:reverse(L)}];
@@ -1258,16 +1299,16 @@ sync_res(LO, LE) -> [{stdout, lists:reverse(LO)} | sync_res([], LE)].
 
 %% Add a link for Pid to OsPid if requested.
 maybe_add_monitor({pid, OsPid}, Pid, MonType, Sync, PidOpts, Debug) when is_integer(OsPid) ->
-    % This is a reply to a run/run_link command. The port program indicates
-    % of creating a new OsPid process.
-    % Spawn a light-weight process responsible for monitoring this OsPid
-    Self = self(),
-    LWP  = spawn_link(fun() -> ospid_init(Pid, OsPid, MonType, Sync, Self, PidOpts, Debug) end),
-    debug(Debug, "~w added monitor ~p for OsPid ~w", [?MODULE, LWP, OsPid]),
-    ets:insert(exec_mon, [{OsPid, LWP}, {LWP, OsPid}]),
-    {ok, LWP, OsPid, Sync};
+  % This is a reply to a run/run_link command. The port program indicates
+  % of creating a new OsPid process.
+  % Spawn a light-weight process responsible for monitoring this OsPid
+  Self = self(),
+  LWP  = spawn_link(fun() -> ospid_init(Pid, OsPid, MonType, Sync, Self, PidOpts, Debug) end),
+  debug(Debug, "~w added monitor ~p for OsPid ~w", [?MODULE, LWP, OsPid]),
+  ets:insert(exec_mon, [{OsPid, LWP}, {LWP, OsPid}]),
+  {ok, LWP, OsPid, Sync};
 maybe_add_monitor(Reply, _Pid, _MonType, _Sync, _PidOpts, _Debug) ->
-    Reply.
+  Reply.
 
 %%----------------------------------------------------------------------
 %% Every OsPid is associated with an Erlang process started with
@@ -1280,128 +1321,143 @@ maybe_add_monitor(Reply, _Pid, _MonType, _Sync, _PidOpts, _Debug) ->
                  Sync::boolean(), Parent::pid(), list(), Debug::boolean()) ->
         no_return().
 ospid_init(Pid, OsPid, LinkType, Sync, Parent, PidOpts, Debug) ->
-    process_flag(trap_exit, true),
-    StdOut = proplists:get_value(stdout, PidOpts),
-    StdErr = proplists:get_value(stderr, PidOpts),
-    % The caller pid that requested to run the OsPid command & link to it.
-    LinkType =:= link andalso link(Pid),
-    % We need to emulate a monitor by sending the 'DOWN' message to the
-    % caller's Pid if it requested to monitor or it's a synchronous call:
-    IsMon  = LinkType =:= monitor orelse Sync =:= true,
-    ospid_loop({Pid, OsPid, Parent, StdOut, StdErr, IsMon, Debug}).
+  process_flag(trap_exit, true),
+  StdOut = proplists:get_value(stdout, PidOpts),
+  StdErr = proplists:get_value(stderr, PidOpts),
+  % The caller pid that requested to run the OsPid command & link to it.
+  LinkType =:= link andalso link(Pid),
+  % We need to emulate a monitor by sending the 'DOWN' message to the
+  % caller's Pid if it requested to monitor or it's a synchronous call:
+  IsMon  = LinkType =:= monitor orelse Sync =:= true,
+  ospid_loop({Pid, OsPid, Parent, StdOut, StdErr, IsMon, Debug, undefined}).
 
-ospid_loop({Pid, OsPid, Parent, StdOut, StdErr, IsMon, Debug} = State) ->
-    receive
+ospid_loop({Pid, OsPid, Parent, StdOut, StdErr, IsMon, Debug, Stats} = State) ->
+  receive
     {{From, Ref}, ospid} ->
-        From ! {Ref, OsPid},
-        ospid_loop(State);
+      From ! {Ref, OsPid},
+      ospid_loop(State);
     {stdout, Data} when is_binary(Data) ->
-        ospid_deliver_output(StdOut, {stdout, OsPid, Data}),
-        ospid_loop(State);
+      ospid_deliver_output(StdOut, {stdout, OsPid, Data}),
+      ospid_loop(State);
     {stderr, Data} when is_binary(Data) ->
-        ospid_deliver_output(StdErr, {stderr, OsPid, Data}),
-        ospid_loop(State);
+      ospid_deliver_output(StdErr, {stderr, OsPid, Data}),
+      ospid_loop(State);
+    {stats, StatsMap} when is_map(StatsMap) ->
+      % Stashed, not forwarded immediately -- folded into the 'DOWN' reason below
+      % once the exit notification arrives (which is always right after, since the
+      % port writes the stats message before exit_status for the same OsPid).
+      ospid_loop({Pid, OsPid, Parent, StdOut, StdErr, IsMon, Debug, StatsMap});
     {'DOWN', OsPid, {exit_status, Status}} ->
-        debug(Debug, "~w ~w got down message (~w) (ismon=~w)\n",
-                     [self(), OsPid, status(Status), IsMon]),
-        % OS process died
-        case Status of
-        0 -> notify_and_exit(IsMon, Pid, OsPid, normal);
-        _ -> notify_and_exit(IsMon, Pid, OsPid, {exit_status, Status})
-        end;
+      debug(Debug, "~w ~w got down message (~w) (ismon=~w)\n",
+                    [self(), OsPid, status(Status), IsMon]),
+      % OS process died
+      case Status of
+        0 -> notify_and_exit(IsMon, Pid, OsPid, normal, Stats);
+        _ -> notify_and_exit(IsMon, Pid, OsPid, {exit_status, Status}, Stats)
+      end;
     {'EXIT', Pid, Reason} when Reason =:= normal; Reason =:= shutdown ->
-        % orderly exit
-        debug(Debug, "~w ~w got ~w exit from linked ~w\n", [self(), OsPid, Reason, Pid]),
-        exit(Reason);
+      % orderly exit
+      debug(Debug, "~w ~w got ~w exit from linked ~w\n", [self(), OsPid, Reason, Pid]),
+      exit(Reason);
     {'EXIT', Pid, Reason} ->
-        % Pid died
-        debug(Debug, "~w ~w got exit from linked ~w: ~p\n", [self(), OsPid, Pid, Reason]),
-        exit({owner_died, Pid, Reason});
+      % Pid died
+      debug(Debug, "~w ~w got exit from linked ~w: ~p\n", [self(), OsPid, Pid, Reason]),
+      exit({owner_died, Pid, Reason});
     {'EXIT', Parent, Reason} ->
-        % Port program died
-        debug(Debug, "~w ~w got exit from parent ~w: ~p\n", [self(), OsPid, Parent, Reason]),
-        notify_and_exit(IsMon, Pid, OsPid, port_closed);
+      % Port program died
+      debug(Debug, "~w ~w got exit from parent ~w: ~p\n", [self(), OsPid, Parent, Reason]),
+      notify_and_exit(IsMon, Pid, OsPid, port_closed, Stats);
     Other ->
-        error_logger:warning_msg("~w - unknown msg: ~p\n", [self(), Other]),
-        ospid_loop(State)
+      error_logger:warning_msg("~w - unknown msg: ~p\n", [self(), Other]),
+      ospid_loop(State)
     end.
 
-notify_and_exit(true, Pid, OsPid, Reason) ->
-    Pid ! {'DOWN', OsPid, process, self(), Reason},
-    exit(Reason);
-notify_and_exit(_, _Pid, _OsPid, Reason) ->
-    exit(Reason).
+%% Reason and Stats are kept as separate arguments (never pre-merged into a single term)
+%% specifically to avoid ambiguity: `{exit_status, Status}` is itself a 2-tuple, so a naive
+%% `{Reason, Stats}` wrapper would be indistinguishable from an un-wrapped {exit_status, _}
+%% reason if Stats happened to look like an exit code. The actual process exit(...) reason
+%% (used for linked, non-trapping processes) is always the plain, unwrapped Reason --
+%% ONLY the literal atom `normal` suppresses propagation, and wrapping it as {normal, Stats}
+%% would silently break exec:run_link/2 semantics for anyone combining `link` with `stats`.
+notify_and_exit(true, Pid, OsPid, Reason, undefined) ->
+  Pid ! {'DOWN', OsPid, process, self(), Reason},
+  exit(Reason);
+notify_and_exit(true, Pid, OsPid, Reason, Stats) ->
+  Pid ! {'DOWN', OsPid, process, self(), {Reason, Stats}},
+  exit(Reason);
+notify_and_exit(_, _Pid, _OsPid, Reason, _Stats) ->
+  exit(Reason).
 
 ospid_deliver_output(DestPid, Msg) when is_pid(DestPid) ->
-    DestPid ! Msg;
+  DestPid ! Msg;
 ospid_deliver_output(DestFun, {Stream, OsPid, Data}) when is_function(DestFun) ->
-    DestFun(Stream, OsPid, Data).
+  DestFun(Stream, OsPid, Data).
 
 notify_ospid_owner(OsPid, Status) ->
-    % See if there is a Pid owner of this OsPid. If so, sent the 'DOWN' message.
-    case ets:lookup(exec_mon, OsPid) of
+  % See if there is a Pid owner of this OsPid. If so, sent the 'DOWN' message.
+  case ets:lookup(exec_mon, OsPid) of
     [{_OsPid, Pid}] ->
-        unlink(Pid),
-        Pid ! {'DOWN', OsPid, {exit_status, Status}},
-        ets:delete(exec_mon, Pid),
-        ets:delete(exec_mon, OsPid);
+      unlink(Pid),
+      Pid ! {'DOWN', OsPid, {exit_status, Status}},
+      ets:delete(exec_mon, Pid),
+      ets:delete(exec_mon, OsPid);
     [] ->
-        %error_logger:warning_msg("Owner ~w not found\n", [OsPid]),
-        ok
-    end.
+      %error_logger:warning_msg("Owner ~w not found\n", [OsPid]),
+      ok
+  end.
 
 send_to_ospid_owner(OsPid, Msg) ->
-    case ets:lookup(exec_mon, OsPid) of
+  case ets:lookup(exec_mon, OsPid) of
     [{_, Pid}] -> Pid ! Msg;
     _ -> ok
-    end.
+  end.
 
 debug(false, _, _) ->
-    ok;
+  ok;
 debug(_, Fmt, Args) ->
-    io:format(Fmt, Args).
+  io:format(Fmt, Args).
 
 is_suid_and_root_owner(File) ->
-    case file:read_file_info(File) of
+  case file:read_file_info(File) of
     {ok, Info} ->
-        {(Info#file_info.mode band 8#4500) =:= 8#4500,
-         (Info#file_info.uid =/= 0)};
+      {(Info#file_info.mode band 8#4500) =:= 8#4500,
+        (Info#file_info.uid =/= 0)};
     {error, Err} ->
-        throw("Cannot find file " ++ File ++ ": " ++ file:format_error(Err))
-    end.
+      throw("Cannot find file " ++ File ++ ": " ++ file:format_error(Err))
+  end.
 
 check_options(Options) when is_list(Options) ->
-    Users = proplists:get_value(limit_users, Options, default(limit_users)),
-    User  = proplists:get_value(user,        Options),
-    Root  = proplists:get_value(root,        Options, default(root)),
-    % When instructing to run as root, check that the port program has
-    % the SUID bit set or else use "sudo"
-    Exe   = case proplists:get_value(portexe, Options, undefined) of
-                undefined -> default(portexe);
-                Other     -> Other
-            end,
-    {SUID,NeedSudo} = is_suid_and_root_owner(Exe),
-    if Root, (User==undefined orelse User=="" orelse User == <<"">>) ->
-        % Asked to enable root, but User is not set
-        {error, "Not allowed to run without providing effective user {user,User}!"};
+  Users = proplists:get_value(limit_users, Options, default(limit_users)),
+  User  = proplists:get_value(user,        Options),
+  Root  = proplists:get_value(root,        Options, default(root)),
+  % When instructing to run as root, check that the port program has
+  % the SUID bit set or else use "sudo"
+  Exe   = case proplists:get_value(portexe, Options, undefined) of
+            undefined -> default(portexe);
+            Other     -> Other
+          end,
+  {SUID,NeedSudo} = is_suid_and_root_owner(Exe),
+  if Root, (User==undefined orelse User=="" orelse User == <<"">>) ->
+      % Asked to enable root, but User is not set
+      {error, "Not allowed to run without providing effective user {user,User}!"};
     Root, Users==[] ->
-        % Asked to enable root, have SUID
-        {error, "Not allowed to run without restricting effective users {limit_users,Users}!"};
+      % Asked to enable root, have SUID
+      {error, "Not allowed to run without restricting effective users {limit_users,Users}!"};
     Root, User/=undefined, User/="", Users/=[] ->
-        ok;
+      ok;
     not Root, SUID, not NeedSudo, Users==[] ->
-        {error, "Not allowed to run as SUID root without restricting effective users {limit_users,Users}!"};
+      {error, "Not allowed to run as SUID root without restricting effective users {limit_users,Users}!"};
     not Root, User/=undefined ->
-        {error, "Cannot specify effective user {user,User} in non-root mode!"};
-        ok;
+      {error, "Cannot specify effective user {user,User} in non-root mode!"};
+      ok;
     not Root, Users/=[] ->
-        {error, "Cannot restrict users {limit_users,Users} in non-root mode!"};
-        ok;
+      {error, "Cannot restrict users {limit_users,Users} in non-root mode!"};
+      ok;
     not Root ->
-        ok;
+      ok;
     true ->
-        {error, "Invalid root and user arguments"}
-    end.
+      {error, "Invalid root and user arguments"}
+  end.
 
 %%----------------------------------------------------------------------
 %% Pid died or requested to unlink - remove linked Pid records and
@@ -1410,99 +1466,102 @@ check_options(Options) when is_list(Options) ->
 -spec do_unlink_ospid(Pid::pid(), term(), State::#state{}) ->
         ok | true.
 do_unlink_ospid(Pid, _Reason, State) ->
-    case ets:lookup(exec_mon, Pid) of
+  case ets:lookup(exec_mon, Pid) of
     [{_Pid, OsPid}] when is_integer(OsPid) ->
-        debug(State#state.debug, "Pid ~p died. Killing linked OsPid ~w\n", [Pid, OsPid]),
-        ets:delete(exec_mon, Pid),
-        ets:delete(exec_mon, OsPid),
-        erlang:port_command(State#state.port, term_to_binary({0, {stop, OsPid}}));
+      debug(State#state.debug, "Pid ~p died. Killing linked OsPid ~w\n", [Pid, OsPid]),
+      ets:delete(exec_mon, Pid),
+      ets:delete(exec_mon, OsPid),
+      erlang:port_command(State#state.port, term_to_binary({0, {stop, OsPid}}));
     _ ->
-        ok
-    end.
+      ok
+  end.
 
 get_transaction(Q, I) ->
-    get_transaction(Q, I, Q).
+  get_transaction(Q, I, Q).
 get_transaction(Q, I, OldQ) ->
-    case queue:out(Q) of
+  case queue:out(Q) of
     {{value, {I, From, LinkType, Sync, PidOpts}}, Q2} ->
-        {true, From, LinkType, Sync, PidOpts, Q2};
+      {true, From, LinkType, Sync, PidOpts, Q2};
     {empty, _} ->
-        {false, OldQ};
+      {false, OldQ};
     {_, Q2} ->
-        get_transaction(Q2, I, OldQ)
-    end.
+      get_transaction(Q2, I, OldQ)
+  end.
 
 is_port_command({{run, Cmd, Options}, Link, Sync}, Pid, State) ->
-    {PortOpts, Other} = check_cmd_options(Options, Pid, State, [], []),
-    %% If Cmd is a printable string, handle it as a unicode binary string.
-    %% Otherwise if it is a list of strings, convert them to list of unicode binaries.
-    Exe = case io_lib:printable_unicode_list(Cmd) of
-          true  -> unicode:characters_to_binary(Cmd);
-          false ->
-              F = fun(I) when is_binary(I) -> I;
-                     (I) when is_list(I)   -> unicode:characters_to_binary(I)
-                  end,
-              case is_list(Cmd) of
-              true  -> [F(I) || I <- Cmd];
-              false -> Cmd
-              end
-          end,
-    {ok, {run, Exe, PortOpts}, Link, Sync, Other};
+  {PortOpts, Other} = check_cmd_options(Options, Pid, State, [], []),
+  %% If Cmd is a printable string, handle it as a unicode binary string.
+  %% Otherwise if it is a list of strings, convert them to list of unicode binaries.
+  Exe =
+    case io_lib:printable_unicode_list(Cmd) of
+      true  -> unicode:characters_to_binary(Cmd);
+      false ->
+          F = fun(I) when is_binary(I) -> I;
+                  (I) when is_list(I)   -> unicode:characters_to_binary(I)
+              end,
+          case is_list(Cmd) of
+            true  -> [F(I) || I <- Cmd];
+            false -> Cmd
+          end
+    end,
+  {ok, {run, Exe, PortOpts}, Link, Sync, Other};
 is_port_command({list} = T, _Pid, _State) ->
-    {ok, T, undefined, undefined, []};
+  {ok, T, undefined, undefined, []};
 is_port_command({stop, OsPid}=T, _Pid, _State) when is_integer(OsPid) ->
-    {ok, T, undefined, undefined, []};
+  {ok, T, undefined, undefined, []};
 is_port_command({stop, Pid}, _Pid, _State) when is_pid(Pid) ->
-    case ets:lookup(exec_mon, Pid) of
+  case ets:lookup(exec_mon, Pid) of
     [{_StoredPid, OsPid}] -> {ok, {stop, OsPid}, undefined, undefined, []};
     []              -> throw({error, no_process})
-    end;
+  end;
 is_port_command({{manage, OsPid, Options}, Link, Sync}, Pid, State) when is_integer(OsPid) ->
-    {PortOpts, _Other} = check_cmd_options(Options, Pid, State, [], []),
-    {ok, {manage, OsPid, PortOpts}, Link, Sync, []};
+  {PortOpts, _Other} = check_cmd_options(Options, Pid, State, [], []),
+  {ok, {manage, OsPid, PortOpts}, Link, Sync, []};
 is_port_command({send, Pid, Data}, _Pid, _State)
   when is_pid(Pid), is_binary(Data) orelse Data =:= eof ->
-    case ets:lookup(exec_mon, Pid) of
+  case ets:lookup(exec_mon, Pid) of
     [{Pid, OsPid}]  -> {ok, {stdin, OsPid, Data}};
     []              -> throw({error, no_process})
-    end;
+  end;
 is_port_command({send, OsPid, Data}, _Pid, _State)
   when is_integer(OsPid), is_binary(Data) orelse Data =:= eof ->
-    {ok, {stdin, OsPid, Data}};
+  {ok, {stdin, OsPid, Data}};
 is_port_command({write_file, Path, Data}, _Pid, _State)
-    when (is_list(Path) orelse is_binary(Path)), is_binary(Data) ->
-        {ok, {write_file, Path, Data}};
+  when (is_list(Path) orelse is_binary(Path)), is_binary(Data) ->
+  {ok, {write_file, Path, Data}};
+is_port_command({open_pipe}, _Pid, _State) ->
+  {ok, {open_pipe}, undefined, undefined, []};
 is_port_command({winsz, Pid, Rows, Cols}, _Pid, _State)
   when is_pid(Pid), is_integer(Rows), is_integer(Cols) ->
-    case ets:lookup(exec_mon, Pid) of
+  case ets:lookup(exec_mon, Pid) of
     [{Pid, OsPid}]  -> {ok, {winsz, OsPid, Rows, Cols}, undefined, undefined, []};
     []              -> throw({error, no_process})
-    end;
+  end;
 is_port_command({winsz, OsPid, Rows, Cols}, _Pid, _State)
   when is_integer(OsPid), is_integer(Rows), is_integer(Cols) ->
-    {ok, {winsz, OsPid, Rows, Cols}, undefined, undefined, []};
+  {ok, {winsz, OsPid, Rows, Cols}, undefined, undefined, []};
 is_port_command({pty_opts, Pid, Opts}, _Pid, _State)
   when is_pid(Pid), is_list(Opts) ->
-    ok = check_pty_opts(Opts),
-    case ets:lookup(exec_mon, Pid) of
+  ok = check_pty_opts(Opts),
+  case ets:lookup(exec_mon, Pid) of
     [{Pid, OsPid}]  -> {ok, {pty_opts, OsPid, Opts}, undefined, undefined, []};
     []              -> throw({error, no_process})
-    end;
+  end;
 is_port_command({pty_opts, OsPid, Opts}, _Pid, _State)
   when is_integer(OsPid), is_list(Opts) ->
-    ok = check_pty_opts(Opts),
-    {ok, {pty_opts, OsPid, Opts}, undefined, undefined, []};
+  ok = check_pty_opts(Opts),
+  {ok, {pty_opts, OsPid, Opts}, undefined, undefined, []};
 is_port_command({kill, OsPid, Sig}=T, _Pid, _State) when is_integer(OsPid),is_integer(Sig) ->
-    {ok, T, undefined, undefined, []};
+  {ok, T, undefined, undefined, []};
 is_port_command({setpgid, OsPid, Gid}=T, _Pid, _State) when is_integer(OsPid),is_integer(Gid) ->
-    {ok, T, undefined, undefined, []};
+  {ok, T, undefined, undefined, []};
 is_port_command({kill, Pid, Sig}, _Pid, _State) when is_pid(Pid),is_integer(Sig) ->
-    case ets:lookup(exec_mon, Pid) of
+  case ets:lookup(exec_mon, Pid) of
     [{Pid, OsPid}]  -> {ok, {kill, OsPid, Sig}, undefined, undefined, []};
     []              -> throw({error, no_process})
-    end;
+  end;
 is_port_command({debug, Level}=T, _Pid, _State) when is_integer(Level),Level >= 0,Level =< 10 ->
-    {ok, T, undefined, undefined, []}.
+  {ok, T, undefined, undefined, []}.
 
 parse_env([])            -> [];
 parse_env([{K,false}|T]) -> [{to_list(K), false}     |parse_env(T)]; %% Remove the env var K
@@ -1510,114 +1569,156 @@ parse_env([{K,V}|T])     -> [{to_list(K), to_list(V)}|parse_env(T)];
 parse_env([H|T])         -> [to_list(H)|parse_env(T)].
 
 check_cmd_options([monitor|T], Pid, State, PortOpts, OtherOpts) ->
-    check_cmd_options(T, Pid, State, PortOpts, OtherOpts);
+  check_cmd_options(T, Pid, State, PortOpts, OtherOpts);
 check_cmd_options([sync|T], Pid, State, PortOpts, OtherOpts) ->
-    check_cmd_options(T, Pid, State, PortOpts, OtherOpts);
+  check_cmd_options(T, Pid, State, PortOpts, OtherOpts);
 check_cmd_options([link|T], Pid, State, PortOpts, OtherOpts) ->
-    check_cmd_options(T, Pid, State, PortOpts, OtherOpts);
+  check_cmd_options(T, Pid, State, PortOpts, OtherOpts);
 check_cmd_options([{executable,V}=H|T], Pid, State, PortOpts, OtherOpts) when is_list(V); is_binary(V) ->
-    check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+  check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
 check_cmd_options([{cd, Dir}=H|T], Pid, State, PortOpts, OtherOpts) when is_list(Dir); is_binary(Dir) ->
-    check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+  check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
 check_cmd_options([{env, Env}=H|T], Pid, State, PortOpts, OtherOpts) when is_list(Env) ->
-    case lists:filter(fun(S) when is_list(S); is_binary(S) -> false;
-                         ({S1,S2}) when (is_list(S1) orelse is_binary(S1)) andalso
-                                        (is_list(S2) orelse is_binary(S2) orelse S2 == false) -> false;
-                         (clear)   -> false;
-                         (_)       -> true
-                      end, Env) of
+  case lists:filter(fun(S) when is_list(S); is_binary(S) -> false;
+                       ({S1,S2}) when (is_list(S1) orelse is_binary(S1)) andalso
+                                     (is_list(S2) orelse is_binary(S2) orelse S2 == false) -> false;
+                       (clear)   -> false;
+                       (_)       -> true
+                   end, Env) of
     [] -> check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
     L  -> throw({error, {invalid_env_value, L}})
-    end;
+  end;
 check_cmd_options([{kill, Cmd}=H|T], Pid, State, PortOpts, OtherOpts) when is_list(Cmd); is_binary(Cmd) ->
-    check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+  check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
 check_cmd_options([{kill_timeout, I}=H|T], Pid, State, PortOpts, OtherOpts) when is_integer(I), I >= 0 ->
-    check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+  check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
 check_cmd_options([kill_group=H|T], Pid, State, PortOpts, OtherOpts) ->
-    check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+  check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+check_cmd_options([{timeout, Ms}=H|T], Pid, State, PortOpts, OtherOpts) when is_integer(Ms), Ms >= 0 ->
+  %% Wall-clock watchdog: kill this process if it's still running Ms milliseconds after
+  %% spawn (SIGTERM->SIGKILL escalation, same as exec:stop/1). Distinct from kill_timeout,
+  %% which only governs the escalation window *after* a stop/kill was already requested.
+  check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+check_cmd_options([stats=H|T], Pid, State, PortOpts, OtherOpts) ->
+  %% Deliver {stats, OsPid, StatsMap} (rusage + wall-clock duration) to the owner just
+  %% before the final 'DOWN' exit notification.
+  check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
 check_cmd_options([{nice, I}=H|T], Pid, State, PortOpts, OtherOpts) when is_integer(I), I >= -20, I =< 20 ->
-    check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+  check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
 check_cmd_options([debug|T], Pid, State, PortOpts, OtherOpts) ->
-    check_cmd_options(T, Pid, State, [{debug,1}|PortOpts], OtherOpts);
+  check_cmd_options(T, Pid, State, [{debug,1}|PortOpts], OtherOpts);
 check_cmd_options([{debug, I}=H|T], Pid, State, PortOpts, OtherOpts) when is_integer(I), I >= 0, I =< 10 ->
-    check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+  check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
 check_cmd_options([{success_exit_code, I}=H|T], Pid, State, PortOpts, OtherOpts)
   when is_integer(I), I >= 0, I < 256 ->
-    check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+  check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
 check_cmd_options([H|T], Pid, State, PortOpts, OtherOpts) when H=:=stdin; H=:=stdout; H=:=stderr ->
-    check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
+  check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
 check_cmd_options([H|T], Pid, State, PortOpts, OtherOpts) when H=:=pty ->
-    check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
+  check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
 check_cmd_options([H|T], Pid, State, PortOpts, OtherOpts) when H=:=pty_echo ->
-    check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
+  check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
 check_cmd_options([{winsz, {Rows, Cols}}=H|T], Pid, State, PortOpts, OtherOpts)
-        when is_integer(Rows), Rows >= 0, is_integer(Cols), Cols >= 0 ->
-    check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
+  when is_integer(Rows), Rows >= 0, is_integer(Cols), Cols >= 0 ->
+  check_cmd_options(T, Pid, State, [H|PortOpts], [{H, Pid}|OtherOpts]);
 check_cmd_options([{pty, Pty}=H|T], Pid, State, PortOpts, OtherOpts) when is_list(Pty) ->
-    ok = check_pty_opts(Pty),
-    check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+  ok = check_pty_opts(Pty),
+  check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
 check_cmd_options([{capabilities, all}=H|T], Pid, State, PortOpts, OtherOpts) ->
-    check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+  check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
 check_cmd_options([{capabilities, Caps}=H|T], Pid, State, PortOpts, OtherOpts) when is_list(Caps) ->
-    exec_util:validate_capabilities(Caps),
-    check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+  exec_util:validate_capabilities(Caps),
+  check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
 check_cmd_options([{cgroup, PathOrMap}=H|T], Pid, State, PortOpts, OtherOpts)
   when is_binary(PathOrMap); is_list(PathOrMap); is_map(PathOrMap) ->
-    case os:type() of
-        {unix, linux} -> check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
-        {_,       OS} -> throw({error, ?FMT("Invalid ~w option for ~w: ~p", [cgroup, OS, PathOrMap])})
-    end;
+  case os:type() of
+    {unix, linux} -> check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+    {_,       OS} -> throw({error, ?FMT("Invalid ~w option for ~w: ~p", [cgroup, OS, PathOrMap])})
+  end;
 check_cmd_options([{stdin, I}=H|T], Pid, State, PortOpts, OtherOpts)
-        when I=:=null; I=:=close; is_list(I); is_binary(I) ->
-    check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+  when I=:=null; I=:=close; is_list(I); is_binary(I) ->
+  check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
 check_cmd_options([{Std, I, Opts}=H|T], Pid, State, PortOpts, OtherOpts)
-        when (Std=:=stdout orelse Std=:=stderr) andalso (is_list(Opts) orelse is_binary(Opts)) ->
-    io_lib:printable_list(I) orelse
-        throw({error, ?FMT("Invalid ~w filename: ~200p", [Std, I])}),
-    lists:foreach(fun
+  when (Std=:=stdout orelse Std=:=stderr) andalso (is_list(Opts) orelse is_binary(Opts)) ->
+  io_lib:printable_list(I) orelse
+    throw({error, ?FMT("Invalid ~w filename: ~200p", [Std, I])}),
+  lists:foreach(fun
+    (append) -> ok;
+    ({mode, Mode}) when is_integer(Mode) -> ok;
+    (Other) -> throw({error, ?FMT("Invalid ~w option: ~p", [Std, Other])})
+  end, Opts),
+  check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+check_cmd_options([{Std, I}=H|T], Pid, State, PortOpts, OtherOpts)
+  when Std=:=stderr, I=/=Std; Std=:=stdout, I=/=Std ->
+  if
+    I=:=null; I=:=close; I=:=stderr; I=:=stdout; is_list(I); is_binary(I) ->
+      check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+    I=:=print ->
+      check_cmd_options(T, Pid, State, [Std | PortOpts], [{Std, fun print/3} | OtherOpts]);
+    is_pid(I) ->
+      check_cmd_options(T, Pid, State, [Std | PortOpts], [H|OtherOpts]);
+    is_function(I) ->
+      {arity, 3} =:= erlang:fun_info(I, arity)
+        orelse throw({error, ?FMT("Invalid ~w option ~p: expected Fun/3", [Std, I])}),
+      check_cmd_options(T, Pid, State, [Std | PortOpts], [H|OtherOpts]);
+    true ->
+      throw({error, ?FMT("Invalid ~w option ~p", [Std, I])})
+  end;
+check_cmd_options([{Std, Files}=H|T], Pid, State, PortOpts, OtherOpts)
+  when (Std=:=stdout_files orelse Std=:=stderr_files), is_list(Files) ->
+  lists:foreach(fun
+    ({Path, Opts}) when (is_list(Path) orelse is_binary(Path)), is_list(Opts) ->
+      io_lib:printable_list(Path) orelse
+        throw({error, ?FMT("Invalid ~w path: ~200p", [Std, Path])}),
+      lists:foreach(fun
         (append) -> ok;
         ({mode, Mode}) when is_integer(Mode) -> ok;
         (Other) -> throw({error, ?FMT("Invalid ~w option: ~p", [Std, Other])})
-    end, Opts),
-    check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
-check_cmd_options([{Std, I}=H|T], Pid, State, PortOpts, OtherOpts)
-        when Std=:=stderr, I=/=Std; Std=:=stdout, I=/=Std ->
-    if
-        I=:=null; I=:=close; I=:=stderr; I=:=stdout; is_list(I); is_binary(I) ->
-            check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
-        I=:=print ->
-            check_cmd_options(T, Pid, State, [Std | PortOpts], [{Std, fun print/3} | OtherOpts]);
-        is_pid(I) ->
-            check_cmd_options(T, Pid, State, [Std | PortOpts], [H|OtherOpts]);
-        is_function(I) ->
-            {arity, 3} =:= erlang:fun_info(I, arity)
-                orelse throw({error, ?FMT("Invalid ~w option ~p: expected Fun/3", [Std, I])}),
-            check_cmd_options(T, Pid, State, [Std | PortOpts], [H|OtherOpts]);
-        true ->
-            throw({error, ?FMT("Invalid ~w option ~p", [Std, I])})
-    end;
+      end, Opts);
+    (Path) when is_list(Path); is_binary(Path) ->
+      io_lib:printable_list(Path) orelse
+        throw({error, ?FMT("Invalid ~w path: ~200p", [Std, Path])});
+    (Other) ->
+        throw({error, ?FMT("Invalid ~w entry: ~p", [Std, Other])})
+  end, Files),
+  check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+check_cmd_options([{Std, Pipes}=H|T], Pid, State, PortOpts, OtherOpts)
+  when (Std=:=stdout_sibling_pipes orelse Std=:=stderr_sibling_pipes), is_list(Pipes) ->
+  %% Graph-only (exec_graph:add_sibling_pipe_opts/3): [{ConsumerId, WriteFd}, ...].
+  %% Write-ends of downstream sibling tasks' stdin pipes, pre-opened by exec:open_pipe/0.
+  lists:foreach(fun
+    ({_ConsumerId, Fd}) when is_integer(Fd), Fd >= 0 -> ok;
+    (Other) -> throw({error, ?FMT("Invalid ~w entry: ~p", [Std, Other])})
+  end, Pipes),
+  check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+check_cmd_options([{stdin_from_sibling, Fd}=H|T], Pid, State, PortOpts, OtherOpts)
+  when is_integer(Fd), Fd >= 0 ->
+  %% Graph-only (exec_graph:add_sibling_pipe_opts/3): read-end of this task's stdin
+  %% pipe, pre-opened by exec:open_pipe/0 and already connected to an upstream
+  %% sibling's stdout fanout list.
+  check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
 check_cmd_options([{group, I}=H|T], Pid, State, PortOpts, OtherOpts) when is_integer(I), I >= 0
                                                                         ; is_list(I); is_binary(I) ->
-    check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+  check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
 check_cmd_options([{user, U}|T], Pid, State, PortOpts, OtherOpts) when (is_list(U) andalso U =/= "")
                                                                      ; (is_binary(U) andalso U =/= <<"">>)
                                                                      ; is_atom(U) ->
-    case lists:member(U, State#state.limit_users) of
+  case lists:member(U, State#state.limit_users) of
     true  -> check_cmd_options(T, Pid, State, [{user,to_list(U)}|PortOpts], OtherOpts);
     false -> throw({error, ?FMT("User ~s is not allowed to run commands!", [U])})
-    end;
+  end;
 check_cmd_options([Other|_], _Pid, _State, _PortOpts, _OtherOpts) ->
-    throw({error, {invalid_option, Other}});
+  throw({error, {invalid_option, Other}});
 check_cmd_options([], _Pid, _State, PortOpts, OtherOpts) ->
-    {PortOpts, OtherOpts}.
+  {PortOpts, OtherOpts}.
 
 check_pty_opts(Pty) when is_list(Pty) ->
-    case lists:filter(fun({K,V}) when is_atom(K), (is_integer(V) orelse is_boolean(V)) -> not check_pty_opt(K, V);
-                         (_) -> true
-                      end, Pty) of
+  case lists:filter(fun({K,V}) when is_atom(K), (is_integer(V) orelse is_boolean(V)) -> not check_pty_opt(K, V);
+                       (_) -> true
+                    end, Pty) of
     [] -> ok;
     L  -> throw({error, {invalid_pty_value, L}})
-    end.
+  end.
 
 %% special characters
 check_pty_opt(vintr,    V) -> is_byte(V);
@@ -1685,12 +1786,12 @@ is_mode(V)  -> is_boolean(V) orelse V==0 orelse V==1.
 is_speed(V) -> is_integer(V) andalso V >= 0.
 
 next_trans(I) when I =< 134217727 ->
-    I+1;
+  I+1;
 next_trans(_) ->
-    1.
+  1.
 
 print(Stream, OsPid, Data) ->
-    io:format("Got ~w from ~w: ~p\n", [Stream, OsPid, Data]).
+  io:format("Got ~w from ~w: ~p\n", [Stream, OsPid, Data]).
 
 %%%---------------------------------------------------------------------
 %%% Unit testing
@@ -1699,924 +1800,918 @@ print(Stream, OsPid, Data) ->
 -ifdef(EUNIT).
 
 -define(AssertMatch(A, B),
-    (fun() ->
-        case B of
-            A -> ok;
-            _ -> ?debugFmt("==> TEST ~s FAILED (line: ~w)!!!\n",
-                           [?FUNCTION_NAME, ?LINE]),
-                 ?assertMatch(A,B)
-        end
-    end)()).
+  (fun() ->
+    case B of
+      A -> ok;
+      _ -> ?debugFmt("==> TEST ~s FAILED (line: ~w)!!!\n",
+                      [?FUNCTION_NAME, ?LINE]),
+            ?assertMatch(A,B)
+    end
+  end)()).
 
 -define(receiveBytes(A, Timeout),
-    check_receive(A, A, [], Timeout, ?FUNCTION_NAME, ?LINE)).
+  check_receive(A, A, [], Timeout, ?FUNCTION_NAME, ?LINE)).
 
 -define(receivePattern(A, Timeout),
-    (fun() ->
-        receive
-            A -> true
-        after Timeout ->
-            case flush() of
-                [] -> ?AssertMatch(A, timeout);
-                LL ->
-                    ?debugFmt("==> TEST ~s FAILED!!!\n", [?FUNCTION_NAME]),
-                    erlang:error(#{error => unexpected_messages,
-                                   msgs  => lists:reverse(LL)}),
-                    ?assert(false)
-            end
-        end
-    end)()).
+  (fun() ->
+    receive
+      A -> true
+    after Timeout ->
+      case flush() of
+        [] -> ?AssertMatch(A, timeout);
+        LL ->
+          ?debugFmt("==> TEST ~s FAILED!!!\n", [?FUNCTION_NAME]),
+          erlang:error(#{error => unexpected_messages,
+                          msgs  => lists:reverse(LL)}),
+          ?assert(false)
+      end
+    end
+  end)()).
 
 -define(tt(F), {timeout, 20, ?_test(F)}).
 
 check_receive({Stream, Pid, Bin} = A, Orig, Got, Timeout, TestName, Line)
-        when is_atom(Stream), is_integer(Pid), is_binary(Bin) ->
-    receive
-        A ->
-            true;
-        {Stream, Pid, B} when is_binary(B) ->
-            Len = byte_size(B),
-            case Bin of
-                <<C:Len/binary, Rest/binary>> when C == B ->
-                    check_receive({Stream, Pid, Rest}, Orig, [B|Got], Timeout, TestName, Line);
-                Other ->
-                    ?debugFmt("==> TEST ~s FAILED (line: ~w)!!!\n", [TestName, Line]),
-                    erlang:error(#{error    => unexpected_bytes,
-                                   expected => Orig,
-                                   got      => lists:reverse([Other|Got]),
-                                   test     => TestName,
-                                   line     => Line})
-                end
-    after Timeout ->
-        case flush() of
-            [] ->
-                ?debugFmt("==> TEST ~s FAILED (line: ~w)!!!\n", [TestName, Line]),
-                erlang:error(#{error    => timeout,
-                               expected => Orig,
-                               got      => lists:reverse(Got),
-                               test     => TestName,
-                               line     => Line});
-            LL ->
-                R = lists:reverse(Got) ++ lists:reverse(LL),
-                ?debugFmt("==> TEST ~s FAILED (line: ~w)!!!\n", [TestName, Line]),
-                erlang:error(#{error    => unexpected_messages,
-                               expected => Orig,
-                               got      => R,
-                               test     => TestName,
-                               line     => Line})
-        end
-    end.
+  when is_atom(Stream), is_integer(Pid), is_binary(Bin) ->
+  receive
+    A ->
+      true;
+    {Stream, Pid, B} when is_binary(B) ->
+      Len = byte_size(B),
+      case Bin of
+        <<C:Len/binary, Rest/binary>> when C == B ->
+          check_receive({Stream, Pid, Rest}, Orig, [B|Got], Timeout, TestName, Line);
+        Other ->
+          ?debugFmt("==> TEST ~s FAILED (line: ~w)!!!\n", [TestName, Line]),
+          erlang:error(#{error    => unexpected_bytes,
+                         expected => Orig,
+                         got      => lists:reverse([Other|Got]),
+                         test     => TestName,
+                         line     => Line})
+      end
+  after Timeout ->
+    case flush() of
+      [] ->
+        ?debugFmt("==> TEST ~s FAILED (line: ~w)!!!\n", [TestName, Line]),
+        erlang:error(#{error    => timeout,
+                       expected => Orig,
+                       got      => lists:reverse(Got),
+                       test     => TestName,
+                       line     => Line});
+      LL ->
+        R = lists:reverse(Got) ++ lists:reverse(LL),
+        ?debugFmt("==> TEST ~s FAILED (line: ~w)!!!\n", [TestName, Line]),
+        erlang:error(#{error    => unexpected_messages,
+                       expected => Orig,
+                       got      => R,
+                       test     => TestName,
+                       line     => Line})
+    end
+  end.
 
 flush() ->
-    receive
-        B -> [B | flush()]
-    after 0 ->
-        []
-    end.
+  receive
+    B -> [B | flush()]
+  after 0 ->
+    []
+  end.
 
 temp_dir() ->
-    case os:getenv("TEMP") of
+  case os:getenv("TEMP") of
     false -> "/tmp";
     Path  -> Path
-    end.
+  end.
 
 temp_file() ->
-    Dir = temp_dir(),
-    {I1, I2, I3}  = erlang:timestamp(),
-    filename:join(Dir, io_lib:format("exec_temp_~w_~w_~w", [I1, I2, I3])).
+  Dir = temp_dir(),
+  {I1, I2, I3}  = erlang:timestamp(),
+  filename:join(Dir, io_lib:format("exec_temp_~w_~w_~w", [I1, I2, I3])).
 
 exec_test_() ->
-    {setup,
-        fun() ->
-            Opts =
-                case os:getenv("TEST_USER") of
-                    false -> [];
-                    User  ->
-                        [root, {limit_users, [User]}, {user, User}]
-                end,
-            Opts1 =
-                case os:getenv("PORT_DEBUG") of
-                    false -> Opts;
-                    _     -> [{debug, 1}, verbose | Opts]
-                end,
-            {ok, Pid} = exec:start(Opts1),
-            Pid
+{setup,
+    fun() ->
+      Opts =
+        case os:getenv("TEST_USER") of
+          false -> [];
+          User  ->
+              [root, {limit_users, [User]}, {user, User}]
         end,
+      Opts1 =
+        case os:getenv("PORT_DEBUG") of
+          false -> Opts;
+          _     -> [{debug, 1}, verbose | Opts]
+        end,
+      {ok, Pid} = exec:start(Opts1),
+      Pid
+    end,
 
-        fun(Pid) -> exit(Pid, kill) end,
-        [
-            ?tt(test_root()),
-            ?tt(test_monitor()),
-            ?tt(test_sync()),
-            ?tt(test_winsz()),
-            ?tt(test_stdin()),
-            ?tt(test_large_stdin()),
-            ?tt(test_stdin_eof()),
-            ?tt(test_std(stdout)),
-            ?tt(test_std(stderr)),
-            ?tt(test_cmd()),
-            ?tt(test_executable()),
-            ?tt(test_redirect()),
-            ?tt(test_redirect_stdin()),
-            ?tt(test_env()),
-            ?tt(test_kill_timeout()),
-            ?tt(test_setpgid()),
-            ?tt(test_kill_group_with_arbitrary_group()),
-            ?tt(test_kill_group_with_nonzero_group()),
-            ?tt(test_pty()),
-            ?tt(test_pty_echo()),
-            ?tt(test_pty_opts()),
-            ?tt(test_dynamic_pty_opts()),
-            ?tt(test_pty_group_zero_kill_group())
-        ]
-    }.
+    fun(Pid) -> exit(Pid, kill) end,
+    [
+      ?tt(test_root()),
+      ?tt(test_monitor()),
+      ?tt(test_sync()),
+      ?tt(test_winsz()),
+      ?tt(test_stdin()),
+      ?tt(test_large_stdin()),
+      ?tt(test_stdin_eof()),
+      ?tt(test_std(stdout)),
+      ?tt(test_std(stderr)),
+      ?tt(test_cmd()),
+      ?tt(test_executable()),
+      ?tt(test_redirect()),
+      ?tt(test_redirect_stdin()),
+      ?tt(test_env()),
+      ?tt(test_kill_timeout()),
+      ?tt(test_setpgid()),
+      ?tt(test_kill_group_with_arbitrary_group()),
+      ?tt(test_kill_group_with_nonzero_group()),
+      ?tt(test_pty()),
+      ?tt(test_pty_echo()),
+      ?tt(test_pty_opts()),
+      ?tt(test_dynamic_pty_opts()),
+      ?tt(test_pty_group_zero_kill_group())
+    ]
+  }.
 
 exec_run_many_test_() ->
-    Level = case os:getenv("PORT_DEBUG") of
-                false -> 0;
-                _     -> 1
-            end,
-    Delay = case os:getenv("PID_SLEEP_SEC") of
-                false  -> 1000;
-                Y      -> list_to_integer(Y)*1000
-            end,
-    N     = case os:getenv("RUN_COUNT") of
-                false  -> 900;
-                X      -> list_to_integer(X)
-            end,
-    M     = N*2,
-    {setup,
-        fun()    -> {ok, Pid} = exec:start([{debug, Level}]), Pid end,
-        fun(Pid) -> exit(Pid, kill) end,
-        [
-            {timeout, 200,
-                ?_assertMatch({ok,[{io_ops,M},{success,N}]}, test_exec:run(N, 60000, Delay))}
-        ]
-    }.
+  Level = case os:getenv("PORT_DEBUG") of
+            false -> 0;
+            _     -> 1
+          end,
+  Delay = case os:getenv("PID_SLEEP_SEC") of
+            false  -> 1000;
+            Y      -> list_to_integer(Y)*1000
+          end,
+  N     = case os:getenv("RUN_COUNT") of
+            false  -> 900;
+            X      -> list_to_integer(X)
+          end,
+  M     = N*2,
+  {setup,
+    fun()    -> {ok, Pid} = exec:start([{debug, Level}]), Pid end,
+    fun(Pid) -> exit(Pid, kill) end,
+    [
+      {timeout, 200,
+          ?_assertMatch({ok,[{io_ops,M},{success,N}]}, test_exec:run(N, 60000, Delay))}
+    ]
+  }.
 
 port_runs_in_own_process_group_test_() ->
-    {timeout, 10, ?_test(test_port_runs_in_own_process_group())}.
+  {timeout, 10, ?_test(test_port_runs_in_own_process_group())}.
 
 startup_fails_when_setpgid_is_rejected_test_() ->
-    {timeout, 10, ?_test(test_startup_fails_when_setpgid_is_rejected())}.
+  {timeout, 10, ?_test(test_startup_fails_when_setpgid_is_rejected())}.
 
 finalize_shutdown_kills_shell_descendants_test_() ->
-    {timeout, 20, ?_test(test_finalize_shutdown_kills_shell_descendants())}.
+  {timeout, 20, ?_test(test_finalize_shutdown_kills_shell_descendants())}.
 
 test_root() ->
-    case os:getenv("NO_ROOT_TESTS") of
-        false ->
-            ?AssertMatch({error, "Cannot specify effective user"++_},
-                         exec:start([{user, "xxxx"}, {limit_users, [yyyy]}])),
-            ?AssertMatch({error, "Cannot restrict users"++_},
-                         exec:start([{limit_users, [yyyy]}])),
-            ?AssertMatch({error, "Not allowed to run without restricting effective users"++_},
-                         exec:start([root, {user, "xxxx"}])),
-            ?AssertMatch({error, "Not allowed to run without providing effective user "++_},
-                         exec:start([root, {limit_users, [yyyy]}]));
-        _ ->
-            ok
-    end.
+  case os:getenv("NO_ROOT_TESTS") of
+    false ->
+      ?AssertMatch({error, "Cannot specify effective user"++_},
+                    exec:start([{user, "xxxx"}, {limit_users, [yyyy]}])),
+      ?AssertMatch({error, "Cannot restrict users"++_},
+                    exec:start([{limit_users, [yyyy]}])),
+      ?AssertMatch({error, "Not allowed to run without restricting effective users"++_},
+                    exec:start([root, {user, "xxxx"}])),
+      ?AssertMatch({error, "Not allowed to run without providing effective user "++_},
+                    exec:start([root, {limit_users, [yyyy]}]));
+    _ ->
+        ok
+  end.
 
 test_monitor() ->
-    {ok, P, _} = exec:run("echo ok", [{stdout, null}, monitor]),
-    ?receivePattern({'DOWN', _, process, P, normal}, 5000).
+  {ok, P, _} = exec:run("echo ok", [{stdout, null}, monitor]),
+  ?receivePattern({'DOWN', _, process, P, normal}, 5000).
 
 test_sync() ->
-    ?AssertMatch({ok, [{stdout, [<<"Test\n">>]}, {stderr, [<<"ERR\n">>]}]},
-        exec:run("echo Test; echo ERR 1>&2", [stdout, stderr, sync])),
-    ?AssertMatch({ok,[{stdout,[<<"\n">>]}]},
-         exec:run([<<"/bin/echo">>], [sync, stdout])),
-    ?AssertMatch({ok,[{stdout,[<<"\n">>]}]},
-         exec:run(["/bin/echo"], [sync, stdout])).
+  ?AssertMatch({ok, [{stdout, [<<"Test\n">>]}, {stderr, [<<"ERR\n">>]}]},
+    exec:run("echo Test; echo ERR 1>&2", [stdout, stderr, sync])),
+  ?AssertMatch({ok,[{stdout,[<<"\n">>]}]},
+    exec:run([<<"/bin/echo">>], [sync, stdout])),
+  ?AssertMatch({ok,[{stdout,[<<"\n">>]}]},
+    exec:run(["/bin/echo"], [sync, stdout])).
 
 
 test_winsz() ->
-    {ok, P, I} = exec:run(
-        ["/bin/bash", "-i", "-c", "echo started; read x; echo LINES=$(tput lines) COLUMNS=$(tput cols)"],
-        [stdin, stdout, {stderr, stdout}, monitor, pty, {env, [{"TERM", "xterm"}]}]),
-    ?receiveBytes({stdout, I, <<"started\r\n">>}, 3000),
-    ok = exec:winsz(I, 99, 88),
-    ok = exec:send(I, <<"\n">>),
-    ?receiveBytes({stdout, I, <<"LINES=99 COLUMNS=88\r\n">>}, 3000),
-    ?receivePattern({'DOWN', _, process, P, normal}, 5000),
-    % can set size on run
-    {ok, P2, I2} = exec:run(
-        ["/bin/bash", "-i", "-c", "echo LINES=$(tput lines) COLUMNS=$(tput cols)\n"],
-        [stdin, stdout, {stderr, stdout}, monitor, pty, {env, [{"TERM", "xterm"}]}, {winsz, {99, 88}}]),
-    ?receiveBytes({stdout, I2, <<"LINES=99 COLUMNS=88\r\n">>}, 5000),
-    ?receivePattern({'DOWN', _, process, P2, normal}, 5000).
+  {ok, P, I} = exec:run(
+    ["/bin/bash", "-i", "-c", "echo started; read x; echo LINES=$(tput lines) COLUMNS=$(tput cols)"],
+    [stdin, stdout, {stderr, stdout}, monitor, pty, {env, [{"TERM", "xterm"}]}]),
+  ?receiveBytes({stdout, I, <<"started\r\n">>}, 3000),
+  ok = exec:winsz(I, 99, 88),
+  ok = exec:send(I, <<"\n">>),
+  ?receiveBytes({stdout, I, <<"LINES=99 COLUMNS=88\r\n">>}, 3000),
+  ?receivePattern({'DOWN', _, process, P, normal}, 5000),
+  % can set size on run
+  {ok, P2, I2} = exec:run(
+    ["/bin/bash", "-i", "-c", "echo LINES=$(tput lines) COLUMNS=$(tput cols)\n"],
+    [stdin, stdout, {stderr, stdout}, monitor, pty, {env, [{"TERM", "xterm"}]}, {winsz, {99, 88}}]),
+  ?receiveBytes({stdout, I2, <<"LINES=99 COLUMNS=88\r\n">>}, 5000),
+  ?receivePattern({'DOWN', _, process, P2, normal}, 5000).
 
 test_stdin() ->
-    {ok, P, I} = exec:run("read x; echo \"Got: $x\"", [stdin, stdout, monitor]),
-    ok = exec:send(I, <<"Test data\n">>),
-    ?receiveBytes({stdout,I,<<"Got: Test data\n">>}, 3000),
-    ?receivePattern({'DOWN', _, process, P, normal}, 5000).
+  {ok, P, I} = exec:run("read x; echo \"Got: $x\"", [stdin, stdout, monitor]),
+  ok = exec:send(I, <<"Test data\n">>),
+  ?receiveBytes({stdout,I,<<"Got: Test data\n">>}, 3000),
+  ?receivePattern({'DOWN', _, process, P, normal}, 5000).
 
 test_large_stdin() ->
-    {ok, Pid, _} = exec:run("cat", [stdin, stdout, stderr]),
-    ?assertEqual(ok, exec:send(Pid, erlang:list_to_binary([A rem 250 || A <- lists:seq(1,65511)]))),
-    ?assertEqual(ok, exec:send(Pid, erlang:list_to_binary([A rem 250 || A <- lists:seq(1,256*1024)]))).
+  {ok, Pid, _} = exec:run("cat", [stdin, stdout, stderr]),
+  ?assertEqual(ok, exec:send(Pid, erlang:list_to_binary([A rem 250 || A <- lists:seq(1,65511)]))),
+  ?assertEqual(ok, exec:send(Pid, erlang:list_to_binary([A rem 250 || A <- lists:seq(1,256*1024)]))).
 
 test_stdin_eof() ->
-    case os:find_executable("tac") of
+  case os:find_executable("tac") of
     false ->
-        ok;
+      ok;
     _ ->
-        {ok, P, I} = exec:run("tac", [stdin, stdout, monitor]),
-        [ok = exec:send(I, Data)
-         || Data <- [<<"foo\n">>, <<"bar\n">>, <<"baz\n">>, eof]],
-        ?receiveBytes({stdout,I,<<"baz\nbar\nfoo\n">>}, 3000),
-        ?receivePattern({'DOWN', _, process, P, normal}, 5000)
-    end.
+      {ok, P, I} = exec:run("tac", [stdin, stdout, monitor]),
+      [ok = exec:send(I, Data)
+        || Data <- [<<"foo\n">>, <<"bar\n">>, <<"baz\n">>, eof]],
+      ?receiveBytes({stdout,I,<<"baz\nbar\nfoo\n">>}, 3000),
+      ?receivePattern({'DOWN', _, process, P, normal}, 5000)
+  end.
 
 test_std(Stream) ->
-    Suffix = case Stream of
-             stderr -> " 1>&2";
-             stdout -> ""
-             end,
-    {ok, _, I} = exec:run("for i in 1 2; do echo TEST$i; sleep 0.05; done" ++ Suffix, [Stream]),
-    ?receiveBytes({Stream,I,<<"TEST1\n">>}, 5000),
-    ?receiveBytes({Stream,I,<<"TEST2\n">>}, 5000),
+  Suffix = case Stream of
+            stderr -> " 1>&2";
+            stdout -> ""
+            end,
+  {ok, _, I} = exec:run("for i in 1 2; do echo TEST$i; sleep 0.05; done" ++ Suffix, [Stream]),
+  ?receiveBytes({Stream,I,<<"TEST1\n">>}, 5000),
+  ?receiveBytes({Stream,I,<<"TEST2\n">>}, 5000),
 
-    Filename = temp_file(),
-    try
-        ?AssertMatch({ok, []}, exec:run("echo Test"++Suffix, [{Stream, Filename}, sync])),
-        ?AssertMatch({ok, <<"Test\n">>}, file:read_file(Filename)),
+  Filename = temp_file(),
+  try
+    ?AssertMatch({ok, []}, exec:run("echo Test"++Suffix, [{Stream, Filename}, sync])),
+    ?AssertMatch({ok, <<"Test\n">>}, file:read_file(Filename)),
 
-        ?AssertMatch({ok, []}, exec:run("echo Test"++Suffix, [{Stream, Filename}, sync])),
-        ?AssertMatch({ok, <<"Test\n">>}, file:read_file(Filename)),
+    ?AssertMatch({ok, []}, exec:run("echo Test"++Suffix, [{Stream, Filename}, sync])),
+    ?AssertMatch({ok, <<"Test\n">>}, file:read_file(Filename)),
 
-        ?AssertMatch({ok, []}, exec:run("echo Test2"++Suffix, [{Stream, Filename, [append]}, sync])),
-        ?AssertMatch({ok, <<"Test\nTest2\n">>}, file:read_file(Filename))
+    ?AssertMatch({ok, []}, exec:run("echo Test2"++Suffix, [{Stream, Filename, [append]}, sync])),
+    ?AssertMatch({ok, <<"Test\nTest2\n">>}, file:read_file(Filename))
 
-    after
-        ?assertEqual(ok, file:delete(Filename))
-    end.
+  after
+    ?assertEqual(ok, file:delete(Filename))
+  end.
 
 test_cmd() ->
-    % Cmd given as string
-    ?AssertMatch(
-        {ok, [{stdout, [<<"ok\n">>]}]},
-        exec:run("/bin/echo ok", [sync, stdout])),
-    ?AssertMatch(
-        {ok, [{stdout, [<<"ok\n">>]}]},
-        exec:run(<<"/bin/echo ok">>, [sync, stdout])),
-    % Cmd given as list
-    ?AssertMatch(
-        {ok, [{stdout, [<<"ok\n">>]}]},
-        exec:run(["/bin/bash", "-c", "echo ok"], [sync, stdout])),
-    ?AssertMatch(
-        {ok, [{stdout, [<<"ok\n">>]}]},
-        exec:run([<<"/bin/bash">>, <<"-c">>, <<"echo ok">>], [sync, stdout])),
-    ?AssertMatch(
-        {ok, [{stdout, [<<"ok\n">>]}]},
-        exec:run(["/bin/echo", "ok"], [sync, stdout])).
+  % Cmd given as string
+  ?AssertMatch(
+    {ok, [{stdout, [<<"ok\n">>]}]},
+    exec:run("/bin/echo ok", [sync, stdout])),
+  ?AssertMatch(
+    {ok, [{stdout, [<<"ok\n">>]}]},
+    exec:run(<<"/bin/echo ok">>, [sync, stdout])),
+  % Cmd given as list
+  ?AssertMatch(
+    {ok, [{stdout, [<<"ok\n">>]}]},
+    exec:run(["/bin/bash", "-c", "echo ok"], [sync, stdout])),
+  ?AssertMatch(
+    {ok, [{stdout, [<<"ok\n">>]}]},
+    exec:run([<<"/bin/bash">>, <<"-c">>, <<"echo ok">>], [sync, stdout])),
+  ?AssertMatch(
+    {ok, [{stdout, [<<"ok\n">>]}]},
+    exec:run(["/bin/echo", "ok"], [sync, stdout])).
 
 test_executable() ->
-    % Cmd given as string
-    ?AssertMatch(
-        [<<"Pid ", _/binary>>, <<" cannot execute '00kuku00': No such file or directory\n">>],
-        (fun() ->
-            case exec:run("ls", [sync, {executable, "00kuku00"}, stdout, stderr]) of
-                {error,[{exit_status,256},{stderr, [E]}]} ->
-                    binary:split(E, <<":">>);
-                {error, Other} ->
-                    error(Other)
-            end
-        end)()),
+  % Cmd given as string
+  ?AssertMatch(
+    [<<"Pid ", _/binary>>, <<" cannot execute '00kuku00': No such file or directory\n">>],
+    (fun() ->
+      case exec:run("ls", [sync, {executable, "00kuku00"}, stdout, stderr]) of
+        {error,[{exit_status,256},{stderr, [E]}]} ->
+          binary:split(E, <<":">>);
+        {error, Other} ->
+          error(Other)
+      end
+    end)()),
 
-    ?AssertMatch(
-        {ok, [{stdout,[<<"ok\n">>]}]},
-        exec:run("echo ok", [sync, {executable, "/bin/sh"}, stdout, stderr])),
+  ?AssertMatch(
+    {ok, [{stdout,[<<"ok\n">>]}]},
+    exec:run("echo ok", [sync, {executable, "/bin/sh"}, stdout, stderr])),
 
-    ?AssertMatch(
-        {ok, [{stdout,[<<"ok\n">>]}]},
-        exec:run(<<"echo ok">>, [sync, {executable, <<"/bin/sh">>}, stdout, stderr])),
+  ?AssertMatch(
+    {ok, [{stdout,[<<"ok\n">>]}]},
+    exec:run(<<"echo ok">>, [sync, {executable, <<"/bin/sh">>}, stdout, stderr])),
 
-    % Cmd given as list
-    ?AssertMatch(
-        {ok, [{stdout,[<<"ok\n">>]}]},
-        exec:run(["/bin/bash", "-c", "/bin/echo ok"],
-                 [sync, {executable, "/bin/sh"}, stdout, stderr])),
-    ?AssertMatch(
-        {ok, [{stdout,[<<"XYZ\n">>]}]},
-        exec:run(["/bin/echoXXXX abc", "XYZ"],
-                 [sync, {executable, "/bin/echo"}, stdout, stderr])),
+  % Cmd given as list
+  ?AssertMatch(
+    {ok, [{stdout,[<<"ok\n">>]}]},
+    exec:run(["/bin/bash", "-c", "/bin/echo ok"],
+                [sync, {executable, "/bin/sh"}, stdout, stderr])),
+  ?AssertMatch(
+    {ok, [{stdout,[<<"XYZ\n">>]}]},
+    exec:run(["/bin/echoXXXX abc", "XYZ"],
+             [sync, {executable, "/bin/echo"}, stdout, stderr])),
 
-    % Cmd given as a unicode string
-    File = unicode:characters_to_binary(filename:join(temp_dir(), "тест-эрл")),
-    try
-        ok = file:write_file(File, "#!/bin/bash\necho ok\n"),
-        ok = file:change_mode(File, 8#755),
-        ?AssertMatch(
-           {ok, [{stdout,[<<"ok\n">>]}]},
-           exec:run(File, [sync, stdout, stderr])),
-        ?AssertMatch(
-           {ok, [{stdout,[<<"ok\n">>]}]},
-           exec:run([<<"/bin/bash">>, <<"-c">>, File], [sync, stdout, stderr]))
-    after
-        ok = file:delete(File)
-    end.
+  % Cmd given as a unicode string
+  File = unicode:characters_to_binary(filename:join(temp_dir(), "тест-эрл")),
+  try
+    ok = file:write_file(File, "#!/bin/bash\necho ok\n"),
+    ok = file:change_mode(File, 8#755),
+    ?AssertMatch(
+      {ok, [{stdout,[<<"ok\n">>]}]},
+      exec:run(File, [sync, stdout, stderr])),
+    ?AssertMatch(
+      {ok, [{stdout,[<<"ok\n">>]}]},
+      exec:run([<<"/bin/bash">>, <<"-c">>, File], [sync, stdout, stderr]))
+  after
+    ok = file:delete(File)
+  end.
 
 test_redirect() ->
-    ?AssertMatch({ok,[{stderr,[<<"TEST1\n">>]}]},
-        exec:run("echo TEST1", [stderr, {stdout, stderr}, sync])),
-    ?AssertMatch({ok,[{stdout,[<<"TEST2\n">>]}]},
-        exec:run("echo TEST2 1>&2", [stdout, {stderr, stdout}, sync])),
-    ok.
+  ?AssertMatch({ok,[{stderr,[<<"TEST1\n">>]}]},
+    exec:run("echo TEST1", [stderr, {stdout, stderr}, sync])),
+  ?AssertMatch({ok,[{stdout,[<<"TEST2\n">>]}]},
+    exec:run("echo TEST2 1>&2", [stdout, {stderr, stdout}, sync])),
+  ok.
 
 test_redirect_stdin() ->
-    ?AssertMatch("ttt\n",
-        os:cmd("echo ttt > /tmp/output.txt; cat /tmp/output.txt")),
-    ?AssertMatch({ok,[{stdout,[<<"ttt\n">>]}]},
-        exec:run("cat", [{stdin, "/tmp/output.txt"}, sync, stdout])),
-    ?AssertMatch({ok,[{stdout,[<<"ttt\n">>]}]},
-        exec:run("cat", [{stdin, <<"/tmp/output.txt">>}, sync, stdout])),
-    file:delete("/tmp/output.txt").
+  ?AssertMatch("ttt\n",
+    os:cmd("echo ttt > /tmp/output.txt; cat /tmp/output.txt")),
+  ?AssertMatch({ok,[{stdout,[<<"ttt\n">>]}]},
+    exec:run("cat", [{stdin, "/tmp/output.txt"}, sync, stdout])),
+  ?AssertMatch({ok,[{stdout,[<<"ttt\n">>]}]},
+    exec:run("cat", [{stdin, <<"/tmp/output.txt">>}, sync, stdout])),
+  file:delete("/tmp/output.txt").
 
 test_env() ->
-    ?AssertMatch({ok, [{stdout, [<<"X-Y\n">>]}]},
-        exec:run("echo $XXX-$YYY", [stdout, {env, [{"XXX", "X"}, {<<"YYY">>, <<"Y">>}]}, sync])).
+  ?AssertMatch({ok, [{stdout, [<<"X-Y\n">>]}]},
+    exec:run("echo $XXX-$YYY", [stdout, {env, [{"XXX", "X"}, {<<"YYY">>, <<"Y">>}]}, sync])).
 
 test_kill_timeout() ->
-    %{ok, _OldDebug} = exec:debug(3),
-    {ok, P2, I2} = exec:run("trap 'echo Got signal' SIGTERM; sleep 15", [{kill_timeout, 1}, stdout, monitor]),
-    timer:sleep(200),
-    exec:stop(I2),
-    timer:sleep(50),
-    %exec:debug(_OldDebug),
-    ?receivePattern({'DOWN', I2, process, P2, normal}, 5000).
+  %{ok, _OldDebug} = exec:debug(3),
+  {ok, P2, I2} = exec:run("trap 'echo Got signal' SIGTERM; sleep 15", [{kill_timeout, 1}, stdout, monitor]),
+  timer:sleep(200),
+  exec:stop(I2),
+  timer:sleep(50),
+  %exec:debug(_OldDebug),
+  ?receivePattern({'DOWN', I2, process, P2, normal}, 5000).
 
 test_setpgid() ->
-    % Cmd given as string
-    {ok, P0, P} = exec:run("sleep  1", [{group, 0}, kill_group, monitor]),
-    {ok, P1, _} = exec:run("sleep 15", [{group, P}, monitor]),
-    {ok, P2, _} = exec:run("sleep 15", [{group, P}, monitor]),
-    ?receivePattern({'DOWN',_,process, P0, normal}, 5000),
-    ?receivePattern({'DOWN',_,process, P1, {exit_status, 15}}, 5000),
-    ?receivePattern({'DOWN',_,process, P2, {exit_status, 15}}, 5000).
+  % Cmd given as string
+  {ok, P0, P} = exec:run("sleep  1", [{group, 0}, kill_group, monitor]),
+  {ok, P1, _} = exec:run("sleep 15", [{group, P}, monitor]),
+  {ok, P2, _} = exec:run("sleep 15", [{group, P}, monitor]),
+  ?receivePattern({'DOWN',_,process, P0, normal}, 5000),
+  ?receivePattern({'DOWN',_,process, P1, {exit_status, 15}}, 5000),
+  ?receivePattern({'DOWN',_,process, P2, {exit_status, 15}}, 5000).
 
 test_kill_group_with_arbitrary_group() ->
-    % Regression test: Verify that kill_group with an arbitrary group doesn't kill the port
-    % This test ensures the port process stays alive after a kill_group operation.
-    % The child process should be killed with kill_group, but the port should stay alive.
-    {ok, P, _OsPid} = exec:run("sleep 1", [stdout, kill_group, monitor]),
-    ?receivePattern({'DOWN', _, process, P, normal}, 5000),
-    % Verify the exec port is still alive by running another command
-    % If the port crashed, this next command would fail with 'noproc'
-    ?AssertMatch({ok, [{stdout, [<<"ok\n">>]}]},
-        exec:run("echo ok", [stdout, sync])).
+  % Regression test: Verify that kill_group with an arbitrary group doesn't kill the port
+  % This test ensures the port process stays alive after a kill_group operation.
+  % The child process should be killed with kill_group, but the port should stay alive.
+  {ok, P, _OsPid} = exec:run("sleep 1", [stdout, kill_group, monitor]),
+  ?receivePattern({'DOWN', _, process, P, normal}, 5000),
+  % Verify the exec port is still alive by running another command
+  % If the port crashed, this next command would fail with 'noproc'
+  ?AssertMatch({ok, [{stdout, [<<"ok\n">>]}]},
+    exec:run("echo ok", [stdout, sync])).
 
 test_kill_group_with_nonzero_group() ->
-    % Verify that kill_group with a non-zero group doesn't kill the port.
-    % The returned error is due to the fact that the child process doesn't have
-    % permissions to set group ID to 100.
-    ?AssertMatch({error, [{exit_status, 256}]},
-        exec:run("sleep 1", [stdout, {group, 100}, kill_group, sync])).
+  % Verify that kill_group with a non-zero group doesn't kill the port.
+  % The returned error is due to the fact that the child process doesn't have
+  % permissions to set group ID to 100.
+  ?AssertMatch({error, [{exit_status, 256}]},
+    exec:run("sleep 1", [stdout, {group, 100}, kill_group, sync])).
 
 test_pty() ->
-    ?AssertMatch({error,[{exit_status,256},{stdout,[<<"not a tty\n">>]}]},
-        exec:run("tty", [stdin, stdout, sync])),
-    ?assert(case exec:run("tty", [stdin, stdout, pty, sync]) of
-        {ok,[{stdout,[<<"/dev/pts/", _/binary>>|_]}]} ->
-            true;
-        % on macos, the pty has the format /dev/ttysXXX
-        {ok,[{stdout,[<<"/dev/ttys", _/binary>>|_]}]} ->
-            true;
-        _ -> false
-    end),
-    {ok, P, I} = exec:run("/bin/bash --norc -i", [stdin, stdout, pty, monitor]),
-    ok = exec:send(I, <<"echo ok\n">>),
-    receive
+  ?AssertMatch({error,[{exit_status,256},{stdout,[<<"not a tty\n">>]}]},
+    exec:run("tty", [stdin, stdout, sync])),
+  ?assert(case exec:run("tty", [stdin, stdout, pty, sync]) of
+    {ok,[{stdout,[<<"/dev/pts/", _/binary>>|_]}]} ->
+        true;
+    % on macos, the pty has the format /dev/ttysXXX
+    {ok,[{stdout,[<<"/dev/ttys", _/binary>>|_]}]} ->
+        true;
+    _ -> false
+  end),
+  {ok, P, I} = exec:run("/bin/bash --norc -i", [stdin, stdout, pty, monitor]),
+  ok = exec:send(I, <<"echo ok\n">>),
+  receive
     {stdout, I, <<"echo ok\r\n">>} ->
-        ?receiveBytes({stdout, I, <<"ok\r\n">>}, 1000);
+      ?receiveBytes({stdout, I, <<"ok\r\n">>}, 1000);
     {stdout, I, <<"ok\r\n">>} ->
-        ok
+      ok
     after 1000 ->
-        ?AssertMatch({stdout, I, <<"ok\r\n">>}, timeout)
-    end,
-    ok = exec:send(I, <<"exit\n">>),
-    ?receivePattern({'DOWN', _, process, P, normal}, 1000).
+      ?AssertMatch({stdout, I, <<"ok\r\n">>}, timeout)
+  end,
+  ok = exec:send(I, <<"exit\n">>),
+  ?receivePattern({'DOWN', _, process, P, normal}, 1000).
 
 test_pty_echo() ->
-    % without echo
-    {ok, _, I} = exec:run("echo started && cat", [
-        stdin,
-        stdout,
-        {stderr, stdout},
-        pty,
-        monitor
-    ]),
-    ?receiveBytes({stdout, I, <<"started\r\n">>}, 5000),
-    ok = exec:send(I, <<"test\n">>),
-    ?receiveBytes({stdout, I, <<"test\r\n">>}, 5000),
-    ok = exec:kill(I, 9),
-    % with echo
-    {ok, _, I2} = exec:run("echo started && cat", [
-        stdin,
-        stdout,
-        {stderr, stdout},
-        pty,
-        pty_echo,
-        monitor
-    ]),
-    ?receiveBytes({stdout, I2, <<"started\r\n">>}, 5000),
-    ok = exec:send(I2, <<"test\n">>),
-    ?receiveBytes({stdout, I2, <<"test\r\ntest\r\n">>}, 5000).
+  % without echo
+  {ok, _, I} = exec:run("echo started && cat", [
+    stdin,
+    stdout,
+    {stderr, stdout},
+    pty,
+    monitor
+  ]),
+  ?receiveBytes({stdout, I, <<"started\r\n">>}, 5000),
+  ok = exec:send(I, <<"test\n">>),
+  ?receiveBytes({stdout, I, <<"test\r\n">>}, 5000),
+  ok = exec:kill(I, 9),
+  % with echo
+  {ok, _, I2} = exec:run("echo started && cat", [
+    stdin,
+    stdout,
+    {stderr, stdout},
+    pty,
+    pty_echo,
+    monitor
+  ]),
+  ?receiveBytes({stdout, I2, <<"started\r\n">>}, 5000),
+  ok = exec:send(I2, <<"test\n">>),
+  ?receiveBytes({stdout, I2, <<"test\r\ntest\r\n">>}, 5000).
 
 test_pty_opts() ->
-    ?AssertMatch({error,[{exit_status,256},{stdout,[<<"not a tty\n">>]}]},
-        exec:run("tty", [stdin, stdout, sync])),
-    ?assert(case exec:run("tty", [stdin, stdout, {pty, []}, sync]) of
-        {ok,[{stdout,[<<"/dev/pts/", _/binary>>|_]}]} ->
-            true;
-        {ok,[{stdout,[<<"/dev/ttys", _/binary>>|_]}]} ->
-            true;
-        _ -> false
-    end),
-    % without echo
-    {ok, P, I} = exec:run("echo started && cat", [
-        stdin,
-        stdout,
-        {stderr, stdout},
-        {pty, [{echo, false}]},
-        monitor
-    ]),
-    ?receiveBytes({stdout, I, <<"started\r\n">>}, 5000),
-    ok = exec:send(I, <<"test\n">>),
-    ?receiveBytes({stdout, I, <<"test\r\n">>}, 5000),
-    ok = exec:kill(I, 9),
-    ?receivePattern({'DOWN', I, process, P, {exit_status, 9}}, 5000),
-    % with echo
-    {ok, P2, I2} = exec:run("echo started && cat", [
-        stdin,
-        stdout,
-        {stderr, stdout},
-        {pty, [{echo, true}]},
-        monitor
-    ]),
-    ?receiveBytes({stdout, I2, <<"started\r\n">>}, 5000),
-    ok = exec:send(I2, <<"test\n">>),
-    ?receiveBytes({stdout, I2, <<"test\r\ntest\r\n">>}, 5000),
-    % send ^C
-    ok = exec:send(I2, <<3>>),
-    ?receiveBytes({stdout, I2, <<"^C">>}, 1000),
-    ?receivePattern({'DOWN', I2, process, P2, {exit_status, 2}}, 5000),
-    % vintr test
-    {ok, P3, I3} = exec:run("echo started && cat", [
-        stdin,
-        stdout,
-        {stderr, stdout},
-        {pty, [{echo, true}, {vintr, 2}]},
-        monitor
-    ]),
-    ?receiveBytes({stdout, I3, <<"started\r\n">>}, 5000),
-    ok = exec:send(I3, <<"test">>),
-    ?receiveBytes({stdout, I3, <<"test">>}, 5000),
-    % send ^C (3), should not interrupt
-    ok = exec:send(I3, <<3>>),
-    ?receiveBytes({stdout, I3, <<"^C">>}, 5000),
-    % send ^B (2), should interrupt
-    ok = exec:send(I3, <<2>>),
-    ?receiveBytes({stdout, I3, <<"^B">>}, 5000),
-    ?receivePattern({'DOWN', I3, process, P3, {exit_status, 2}}, 5000),
-    % opts validation
-    ?AssertMatch(
-        {error,{invalid_pty_value,[{vintr,false},
-                                   {tty_op_ispeed,-1},
-                                   {invalid,1}]}},
-        exec:run("echo not ok", [
-            sync,
-            stdin,
-            stdout,
-            {pty, [
-                {echo, true},
-                {echoke, 0},
-                {echoe, false},
-                {vintr, false},
-                {verase, 13},
-                {tty_op_ispeed, -1},
-                {invalid, 1}
-            ]}])).
+  ?AssertMatch({error,[{exit_status,256},{stdout,[<<"not a tty\n">>]}]},
+      exec:run("tty", [stdin, stdout, sync])),
+  ?assert(case exec:run("tty", [stdin, stdout, {pty, []}, sync]) of
+      {ok,[{stdout,[<<"/dev/pts/", _/binary>>|_]}]} ->
+          true;
+      {ok,[{stdout,[<<"/dev/ttys", _/binary>>|_]}]} ->
+          true;
+      _ -> false
+  end),
+  % without echo
+  {ok, P, I} = exec:run("echo started && cat", [
+      stdin,
+      stdout,
+      {stderr, stdout},
+      {pty, [{echo, false}]},
+      monitor
+  ]),
+  ?receiveBytes({stdout, I, <<"started\r\n">>}, 5000),
+  ok = exec:send(I, <<"test\n">>),
+  ?receiveBytes({stdout, I, <<"test\r\n">>}, 5000),
+  ok = exec:kill(I, 9),
+  ?receivePattern({'DOWN', I, process, P, {exit_status, 9}}, 5000),
+  % with echo
+  {ok, P2, I2} = exec:run("echo started && cat", [
+      stdin,
+      stdout,
+      {stderr, stdout},
+      {pty, [{echo, true}]},
+      monitor
+  ]),
+  ?receiveBytes({stdout, I2, <<"started\r\n">>}, 5000),
+  ok = exec:send(I2, <<"test\n">>),
+  ?receiveBytes({stdout, I2, <<"test\r\ntest\r\n">>}, 5000),
+  % send ^C
+  ok = exec:send(I2, <<3>>),
+  ?receiveBytes({stdout, I2, <<"^C">>}, 1000),
+  ?receivePattern({'DOWN', I2, process, P2, {exit_status, 2}}, 5000),
+  % vintr test
+  {ok, P3, I3} = exec:run("echo started && cat", [
+      stdin,
+      stdout,
+      {stderr, stdout},
+      {pty, [{echo, true}, {vintr, 2}]},
+      monitor
+  ]),
+  ?receiveBytes({stdout, I3, <<"started\r\n">>}, 5000),
+  ok = exec:send(I3, <<"test">>),
+  ?receiveBytes({stdout, I3, <<"test">>}, 5000),
+  % send ^C (3), should not interrupt
+  ok = exec:send(I3, <<3>>),
+  ?receiveBytes({stdout, I3, <<"^C">>}, 5000),
+  % send ^B (2), should interrupt
+  ok = exec:send(I3, <<2>>),
+  ?receiveBytes({stdout, I3, <<"^B">>}, 5000),
+  ?receivePattern({'DOWN', I3, process, P3, {exit_status, 2}}, 5000),
+  % opts validation
+  ?AssertMatch(
+      {error,{invalid_pty_value,[{vintr,false},
+                                  {tty_op_ispeed,-1},
+                                  {invalid,1}]}},
+      exec:run("echo not ok", [
+          sync,
+          stdin,
+          stdout,
+          {pty, [
+              {echo, true},
+              {echoke, 0},
+              {echoe, false},
+              {vintr, false},
+              {verase, 13},
+              {tty_op_ispeed, -1},
+              {invalid, 1}
+          ]}])).
 
 test_dynamic_pty_opts() ->
-    % without echo
-    {ok, P, I} = exec:run("echo started && cat", [
-        stdin,
-        stdout,
-        {stderr, stdout},
-        pty,
-        monitor
-    ]),
-    ?receiveBytes({stdout, I, <<"started\r\n">>}, 5000),
-    ok = exec:send(I, <<"test\n">>),
-    ?receiveBytes({stdout, I, <<"test\r\n">>}, 5000),
-    ok = exec:send(I, <<2>>),
-    ok = exec:send(I, <<"\n">>),
-    ?receiveBytes({stdout, I, <<2, 13, 10>>}, 5000),
-    % change echo to 1, interrupt to ^B
-    ok = exec:pty_opts(I, [{echo, 1}, {vintr, 2}]),
-    % opts validation
-    ?AssertMatch(
-        {error,{invalid_pty_value,[{vintr,false},
-                                   {tty_op_ispeed,-1},
-                                   {invalid,1}]}},
-        exec:pty_opts(I, [
-            {echo, true},
-            {echoke, 0},
-            {echoe, false},
-            {vintr, false},
-            {verase, 13},
-            {tty_op_ispeed, -1},
-            {invalid, 1}
-        ])),
-    ok = exec:send(I, <<"test\n">>),
-    ?receiveBytes({stdout, I, <<"test\r\ntest\r\n">>}, 5000),
-    % send ^B
-    ok = exec:send(I, <<2>>),
-    ?receiveBytes({stdout, I, <<"^B">>}, 5000),
-    ?receivePattern({'DOWN', I, process, P, {exit_status, 2}}, 5000).
+  % without echo
+  {ok, P, I} = exec:run("echo started && cat", [
+      stdin,
+      stdout,
+      {stderr, stdout},
+      pty,
+      monitor
+  ]),
+  ?receiveBytes({stdout, I, <<"started\r\n">>}, 5000),
+  ok = exec:send(I, <<"test\n">>),
+  ?receiveBytes({stdout, I, <<"test\r\n">>}, 5000),
+  ok = exec:send(I, <<2>>),
+  ok = exec:send(I, <<"\n">>),
+  ?receiveBytes({stdout, I, <<2, 13, 10>>}, 5000),
+  % change echo to 1, interrupt to ^B
+  ok = exec:pty_opts(I, [{echo, 1}, {vintr, 2}]),
+  % opts validation
+  ?AssertMatch(
+      {error,{invalid_pty_value,[{vintr,false},
+                                  {tty_op_ispeed,-1},
+                                  {invalid,1}]}},
+      exec:pty_opts(I, [
+          {echo, true},
+          {echoke, 0},
+          {echoe, false},
+          {vintr, false},
+          {verase, 13},
+          {tty_op_ispeed, -1},
+          {invalid, 1}
+      ])),
+  ok = exec:send(I, <<"test\n">>),
+  ?receiveBytes({stdout, I, <<"test\r\ntest\r\n">>}, 5000),
+  % send ^B
+  ok = exec:send(I, <<2>>),
+  ?receiveBytes({stdout, I, <<"^B">>}, 5000),
+  ?receivePattern({'DOWN', I, process, P, {exit_status, 2}}, 5000).
 
 test_pty_group_zero_kill_group() ->
-    case build_pty_group_zero_harness() of
-        {ok, PreloadPath} ->
-            PidFile = temp_file(),
-            ExecPid = case exec:start([{env, [{"LD_PRELOAD", PreloadPath}]}]) of
-                {ok, Pid} -> Pid;
-                {error, {already_started, Pid}} ->
-                    Ref = monitor(process, Pid),
-                    exit(Pid, kill),
-                    receive
-                        {'DOWN', Ref, process, _, _} -> ok
-                    after 30000 ->
-                        erlang:error({test_pty_group_zero_kill_group, timeout})
-                    end,
-                    {ok, Pid2} = exec:start([{env, [{"LD_PRELOAD", PreloadPath}]}]),
-                    Pid2
-            end,
-            try
-                Cmd = lists:flatten(io_lib:format("sleep 20 & echo $! > ~s; wait", [PidFile])),
-                {ok, P, I} = exec:run(Cmd, [monitor, pty, {group, 0}, kill_group]),
-                ChildPid = read_pid_file(PidFile),
-                ok = exec:stop(I),
-                ?receivePattern({'DOWN', I, process, P, normal}, 5000),
-                wait_until_pid_stops(ChildPid)
-            after
-                maybe_kill_pid_from_file(PidFile),
-                file:delete(PidFile),
-                exit(ExecPid, kill)
-            end;
-        {error, Reason} ->
-            erlang:error(Reason);
-        {skip, _Reason} ->
-            ok
-    end.
+  case build_pty_group_zero_harness() of
+      {ok, PreloadPath} ->
+          PidFile = temp_file(),
+          ExecPid = case exec:start([{env, [{"LD_PRELOAD", PreloadPath}]}]) of
+              {ok, Pid} -> Pid;
+              {error, {already_started, Pid}} ->
+                  Ref = monitor(process, Pid),
+                  exit(Pid, kill),
+                  receive
+                      {'DOWN', Ref, process, _, _} -> ok
+                  after 30000 ->
+                      erlang:error({test_pty_group_zero_kill_group, timeout})
+                  end,
+                  {ok, Pid2} = exec:start([{env, [{"LD_PRELOAD", PreloadPath}]}]),
+                  Pid2
+          end,
+          try
+              Cmd = lists:flatten(io_lib:format("sleep 20 & echo $! > ~s; wait", [PidFile])),
+              {ok, P, I} = exec:run(Cmd, [monitor, pty, {group, 0}, kill_group]),
+              ChildPid = read_pid_file(PidFile),
+              ok = exec:stop(I),
+              ?receivePattern({'DOWN', I, process, P, normal}, 5000),
+              wait_until_pid_stops(ChildPid)
+          after
+              maybe_kill_pid_from_file(PidFile),
+              file:delete(PidFile),
+              exit(ExecPid, kill)
+          end;
+      {error, Reason} ->
+          erlang:error(Reason);
+      {skip, _Reason} ->
+          ok
+  end.
 
 test_port_runs_in_own_process_group() ->
-    {ok, ExecPid} = exec:start([]),
-    try
-        OsPid = exec_port_os_pid(ExecPid),
-        case os_process_group_id(OsPid) of
-        {skip, _} ->
-            ok;
-        GroupId ->
-            ?assertEqual(OsPid, GroupId)
-        end
-    after
-        exit(ExecPid, kill)
-    end.
+  {ok, ExecPid} = exec:start([]),
+  try
+      OsPid = exec_port_os_pid(ExecPid),
+      case os_process_group_id(OsPid) of
+      {skip, _} ->
+          ok;
+      GroupId ->
+          ?assertEqual(OsPid, GroupId)
+      end
+  after
+      exit(ExecPid, kill)
+  end.
 
 test_startup_fails_when_setpgid_is_rejected() ->
-    case build_setpgid_failure_harness() of
-        {ok, WrapperPath, PreloadPath} ->
-            try
-                without_error_logger(fun() ->
-                    ?assertMatch(
-                        {error, {port_exited_with_status, 4}},
-                        exec:start([
-                            {portexe, WrapperPath},
-                            {env, [
-                                {"ERLEXEC_REAL_PORTEXE", default(portexe)},
-                                {"ERLEXEC_FAIL_SETPGID_PRELOAD", PreloadPath}
-                            ]}
-                        ]))
-                end)
-            after
-                ok = file:delete(WrapperPath),
-                ok = file:delete(PreloadPath)
-            end;
-        {error, Reason} ->
-            erlang:error(Reason);
-        {skip, _Reason} ->
-            ok
-    end.
+  case build_setpgid_failure_harness() of
+      {ok, WrapperPath, PreloadPath} ->
+          try
+              without_error_logger(fun() ->
+                  ?assertMatch(
+                      {error, {port_exited_with_status, 4}},
+                      exec:start([
+                          {portexe, WrapperPath},
+                          {env, [
+                              {"ERLEXEC_REAL_PORTEXE", default(portexe)},
+                              {"ERLEXEC_FAIL_SETPGID_PRELOAD", PreloadPath}
+                          ]}
+                      ]))
+              end)
+          after
+              ok = file:delete(WrapperPath),
+              ok = file:delete(PreloadPath)
+          end;
+      {error, Reason} ->
+          erlang:error(Reason);
+      {skip, _Reason} ->
+          ok
+  end.
 
 test_finalize_shutdown_kills_shell_descendants() ->
-    PidFile = temp_file(),
-    {ok, ExecPid} = exec:start([]),
-    try
-        Cmd = lists:flatten(io_lib:format("sleep 20 & echo $! > ~s; wait", [PidFile])),
-        {ok, _, _} = exec:run(Cmd, []),
-        ChildPid = read_pid_file(PidFile),
-        ok = gen_server:stop(ExecPid),
-        ?assertEqual(false, os_pid_running(ChildPid))
-    after
-        maybe_kill_pid_from_file(PidFile),
-        file:delete(PidFile)
-    end.
+  PidFile = temp_file(),
+  {ok, ExecPid} = exec:start([]),
+  try
+      Cmd = lists:flatten(io_lib:format("sleep 20 & echo $! > ~s; wait", [PidFile])),
+      {ok, _, _} = exec:run(Cmd, []),
+      ChildPid = read_pid_file(PidFile),
+      ok = gen_server:stop(ExecPid),
+      ?assertEqual(false, os_pid_running(ChildPid))
+  after
+      maybe_kill_pid_from_file(PidFile),
+      file:delete(PidFile)
+  end.
 
 default_portexe_no_priv_dir_test_() ->
-    Priv = code:priv_dir(erlexec),
-    {setup,
-        fun() -> ok = backup_dir(Priv) end,
-        fun(_) -> ok = restore_backup_dir(Priv) end,
-        fun() ->
-            without_error_logger(fun() ->
-                ?assert(not filelib:is_dir(Priv)),
-                ?assertMatch("", exec:default(portexe))
-                                 end)
-        end}.
+  Priv = code:priv_dir(erlexec),
+  {setup,
+      fun() -> ok = backup_dir(Priv) end,
+      fun(_) -> ok = restore_backup_dir(Priv) end,
+      fun() ->
+          without_error_logger(fun() ->
+              ?assert(not filelib:is_dir(Priv)),
+              ?assertMatch("", exec:default(portexe))
+                                end)
+      end}.
 
 default_portexe_invalid_file_test_() ->
-    Priv = code:priv_dir(erlexec),
-    RandomFile = filename:join(Priv, "random-file"),
-    ArchDir = filename:join(Priv, erlang:system_info(system_architecture)),
+  Priv = code:priv_dir(erlexec),
+  RandomFile = filename:join(Priv, "random-file"),
+  ArchDir = filename:join(Priv, erlang:system_info(system_architecture)),
 
-    {setup,
+  {setup,
+    fun() ->
+      ok = backup_dir(Priv),
+      ok = file:make_dir(Priv),
+      ok = file:write_file(RandomFile, <<>>),
+      ok = file:make_dir(ArchDir)
+    end,
+    fun(_) ->
+      ok = delete_files([RandomFile]),
+      ok = delete_dirs([ArchDir, Priv]),
+      ok = restore_backup_dir(Priv)
+    end,
+    fun() ->
+      without_error_logger(
         fun() ->
-            ok = backup_dir(Priv),
-            ok = file:make_dir(Priv),
-            ok = file:write_file(RandomFile, <<>>),
-            ok = file:make_dir(ArchDir)
-        end,
-        fun(_) ->
-            ok = delete_files([RandomFile]),
-            ok = delete_dirs([ArchDir, Priv]),
-            ok = restore_backup_dir(Priv)
-        end,
-        fun() ->
-            without_error_logger(fun() ->
-                {ok, Entries} = file:list_dir(Priv),
-                ?assertEqual(lists:sort(["random-file", erlang:system_info(system_architecture)]), lists:sort(Entries)),
-                ?assertEqual("", exec:default(portexe))
-                                 end)
-        end}.
+          {ok, Entries} = file:list_dir(Priv),
+          ?assertEqual(lists:sort(["random-file", erlang:system_info(system_architecture)]), lists:sort(Entries)),
+          ?assertEqual("", exec:default(portexe))
+        end)
+    end}.
 
 default_portexe_invalid_parent_dir_test_() ->
-    Priv = code:priv_dir(erlexec),
-    BinFile = filename:join(Priv, "exec-port"),
-    ArchDir = filename:join(Priv, "only-arch"),
-    RandomFile = filename:join(ArchDir, "random-file"),
+  Priv = code:priv_dir(erlexec),
+  BinFile = filename:join(Priv, "exec-port"),
+  ArchDir = filename:join(Priv, "only-arch"),
+  RandomFile = filename:join(ArchDir, "random-file"),
 
-    {setup,
-        fun() ->
-            ok = backup_dir(Priv),
-            ok = file:make_dir(Priv),
-            ok = file:make_dir(ArchDir),
-            ok = file:write_file(BinFile, <<>>),
-            ok = file:write_file(RandomFile, <<>>)
-        end,
-        fun(_) ->
-            ok = delete_files([BinFile, RandomFile]),
-            ok = delete_dirs([ArchDir, Priv]),
-            ok = restore_backup_dir(Priv)
-        end,
-        fun() ->
-            without_error_logger(fun() ->
-                {ok, Entries} = file:list_dir(Priv),
-                ?assertEqual(["exec-port", "only-arch"], lists:sort(Entries)),
-                ?assertMatch("", exec:default(portexe))
-                                 end)
-        end}.
+  {setup,
+      fun() ->
+          ok = backup_dir(Priv),
+          ok = file:make_dir(Priv),
+          ok = file:make_dir(ArchDir),
+          ok = file:write_file(BinFile, <<>>),
+          ok = file:write_file(RandomFile, <<>>)
+      end,
+      fun(_) ->
+          ok = delete_files([BinFile, RandomFile]),
+          ok = delete_dirs([ArchDir, Priv]),
+          ok = restore_backup_dir(Priv)
+      end,
+      fun() ->
+          without_error_logger(fun() ->
+              {ok, Entries} = file:list_dir(Priv),
+              ?assertEqual(["exec-port", "only-arch"], lists:sort(Entries)),
+              ?assertMatch("", exec:default(portexe))
+                                end)
+      end}.
 
 default_portexe_single_execport_file_test_() ->
-    Priv = code:priv_dir(erlexec),
-    ArchDir = filename:join(Priv, "only-arch"),
-    BinFile = filename:join(ArchDir, "exec-port"),
+  Priv = code:priv_dir(erlexec),
+  ArchDir = filename:join(Priv, "only-arch"),
+  BinFile = filename:join(ArchDir, "exec-port"),
 
-    {setup,
-        fun() ->
-            ok = backup_dir(Priv),
-            ok = file:make_dir(Priv),
-            ok = file:make_dir(ArchDir),
-            ok = file:write_file(BinFile, <<>>)
-        end,
-        fun(_) ->
-            ok = delete_files([BinFile]),
-            ok = delete_dirs([ArchDir, Priv]),
-            ok = restore_backup_dir(Priv)
-        end,
-        fun() ->
-            without_error_logger(fun() ->
-                {ok, Entries} = file:list_dir(Priv),
-                ?assertEqual(["only-arch"], Entries),
-                ?assert(lists:suffix("/priv/only-arch/exec-port", exec:default(portexe)))
-                                 end)
-        end}.
+  {setup,
+      fun() ->
+          ok = backup_dir(Priv),
+          ok = file:make_dir(Priv),
+          ok = file:make_dir(ArchDir),
+          ok = file:write_file(BinFile, <<>>)
+      end,
+      fun(_) ->
+          ok = delete_files([BinFile]),
+          ok = delete_dirs([ArchDir, Priv]),
+          ok = restore_backup_dir(Priv)
+      end,
+      fun() ->
+          without_error_logger(fun() ->
+              {ok, Entries} = file:list_dir(Priv),
+              ?assertEqual(["only-arch"], Entries),
+              ?assert(lists:suffix("/priv/only-arch/exec-port", exec:default(portexe)))
+                                end)
+      end}.
 
 default_portexe_multiple_portexec_files_test_() ->
-    Priv = code:priv_dir(erlexec),
-    Arch = erlang:system_info(system_architecture),
-    ArchDir = filename:join(Priv, Arch),
-    OtherArchDir = filename:join(Priv, "unknown-arch"),
-    BinFile = filename:join(ArchDir, "exec-port"),
-    OtherBinFile = filename:join(OtherArchDir, "exec-port"),
+  Priv = code:priv_dir(erlexec),
+  Arch = erlang:system_info(system_architecture),
+  ArchDir = filename:join(Priv, Arch),
+  OtherArchDir = filename:join(Priv, "unknown-arch"),
+  BinFile = filename:join(ArchDir, "exec-port"),
+  OtherBinFile = filename:join(OtherArchDir, "exec-port"),
 
-    {setup,
-        fun() ->
-            ok = backup_dir(Priv),
-            ok = file:make_dir(Priv),
-            ok = file:make_dir(ArchDir),
-            ok = file:make_dir(OtherArchDir),
-            ok = file:write_file(BinFile, <<>>),
-            ok = file:write_file(OtherBinFile, <<>>)
-        end,
-        fun(_) ->
-            ok = delete_files([BinFile, OtherBinFile]),
-            ok = delete_dirs([ArchDir, OtherArchDir, Priv]),
-            ok = restore_backup_dir(Priv)
-        end,
-        fun() ->
-            without_error_logger(fun() ->
-                {ok, Entries} = file:list_dir(Priv),
-                ?assertEqual(lists:sort([Arch, "unknown-arch"]), lists:sort(Entries)),
-                ?assert(lists:suffix("/priv/" ++ Arch ++ "/exec-port", exec:default(portexe)))
-                                 end)
-        end}.
+  {setup,
+      fun() ->
+          ok = backup_dir(Priv),
+          ok = file:make_dir(Priv),
+          ok = file:make_dir(ArchDir),
+          ok = file:make_dir(OtherArchDir),
+          ok = file:write_file(BinFile, <<>>),
+          ok = file:write_file(OtherBinFile, <<>>)
+      end,
+      fun(_) ->
+          ok = delete_files([BinFile, OtherBinFile]),
+          ok = delete_dirs([ArchDir, OtherArchDir, Priv]),
+          ok = restore_backup_dir(Priv)
+      end,
+      fun() ->
+          without_error_logger(fun() ->
+              {ok, Entries} = file:list_dir(Priv),
+              ?assertEqual(lists:sort([Arch, "unknown-arch"]), lists:sort(Entries)),
+              ?assert(lists:suffix("/priv/" ++ Arch ++ "/exec-port", exec:default(portexe)))
+                                end)
+      end}.
 
 backup_dir(Dir) ->
-    case filelib:is_dir(Dir) of
-        true -> file:rename(Dir, Dir ++ "_bak");
-        false -> no_dir_to_backup
-    end.
+  case filelib:is_dir(Dir) of
+      true -> file:rename(Dir, Dir ++ "_bak");
+      false -> no_dir_to_backup
+  end.
 
 restore_backup_dir(Dir) ->
-    BackupDir = Dir ++ "_bak",
-    case filelib:is_dir(BackupDir) of
-        true -> file:rename(BackupDir, Dir);
-        false -> no_dir_to_restore
-    end.
+  BackupDir = Dir ++ "_bak",
+  case filelib:is_dir(BackupDir) of
+      true -> file:rename(BackupDir, Dir);
+      false -> no_dir_to_restore
+  end.
 
 delete_files(Files) ->
-    lists:foreach(fun file:delete/1, Files).
+  lists:foreach(fun file:delete/1, Files).
 
 delete_dirs(Dirs) ->
-    lists:foreach(fun file:del_dir/1, Dirs).
+  lists:foreach(fun file:del_dir/1, Dirs).
 
 exec_port_os_pid(ExecPid) ->
-    #state{port = Port} = sys:get_state(ExecPid),
-    {os_pid, OsPid} = erlang:port_info(Port, os_pid),
-    OsPid.
+  #state{port = Port} = sys:get_state(ExecPid),
+  {os_pid, OsPid} = erlang:port_info(Port, os_pid),
+  OsPid.
 
 os_process_group_id(Pid) ->
-    case os:find_executable("ps") of
-        false ->
-            {skip, no_ps};
-        Ps ->
-            list_to_integer(string:trim(os:cmd(Ps ++ " -o pgid= -p " ++ integer_to_list(Pid))))
-    end.
+  case os:find_executable("ps") of
+      false ->
+          {skip, no_ps};
+      Ps ->
+          list_to_integer(string:trim(os:cmd(Ps ++ " -o pgid= -p " ++ integer_to_list(Pid))))
+  end.
 
 read_pid_file(Path) ->
-    read_pid_file(Path, 20).
+  read_pid_file(Path, 20).
 
 read_pid_file(Path, 0) ->
-    erlang:error({pid_file_timeout, Path});
+  erlang:error({pid_file_timeout, Path});
 read_pid_file(Path, Retries) ->
-    case file:read_file(Path) of
-        {ok, Bin} ->
-            case string:trim(binary_to_list(Bin)) of
-                [] ->
-                    %% File exists but is empty, retry
-                    timer:sleep(100),
-                    read_pid_file(Path, Retries - 1);
-                Trimmed ->
-                    list_to_integer(Trimmed)
-            end;
-        {error, enoent} ->
-            timer:sleep(100),
-            read_pid_file(Path, Retries - 1)
-    end.
+  case file:read_file(Path) of
+      {ok, Bin} ->
+          case string:trim(binary_to_list(Bin)) of
+              [] ->
+                  %% File exists but is empty, retry
+                  timer:sleep(100),
+                  read_pid_file(Path, Retries - 1);
+              Trimmed ->
+                  list_to_integer(Trimmed)
+          end;
+      {error, enoent} ->
+          timer:sleep(100),
+          read_pid_file(Path, Retries - 1)
+  end.
 
 os_pid_running(Pid) ->
-    case os:find_executable("ps") of
-        false ->
-            string:trim(os:cmd("kill -0 " ++ integer_to_list(Pid) ++ " >/dev/null 2>&1; echo $?")) =:= "0";
-        Ps ->
-            case string:trim(os:cmd(Ps ++ " -o stat= -p " ++ integer_to_list(Pid))) of
-                "" ->
-                    false;
-                [$Z | _] ->
-                    false;
-                _ ->
-                    true
-            end
-    end.
+  case os:find_executable("ps") of
+    false ->
+      string:trim(os:cmd("kill -0 " ++ integer_to_list(Pid) ++ " >/dev/null 2>&1; echo $?")) =:= "0";
+    Ps ->
+      case string:trim(os:cmd(Ps ++ " -o stat= -p " ++ integer_to_list(Pid))) of
+        ""       -> false;
+        [$Z | _] -> false;
+        _        -> true
+      end
+  end.
 
 maybe_kill_pid_from_file(Path) ->
-    case file:read_file(Path) of
-        {ok, Bin} ->
-            Pid = list_to_integer(string:trim(binary_to_list(Bin))),
-            os_pid_running(Pid) andalso os:cmd("kill -TERM " ++ integer_to_list(Pid)),
-            ok;
-        {error, _} ->
-            ok
-    end.
+  case file:read_file(Path) of
+    {ok, Bin} ->
+        Pid = list_to_integer(string:trim(binary_to_list(Bin))),
+        os_pid_running(Pid) andalso os:cmd("kill -TERM " ++ integer_to_list(Pid)),
+        ok;
+    {error, _} ->
+        ok
+  end.
 
 wait_until_pid_stops(Pid) ->
-    wait_until_pid_stops(Pid, 20).
+  wait_until_pid_stops(Pid, 20).
 
 wait_until_pid_stops(Pid, 0) ->
-    erlang:error({pid_still_running, Pid});
+  erlang:error({pid_still_running, Pid});
 wait_until_pid_stops(Pid, Retries) ->
-    case os_pid_running(Pid) of
-        false ->
-            ok;
-        true ->
-            timer:sleep(100),
-            wait_until_pid_stops(Pid, Retries - 1)
-    end.
+  case os_pid_running(Pid) of
+    false ->
+        ok;
+    true ->
+        timer:sleep(100),
+        wait_until_pid_stops(Pid, Retries - 1)
+  end.
 
 build_setpgid_failure_harness() ->
-    case {os:type(), os:find_executable("cc")} of
-        {{unix, linux}, false} ->
-            {skip, no_c_compiler};
-        {{unix, linux}, Cc} ->
-            compile_setpgid_failure_harness(Cc);
-        _ ->
-            {skip, unsupported_os}
-    end.
+  case {os:type(), os:find_executable("cc")} of
+    {{unix, linux}, false} ->
+        {skip, no_c_compiler};
+    {{unix, linux}, Cc} ->
+        compile_setpgid_failure_harness(Cc);
+    _ ->
+        {skip, unsupported_os}
+  end.
 
 build_pty_group_zero_harness() ->
-    case {os:type(), os:find_executable("cc")} of
-        {{unix, linux}, false} ->
-            {skip, no_c_compiler};
-        {{unix, linux}, Cc} ->
-            compile_pty_group_zero_harness(Cc);
-        _ ->
-            {skip, unsupported_os}
-    end.
+  case {os:type(), os:find_executable("cc")} of
+    {{unix, linux}, false} ->
+        {skip, no_c_compiler};
+    {{unix, linux}, Cc} ->
+        compile_pty_group_zero_harness(Cc);
+    _ ->
+        {skip, unsupported_os}
+  end.
 
 compile_setpgid_failure_harness(Cc) ->
-    PrivDir = code:priv_dir(erlexec),
-    Base = integer_to_list(erlang:unique_integer([positive])),
-    PreloadPath = filename:join(PrivDir, "deny_setpgid_" ++ Base ++ ".so"),
-    WrapperPath = filename:join(PrivDir, "exec_port_fork_wrapper_" ++ Base),
-    TestDir = filename:join(PrivDir, "test"),
-    PreloadSource = filename:join(TestDir, "deny_setpgid.c"),
-    WrapperSource = filename:join(TestDir, "exec_port_fork_wrapper.c"),
-    case {compile_c_helper(Cc, ["-shared", "-fPIC"], PreloadPath, PreloadSource),
-          compile_c_helper(Cc, ["-O2"], WrapperPath, WrapperSource)} of
-        {ok, ok} ->
-            {ok, WrapperPath, PreloadPath};
-        {{error, _} = Error, _} ->
-            file:delete(PreloadPath),
-            Error;
-        {_, {error, _} = Error} ->
-            file:delete(PreloadPath),
-            file:delete(WrapperPath),
-            Error
-    end.
+  PrivDir = code:priv_dir(erlexec),
+  Base = integer_to_list(erlang:unique_integer([positive])),
+  PreloadPath = filename:join(PrivDir, "deny_setpgid_" ++ Base ++ ".so"),
+  WrapperPath = filename:join(PrivDir, "exec_port_fork_wrapper_" ++ Base),
+  TestDir = filename:join(PrivDir, "test"),
+  PreloadSource = filename:join(TestDir, "deny_setpgid.c"),
+  WrapperSource = filename:join(TestDir, "exec_port_fork_wrapper.c"),
+  case {compile_c_helper(Cc, ["-shared", "-fPIC"], PreloadPath, PreloadSource),
+        compile_c_helper(Cc, ["-O2"], WrapperPath, WrapperSource)} of
+    {ok, ok} ->
+      {ok, WrapperPath, PreloadPath};
+    {{error, _} = Error, _} ->
+      file:delete(PreloadPath),
+      Error;
+    {_, {error, _} = Error} ->
+      file:delete(PreloadPath),
+      file:delete(WrapperPath),
+      Error
+  end.
 
 compile_pty_group_zero_harness(Cc) ->
-    PrivDir = code:priv_dir(erlexec),
-    Base = integer_to_list(erlang:unique_integer([positive])),
-    PreloadPath = filename:join(PrivDir, "delay_setsid_deny_child_setpgid_" ++ Base ++ ".so"),
-    TestDir = filename:join(PrivDir, "test"),
-    PreloadSource = filename:join(TestDir, "delay_setsid_deny_child_setpgid.c"),
-    case compile_c_helper(Cc, ["-shared", "-fPIC", "-ldl"], PreloadPath, PreloadSource) of
-        ok ->
-            {ok, PreloadPath};
-        {error, _} = Error ->
-            Error
-    end.
+  PrivDir = code:priv_dir(erlexec),
+  Base = integer_to_list(erlang:unique_integer([positive])),
+  PreloadPath = filename:join(PrivDir, "delay_setsid_deny_child_setpgid_" ++ Base ++ ".so"),
+  TestDir = filename:join(PrivDir, "test"),
+  PreloadSource = filename:join(TestDir, "delay_setsid_deny_child_setpgid.c"),
+  case compile_c_helper(Cc, ["-shared", "-fPIC", "-ldl"], PreloadPath, PreloadSource) of
+    ok             -> {ok, PreloadPath};
+    {error, _} = E -> E
+  end.
 
 compile_c_helper(Cc, Flags, OutputPath, SourcePath) ->
-    Command = lists:flatten(shell_join([Cc | Flags] ++ ["-o", OutputPath, SourcePath])),
-    case compile_command(Command) of
-        ok ->
-            ok;
-        {error, _} = Error ->
-            file:delete(OutputPath),
-            Error
-    end.
+  Command = lists:flatten(shell_join([Cc | Flags] ++ ["-o", OutputPath, SourcePath])),
+  case compile_command(Command) of
+    ok ->
+      ok;
+    {error, _} = Error ->
+      file:delete(OutputPath),
+      Error
+  end.
 
 compile_command(Command) ->
-    case string:trim(os:cmd(Command ++ " >/dev/null 2>&1; echo $?")) of
-        "0" ->
-            ok;
-        Status ->
-            {error, {compile_failed, Status}}
-    end.
+  case string:trim(os:cmd(Command ++ " >/dev/null 2>&1; echo $?")) of
+    "0"    -> ok;
+    Status -> {error, {compile_failed, Status}}
+  end.
 
 shell_join(Args) ->
-    lists:join(" ", [shell_quote(Arg) || Arg <- Args]).
+  lists:join(" ", [shell_quote(Arg) || Arg <- Args]).
 
 shell_quote(Arg) ->
-    [$' | lists:join("'\"'\"'", string:split(Arg, "'", all))] ++ "'".
+  [$' | lists:join("'\"'\"'", string:split(Arg, "'", all))] ++ "'".
 
 without_error_logger(Fun) ->
-    error_logger:tty(false),
-    try Fun() after error_logger:tty(true) end.
+  error_logger:tty(false),
+  try Fun() after error_logger:tty(true) end.
 
 -endif.

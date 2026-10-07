@@ -1,4 +1,4 @@
-// vim:ts=4:sw=4:et
+// vim:ts=2:sw=2:et
 #pragma once
 
 #include <cstddef>

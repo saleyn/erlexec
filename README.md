@@ -46,6 +46,14 @@ The following features are supported:
 * Execute OS processes under different user credentials (using Linux capabilities).
 * Attach spawned processes to Linux cgroups for resource isolation and control.
 * Perform proper cleanup of OS child processes at port program termination time.
+* Run declarative process graphs (`run_graph/2`) with native (no Erlang round-trip)
+  sibling-to-sibling piping, multi-destination fan-out, per-task and whole-graph
+  wall-clock timeouts, and per-task completion events. See
+  [Running Process Graphs](#running-process-graphs) and [guides/graphs.md](guides/graphs.md).
+* Enforce a wall-clock watchdog (`{timeout, Ms}`) that kills a process if it runs
+  longer than allowed, independent of the termination-command timeout above.
+* Collect resource-usage statistics (`stats` option) — wall-clock duration and
+  `rusage` (CPU time, max RSS) delivered just before a process's exit notification.
 
 This application provides significantly better control
 over OS processes than built-in `erlang:open_port/2` command with a
@@ -97,11 +105,14 @@ and is considered stable.
     - [Setting up a monitor for the OS process](#setting-up-a-monitor-for-the-os-process)
     - [Managing an externally started OS process](#managing-an-externally-started-os-process)
     - [Specifying a custom process shutdown delay in seconds](#specifying-a-custom-process-shutdown-delay-in-seconds)
+    - [Enforcing a wall-clock timeout on a process](#enforcing-a-wall-clock-timeout-on-a-process)
+    - [Collecting resource-usage statistics for a process](#collecting-resource-usage-statistics-for-a-process)
     - [Specifying a custom kill command for a process](#specifying-a-custom-kill-command-for-a-process)
     - [Communicating with an OS process via STDIN](#communicating-with-an-os-process-via-stdin)
     - [Communicating with an OS process via STDIN and sending end-of-file](#communicating-with-an-os-process-via-stdin-and-sending-end-of-file)
     - [Running OS commands synchronously](#running-os-commands-synchronously)
     - [Running Process Graphs](#running-process-graphs)
+    - [`run_graph` vs. shell piping](#run_graph-vs-shell-piping)
     - [Running OS commands with/without shell](#running-os-commands-withwithout-shell)
     - [Running OS commands with pseudo terminal (pty)](#running-os-commands-with-pseudo-terminal-pty)
       - [Important Note: PTY stdout/stderr Separation](#important-note-pty-stdoutstderr-separation)
@@ -631,6 +642,31 @@ ok
 {'DOWN',26347,process,<0.403.0>,normal}
 ```
 
+### Enforcing a wall-clock timeout on a process
+```erlang
+% Kill the process if it's still running 500ms after being spawned, regardless of
+% whether exec:stop/1 was ever called. Distinct from {kill_timeout, Sec} above, which
+% only governs the SIGTERM->SIGKILL escalation *after* a stop/kill was requested --
+% this timer starts counting from spawn time.
+25> f(I), {ok, Pid, I} = exec:run("sleep 30", [{timeout, 500}, monitor]).
+{ok,<0.87.0>,2509346}
+26> f(M), receive M -> M after 10000 -> timeout end.
+{'DOWN',2509346,process,<0.87.0>,{exit_status,15}}
+```
+
+### Collecting resource-usage statistics for a process
+```erlang
+% The `stats` option folds wall-clock duration + rusage into the 'DOWN' reason itself,
+% as {PlainReason, StatsMap} -- no separate message type. A clean exit's PlainReason is
+% still exactly `normal`. utime_us/stime_us/maxrss_kb require wait4(2) support
+% (Linux/macOS/BSD; absent on Cygwin/Solaris/Windows, where StatsMap only has wall_time_ms).
+27> f(I), {ok, Pid, I} = exec:run("sleep 0.2", [stats, monitor]).
+{ok,<0.87.0>,2577353}
+28> f(M), receive M -> M after 5000 -> timeout end.
+{'DOWN',2577353,process,<0.87.0>,
+        {normal,#{maxrss_kb => 3888,stime_us => 0,utime_us => 1957,wall_time_ms => 202}}}
+```
+
 ### Specifying a custom kill command for a process
 ```erlang
 % Execute an OS process (script) that blocks SIGTERM, and uses a custom kill command,
@@ -724,16 +760,16 @@ Got: {stdout,26143,<<"baz\nbar\nfoo\n">>}
 ```erlang
 % 1) Sync linear pipeline
 Graph1 = [
-    #{id  => producer, cmd => "printf 'a\\nb\\nc\\n'", stdout => filter},
-    #{id  => filter,   cmd => "grep '^b$'"}
+  #{id  => producer, cmd => "printf 'a\\nb\\nc\\n'", stdout => filter},
+  #{id  => filter,   cmd => "grep '^b$'"}
 ],
 exec:run_graph(Graph1, [sync, stdout]).
 % => {ok, [{stdout, [<<"b\n">>]}]}
 
 % 2) Async native graph with monitor
 Graph2 = [
-    #{id => p, cmd => "printf 'ok\\n'", stdout => c},
-    #{id => c, cmd => "cat"}
+  #{id => p, cmd => "printf 'ok\\n'", stdout => c},
+  #{id => c, cmd => "cat"}
 ],
 {ok, GraphPid, GraphOsPid} = exec:run_graph(Graph2, [stdout, monitor]),
 receive {stdout, GraphOsPid, Bin} -> io:format("~p~n", [Bin]) end,
@@ -741,44 +777,44 @@ receive {'DOWN', GraphOsPid, process, GraphPid, normal} -> ok end.
 
 % 3) Fanout from one stdout stream to two process nodes
 Graph3 = [
-    #{id => src,   cmd => "printf 'x\\n'", stdout => [left, right]},
-    #{id => left,  cmd => "cat"},
-    #{id => right, cmd => "cat >&2"}
+  #{id => src,   cmd => "printf 'x\\n'", stdout => [left, right]},
+  #{id => left,  cmd => "cat"},
+  #{id => right, cmd => "cat >&2"}
 ],
 exec:run_graph(Graph3, [sync, stdout, stderr]).
 % => {ok, [{stdout, [<<"x\n">>, <<"x\n">>]}]}
 
 % 4) Route stderr through graph edge
 Graph4 = [
-    #{id => src,       cmd => "echo err 1>&2", stderr => collector},
-    #{id => collector, cmd => "cat"}
+  #{id => src,       cmd => "echo err 1>&2", stderr => collector},
+  #{id => collector, cmd => "cat"}
 ],
 exec:run_graph(Graph4, [sync, stdout]).
 % => {ok, [{stdout, [<<"err\n">>]}]}
 
 % 5) Erlang sink shorthand receives stdout payloads
 Graph5 = [
-    #{id => src,
-      cmd => "printf 's1\\n'",
-      stdout => erl}
+  #{id     => src,
+    cmd    => "printf 's1\\n'",
+    stdout => erl}
 ],
 exec:run_graph(Graph5, [sync, stdout]).
 % => {ok, [{stdout, [<<"s1\n">>]}]}
 
 % 6) Async fanout graph with monitor
 Graph6 = [
-    #{id => src,   cmd => "printf 'x\\n'", stdout => [left, right]},
-    #{id => left,  cmd => "cat"},
-    #{id => right, cmd => "cat"}
+  #{id => src,   cmd => "printf 'x\\n'", stdout => [left, right]},
+  #{id => left,  cmd => "cat"},
+  #{id => right, cmd => "cat"}
 ],
 {ok, GraphPid6, GraphOsPid6} = exec:run_graph(Graph6, [monitor]),
 receive {'DOWN', GraphOsPid6, process, GraphPid6, normal} -> ok end.
 
 % 7) Async Erlang sink shorthand receives stdout payloads
 Graph7 = [
-    #{id => src,
-      cmd => "printf 's2\\n'",
-      stdout => erl}
+  #{id     => src,
+    cmd    => "printf 's2\\n'",
+    stdout => erl}
 ],
 {ok, GraphPid7, GraphOsPid7} = exec:run_graph(Graph7, [stdout, monitor]),
 receive {stdout, GraphOsPid7, <<"s2\n">>} -> ok end,
@@ -786,15 +822,48 @@ receive {'DOWN', GraphOsPid7, process, GraphPid7, normal} -> ok end.
 
 % 8) Route stdout to a file destination by path
 Graph8 = [
-    #{id => src,
-      cmd => "printf 's3\\n'",
-      stdout => [collector, "/dev/stdout"]},
-    #{id => collector,
-      cmd => "cat"}
+  #{id => src,       cmd => "printf 's3\\n'", stdout => [collector, "/dev/stdout"]},
+  #{id => collector, cmd => "cat"}
 ],
 exec:run_graph(Graph8, [sync, stdout]).
 % => {ok, [{stdout, [<<"s3\n">>]}]}
 ```
+
+### `run_graph` vs. shell piping
+
+If all you need is `cmd1 | cmd2 | cmd3`, use `exec:run("cmd1 | cmd2 | cmd3", [...])` — a plain
+shell pipe is already native and simpler. Reach for `run_graph/2` when you need:
+
+1. **Non-linear topologies** — one producer fanning out to multiple consumers/files/sinks
+   simultaneously (see Graph3/Graph8 above); shell's `tee(1)` gets you partway but doesn't
+   compose cleanly with further per-branch piping.
+2. **Per-stage observability** — every graph task is a full `exec:run/2`-managed OS process
+   with its own pid, so you can tap or signal an intermediate stage without disturbing the
+   rest of the pipeline.
+3. **Structured failure attribution** — `run_graph/2` surfaces the first abnormal exit it
+   observes (e.g. `{error, [{exit_status, 256}, ...]}`), whereas a shell pipe's `$?` only
+   reflects the last command unless you add `pipefail`.
+4. **Programmatic, injection-safe construction** — graph task `cmd` accepts the same argv-list
+   form as `exec:run/2` (e.g. `["grep", UserPattern]`), so untrusted input never passes through
+   a shell.
+5. **Declarative mixed fan-out** — a single edge can target a mix of sibling tasks and files
+   (e.g. `stdout => [collector, "/path/to/file"]`, Graph8 above) in one declaration.
+6. **Wall-clock budgets per task AND for the whole graph** — a per-task `timeout` field kills
+   just that one stage; a graph-level `timeout` in `GraphOpts` bounds the entire pipeline and
+   kills every task if exceeded. Shell has no equivalent for bounding one stage independently.
+7. **Per-stage completion events** — the `task_monitor` run option delivers
+   `{'DOWN', GraphOsPid, task, TaskId, Reason}` as each task finishes, without wiring a sink
+   per stage.
+
+Data between graph tasks flows through native OS pipes handled entirely by the C++ port
+process — it never enters the Erlang VM or crosses the Erlang/port boundary, so a pipeline's
+throughput isn't gated by BEAM scheduling. (This is "no Erlang round-trip", not literal
+zero-copy: the port still does one userspace read+write per destination to fan out to
+multiple consumers/files, since the kernel's `tee(2)`/`splice(2)` primitives can't safely
+duplicate a stream to more than one destination.)
+
+For a straight linear chain with none of the above, shell piping is simpler and just as fast.
+See [guides/graphs.md](guides/graphs.md) for the full comparison with worked, verified examples.
 
 ### Running OS commands with/without shell
 ```erlang

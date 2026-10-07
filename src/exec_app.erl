@@ -1,3 +1,4 @@
+%%% vim:ts=2:sw=2:et
 %%%------------------------------------------------------------------------
 %%% File: $Id$
 %%%------------------------------------------------------------------------
@@ -40,7 +41,7 @@
 %% @private
 %%----------------------------------------------------------------------
 start(_Type, _Args) ->
-    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+  supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 %%----------------------------------------------------------------------
 %% stop(State) is called when the application has been terminated, and
@@ -48,7 +49,7 @@ start(_Type, _Args) ->
 %% @private
 %%----------------------------------------------------------------------
 stop(_S) ->
-    ok.
+  ok.
 
 %%%---------------------------------------------------------------------
 %%% Supervisor behaviour callbacks
@@ -56,23 +57,24 @@ stop(_S) ->
 
 %% @private
 init([]) ->
-    Options =
-        lists:foldl(
-            fun(I, Acc) -> add_option(I, Acc) end,
-            [], [I || {I, _} <- exec:default()]),
-    {ok, {
-        {one_for_one, 3, 30},               % Allow MaxR restarts within MaxT seconds
-        [{  exec,                           % Id       = internal id
-            {exec, start_link, [Options]},  % StartFun = {M, F, A}
-            permanent,                      % Restart  = permanent | transient | temporary
-            10000,                          % Shutdown - wait 10 seconds, to give child processes time to be killed off.
-            worker,                         % Type     = worker | supervisor
-            [exec]                          % Modules  = [Module] | dynamic
-        }]
-    }}.
+  Options = lists:foldl(
+      fun(I, Acc) -> add_option(I, Acc)
+    end,
+    [], [I || {I, _} <- exec:default()]),
+
+  {ok, {
+    {one_for_one, 3, 30},             % Allow MaxR restarts within MaxT seconds
+    [{exec,                           % Id       = internal id
+      {exec, start_link, [Options]},  % StartFun = {M, F, A}
+      permanent,                      % Restart  = permanent | transient | temporary
+      10000,                          % Shutdown - wait 10 seconds, to give child processes time to be killed off.
+      worker,                         % Type     = worker | supervisor
+      [exec]                          % Modules  = [Module] | dynamic
+    }]
+  }}.
 
 add_option(Option, Acc) ->
-    case application:get_env(erlexec, Option) of
+  case application:get_env(erlexec, Option) of
     {ok, Value} -> [{Option, Value} | Acc];
     undefined   -> Acc
-    end.
+  end.

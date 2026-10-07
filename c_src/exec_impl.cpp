@@ -1,6 +1,7 @@
-// vim:ts=4:sw=4:et
+// vim:ts=2:sw=2:et
 #include "exec.hpp"
 #include "fd_raii.hpp"
+#include "graph_tee.hpp"
 #include <errno.h>
 #include <fcntl.h>
 
@@ -26,12 +27,12 @@ bool is_valid_fd(int fd)
 int ptsname_r(int fd, char* buf, size_t buflen) {
   char *name = ptsname(fd);
   if (name == NULL) {
-  errno = EINVAL;
-  return -1;
+    errno = EINVAL;
+    return -1;
   }
   if (strlen(name) + 1 > buflen) {
-  errno = ERANGE;
-  return -1;
+    errno = ERANGE;
+    return -1;
   }
   strncpy(buf, name, buflen);
   return 0;
@@ -561,7 +562,59 @@ void process_pid_output(CmdInfo& ci, int stream_id, int maxsize)
       DEBUG(debug > 1, "Read %d bytes from pid %d's %s (fd=%d): %s",
           n, ci.cmd_pid, stream_name(stream_id), fd, n > 0 ? "ok" : strerror(errno));
       if (n > 0) {
-        send_ospid_output(ci.cmd_pid, stream_name(stream_id), buf, n);
+        // Send to Erlang ONLY if this stream wasn't forced for fanout purposes.
+        // If the user explicitly requested stdout/stderr via {stdout, ...} or just {stdout},
+        // then ci.fanout_forced[stream_id] will be false and we send.
+        // If we only forced the pipe for {stdout_files, ...} without explicit {stdout},
+        // then ci.fanout_forced[stream_id] will be true and we skip Erlang delivery.
+        if (!ci.fanout_forced[stream_id]) {
+          send_ospid_output(ci.cmd_pid, stream_name(stream_id), buf, n);
+        }
+
+        // Fanout to additional destination files using write() to the buffered data.
+        // Note: we cannot use splice() for multi-destination fanout because splice()
+        // is destructive (consumes data from the source pipe), so the first splice
+        // would empty the pipe and subsequent destinations would get nothing.
+        //
+        // SIGPIPE safety: unlike file fanout fds (which never raise SIGPIPE), sibling
+        // stdin pipes (Phase 10) CAN have their reader go away mid-stream (e.g. a
+        // downstream graph task exits early). write() to a pipe whose read-end is
+        // closed raises SIGPIPE, and the port's global SIGPIPE handler (installed to
+        // detect death of the Erlang<->port communication pipe, see exec.hpp::gotsignal)
+        // treats ANY SIGPIPE as a reason to shut the entire port down -- not just the
+        // one fd that failed. Block SIGPIPE for the duration of these fanout writes so a
+        // closed sibling pipe surfaces as a normal EPIPE errno (already handled below)
+        // instead of killing every process this port manages. No other threads exist in
+        // this single-threaded event loop, so blocking/restoring the process-wide signal
+        // mask here is race-free.
+        if (!ci.fanout_fds[stream_id].empty()) {
+          sigset_t sigpipe_set, old_set;
+          sigemptyset(&sigpipe_set);
+          sigaddset(&sigpipe_set, SIGPIPE);
+          sigprocmask(SIG_BLOCK, &sigpipe_set, &old_set);
+
+          for (int dest_fd : ci.fanout_fds[stream_id]) {
+            if (dest_fd < 0) continue;
+            if (write(dest_fd, buf, n) < 0) {
+              if (errno != EPIPE)
+                DEBUG(debug, "Fanout write failed for pid %d's %s to fd %d: %s",
+                    ci.cmd_pid, stream_name(stream_id), dest_fd, strerror(errno));
+            } else {
+              DEBUG(debug > 1, "Wrote %d bytes to fanout fd %d", n, dest_fd);
+            }
+          }
+
+          // Discard any SIGPIPE that became pending while blocked (don't let it fire
+          // the moment we unblock), then restore the previous mask.
+          sigset_t pending;
+          sigpending(&pending);
+          if (sigismember(&pending, SIGPIPE)) {
+            int discarded;
+            sigwait(&sigpipe_set, &discarded);
+          }
+          sigprocmask(SIG_SETMASK, &old_set, nullptr);
+        }
+
         if (n < (int)sizeof(buf))
           break;
       } else if (n < 0 && errno == EAGAIN)
@@ -826,6 +879,22 @@ pid_t start_child(CmdOptions& op, std::string& error)
     int  cfd = op.stream_fd(i);
     int* sfd = stream_fd[i];
 
+    // Sibling-to-sibling piping (graph tasks): if this task's stdin is already connected
+    // to an upstream sibling's stdout fanout list (via exec_graph:allocate_sibling_pipes/1),
+    // use that pre-opened read-end directly instead of creating a new REDIRECT_ERL pipe.
+    // This takes priority over the normal stdin redirect switch below.
+    if (i == STDIN_FILENO && op.stdin_from_sibling() >= 0) {
+      sfd[RD] = op.stdin_from_sibling();
+      DEBUG(debug, "  Redirecting [%s -> sibling pipe:{r=%d}]", stream_name(i), sfd[RD]);
+      continue;
+    }
+
+    // If fanout files/sibling-pipes are present but primary redirect is not ERL, force pipe
+    // creation so that process_pid_output runs and can write to fanout destinations.
+    bool has_fanout = !op.stream_extra_files(i).empty() ||
+               (i != STDIN_FILENO && !op.sibling_stdin_writes(i).empty());
+    bool primary_is_erl = (cfd == REDIRECT_ERL);
+
     // Optionally setup stdout redirect
     switch (cfd) {
       case REDIRECT_CLOSE:
@@ -871,6 +940,59 @@ pid_t start_child(CmdOptions& op, std::string& error)
           return -1;
         }
         break;
+      }
+    }
+
+    // If fanout files are present but the primary redirect is NOT REDIRECT_ERL,
+    // force pipe creation so process_pid_output will run. The pipe data will be:
+    // - Forwarded to Erlang ONLY if the user explicitly requested it (via stdout/stderr option)
+    // - Fanned out to files regardless via write() in process_pid_output
+    if (has_fanout && !primary_is_erl && i != STDIN_FILENO) {
+      // Overwrite the primary redirect to be a pipe, so process_pid_output runs.
+      // We mark this so that process_pid_output won't send data to Erlang, only to fanout files.
+      if (open_pipe(sfd, stream_name(i), err) < 0) {
+        error = err.c_str();
+        return -1;
+      }
+      // Store a marker so we can skip Erlang delivery for this stream (fanout-only)
+      op.set_fanout_forced(i, true);
+      DEBUG(debug, "  Forcing pipe [%s] for fanout (overriding primary redirect=%s)",
+          stream_name(i), fd_type(cfd).c_str());
+    }
+
+    // Multi-destination file fanout (stdout_files/stderr_files): open every extra
+    // destination file now, at spawn time, independent of the primary redirect above.
+    // Opened fds are written back onto `op` so the RUN case in exec.cpp can read them
+    // via po.opened_fanout_fds(i) and thread them into CmdInfo::fanout_fds.
+    for (auto& dest : op.stream_extra_files(i)) {
+      FileOpenFlag flag = dest.append ? APPEND : TRUNCATE;
+      int extra_fd = open_file(dest.path.c_str(), flag, stream_name(i), err, dest.mode);
+      if (extra_fd < 0) {
+        error = err.c_str();
+        // Close any fanout fds already opened (this stream and earlier streams)
+        // before failing the whole start_child call.
+        for (int j = STDIN_FILENO; j <= i; j++)
+          for (int fd : op.opened_fanout_fds(j))
+            if (fd >= 0) close_fd_if_open(fd);
+        return -1;
+      }
+      op.add_opened_fanout_fd(i, extra_fd);
+      DEBUG(debug, "  Redirecting [%s -> fanout file:%s, fd:%d%s]",
+          stream_name(i), dest.path.c_str(), extra_fd, dest.append ? " (append)" : " (truncate)");
+    }
+
+    // Sibling-to-sibling piping (graph tasks): fold each downstream sibling's stdin
+    // pipe write-end into this stream's fanout fd list. The write-ends were pre-opened
+    // by Erlang (exec_graph:allocate_sibling_pipes/1) and handed to us via the
+    // {stdout_sibling_pipes, [{ConsumerId, WriteFd}, ...]} / stderr_sibling_pipes option.
+    // Once in opened_fanout_fds, process_pid_output's existing fanout loop writes to them
+    // on every chunk with zero additional code -- they're indistinguishable from file
+    // fanout fds at the write layer.
+    if (i != STDIN_FILENO) {
+      for (auto& [consumer_id, write_fd] : op.sibling_stdin_writes(i)) {
+        op.add_opened_fanout_fd(i, write_fd);
+        DEBUG(debug, "  Redirecting [%s -> sibling '%s' stdin, fd:%d]",
+            stream_name(i), consumer_id.c_str(), write_fd);
       }
     }
   }
@@ -1347,6 +1469,12 @@ void erase_child(MapChildrenT::iterator& it)
       DEBUG(debug, "Closing pid %d's %s", it->first, stream_name(i));
       safe_close_fd(it->second.stream_fd[i]);
     }
+    // Fanout destination files (stdout_files/stderr_files): opened once at spawn,
+    // closed once here at reap. Independent of the primary stream_fd's lifecycle --
+    // process_pid_output() closes stream_fd on EOF-of-pipe-to-Erlang, which must NOT
+    // touch these, since they're separate file destinations, not tied to that pipe.
+    for (int fd : it->second.fanout_fds[i])
+      if (fd >= 0) close_fd_if_open(fd);
   }
 
   children.erase(it);
@@ -1374,9 +1502,11 @@ int check_children(const TimeVal& now, bool& isTerminated, bool notify)
     if (i != children.end()) {
       for(int stream_id=STDOUT_FILENO; stream_id <= STDERR_FILENO; ++stream_id)
         process_pid_output(i->second, stream_id, std::numeric_limits<int>::max());
-      // Override status code if termination was requested by Erlang
+      // Override status code if termination was requested by Erlang (but NOT if the kill
+      // was instead triggered by our own {timeout, Ms} watchdog -- that should still be
+      // reported as an abnormal exit, not masked to a clean 0/normal status).
       PidStatusT ps(it->first,
-        i->second.sigterm
+        (i->second.sigterm && !i->second.timed_out)
         ? 0 // Override status code if termination was requested by Erlang
         : i->second.success_code && !it->second
           ? i->second.success_code // Override success status code
@@ -1385,6 +1515,27 @@ int check_children(const TimeVal& now, bool& isTerminated, bool notify)
       if (i->second.kill_group && i->second.cmd_gid != std::numeric_limits<int>::max() && i->second.cmd_gid)
         erl_exec_kill(-(i->second.cmd_gid), SIGTERM, SRCLOC); // Kill all children in this group
 
+      // Graph pipeline: kill the rest of the group only on *abnormal* exit (signaled, non-zero
+      // exit code, or unknown/already-gone status), never on a clean zero-exit completion, and
+      // never when Erlang itself requested the termination (sigterm). This differs from
+      // kill_group above, which fires unconditionally on any exit of that task.
+      if (i->second.graph_group && !i->second.sigterm &&
+          i->second.cmd_gid != std::numeric_limits<int>::max() && i->second.cmd_gid) {
+        int status = it->second;
+        bool abnormal = status < 0 ||                                  // unknown / already gone (ESRCH)
+                         WIFSIGNALED(status) ||                         // killed by a signal
+                         (WIFEXITED(status) && WEXITSTATUS(status) != 0); // non-zero exit code
+        if (abnormal)
+          erl_exec_kill(-(i->second.cmd_gid), SIGTERM, SRCLOC); // Kill all children in this group
+      }
+
+      if (notify && i->second.want_stats) {
+        int64_t wall_ms = (int64_t)(now.diff(i->second.start_time) * 1000.0);
+        if (send_pid_stats_term(it->first, wall_ms, i->second.have_rusage, i->second.last_rusage) < 0) {
+          isTerminated = 1;
+          return -1;
+        }
+      }
       if (notify && send_pid_status_term(ps) < 0) {
         isTerminated = 1;
         return -1;
@@ -1411,9 +1562,45 @@ int check_children(const TimeVal& now, bool& isTerminated, bool notify)
 }
 
 //------------------------------------------------------------------------------
+// Reap a pid via wait4() (capturing rusage when the caller wants stats) if available on
+// this platform, else fall back to plain waitpid(). Only wraps the *syscall itself*; the
+// WNOHANG/EINTR retry loop and all status-interpretation logic stays at each call site.
+static pid_t reap_pid(
+  pid_t pid, int& status,
+  [[maybe_unused]] bool want_stats,
+  [[maybe_unused]] rusage& ru_out, bool& have_rusage)
+{
+  pid_t ret;
+#ifdef HAVE_WAIT4
+  rusage ru{};
+  while ((ret = wait4(pid, &status, WNOHANG, &ru)) < 0 && errno == EINTR);
+  if (ret > 0 && want_stats) {
+    ru_out = ru;
+    have_rusage = true;
+  }
+#else
+  have_rusage = false;
+  while ((ret = waitpid(pid, &status, WNOHANG)) < 0 && errno == EINTR);
+#endif
+  return ret;
+}
+
+//------------------------------------------------------------------------------
 void check_child(const TimeVal& now, pid_t pid, CmdInfo& cmd)
 {
   if (pid == self_pid)    // Safety check. Never kill itself
+    return;
+
+  // Hardening against the dual-reap race: if a SIGCHLD-driven check_child_exit()
+  // already recorded this pid's exit earlier in this same event-loop tick (or an
+  // earlier one not yet drained from exited_children), don't re-probe/re-waitpid
+  // it here. Without this guard, this liveness-probe-then-waitpid path and
+  // check_child_exit()'s EOF/SIGCHLD-driven path could both attempt waitpid(2)
+  // for the same pid; the loser gets ECHILD and (depending on timing) could
+  // silently drop the exit notification. check_child_exit() already has an
+  // equivalent guard; mirror it here so neither call site needs to "win" a race
+  // that's cheap to avoid entirely.
+  if (exited_children.find(pid) != exited_children.end())
     return;
 
   int n = erl_exec_kill(pid, 0, SRCLOC);
@@ -1425,8 +1612,25 @@ void check_child(const TimeVal& now, pid_t pid, CmdInfo& cmd)
       cmd.deadline.clear();
     }
 
-    int status = ECHILD;
-    while ((n  = waitpid(pid, &status, WNOHANG)) < 0 && errno == EINTR);
+    // Wall-clock watchdog: kill the process if it has run longer than its
+    // {timeout, Ms} option allowed. Independent of the post-stop deadline above --
+    // this one is set once at spawn time and fires on its own, reusing stop_child's
+    // SIGTERM->SIGKILL escalation once triggered. Only trigger once (!cmd.sigterm
+    // guards against re-issuing stop_child every tick once the kill is in flight).
+    if (!cmd.run_deadline.zero() && cmd.run_deadline.diff(now) <= 0 && !cmd.sigterm) {
+      DEBUG(debug, "Pid %d exceeded timeout, stopping", pid);
+      cmd.timed_out = true;
+      stop_child(cmd, 0, now, false);
+    }
+
+    rusage ru{};
+    bool   have_rusage = false;
+    int    status      = ECHILD;
+    n = reap_pid(pid, status, cmd.want_stats, ru, have_rusage);
+    if (cmd.want_stats && have_rusage) {
+      cmd.last_rusage = ru;
+      cmd.have_rusage = true;
+    }
 
     if (n > 0) {
       if (WIFEXITED(status) || WIFSIGNALED(status)) {
@@ -1456,13 +1660,24 @@ void check_child_exit(pid_t pid)
   if (exited_children.find(pid) != exited_children.end())
     return;
 
+  // Look up CmdInfo (if still tracked) so we can capture rusage/wall-time for the stats
+  // message, and so the eventual stats message can be sent before erase_child() runs.
+  auto   it_ci       = children.find(pid);
+  bool   want_stats  = (it_ci != children.end()) && it_ci->second.want_stats;
+  rusage ru{};
+  bool   have_rusage = false;
+
   // Read process's exit status
-  while ((ret = waitpid(pid, &status, WNOHANG)) < 0 && errno == EINTR);
+  ret = reap_pid(pid, status, want_stats, ru, have_rusage);
+  if (want_stats && have_rusage) {
+    it_ci->second.last_rusage = ru;
+    it_ci->second.have_rusage = true;
+  }
 
   DEBUG(debug, "* Process %d (ret=%d, status=%d, exited_count=%ld%s%s)",
       pid, ret, status, exited_children.size(),
-      ret > 0 && WIFEXITED(status) ? " [exited]":"",
-      ret > 0 && WIFSIGNALED(status) ? " [signaled]":"");
+      ret > 0 && WIFEXITED(status)   ? " [exited]"   : "",
+      ret > 0 && WIFSIGNALED(status) ? " [signaled]" : "");
 
   if (ret < 0 && errno == ECHILD) {
     if (erl_exec_kill(pid, 0, SRCLOC) == 0) // process likely forked and is alive
@@ -1547,6 +1762,37 @@ int send_pid_status_term(const PidStatusT& stat)
   eis.encode(atom_t("exit_status"));
   eis.encode(stat.first);
   eis.encode(stat.second);
+  return eis.write();
+}
+
+//------------------------------------------------------------------------------
+// {0, {pid_stats, OsPid, WallMs, HaveRusage, UtimeUs, StimeUs, MaxrssKb}}
+// Written to the port immediately before send_pid_status_term for the same pid (same
+// check_children reap-loop iteration), so Erlang always receives stats before the final
+// exit notification -- ordering guaranteed by port FIFO semantics. UtimeUs/StimeUs/MaxrssKb
+// are only meaningful when HaveRusage is true (platforms without wait4(), see HAVE_WAIT4,
+// still get WallMs via this message but zero/absent rusage fields).
+int send_pid_stats_term(pid_t pid, int64_t wall_ms, bool have_rusage, const struct rusage& ru)
+{
+  eis.reset();
+  eis.encodeTupleSize(2);
+  eis.encode(0);
+  eis.encodeTupleSize(7);
+  eis.encode(atom_t("pid_stats"));
+  eis.encode(pid);
+  eis.encode((long)wall_ms);
+  eis.encode(have_rusage);
+  if (have_rusage) {
+    int64_t utime_us = (int64_t)ru.ru_utime.tv_sec * 1000000ll + ru.ru_utime.tv_usec;
+    int64_t stime_us = (int64_t)ru.ru_stime.tv_sec * 1000000ll + ru.ru_stime.tv_usec;
+    eis.encode((long)utime_us);
+    eis.encode((long)stime_us);
+    eis.encode((long)ru.ru_maxrss);
+  } else {
+    eis.encode(0L);
+    eis.encode(0L);
+    eis.encode(0L);
+  }
   return eis.write();
 }
 
@@ -1717,7 +1963,10 @@ int CmdOptions::ei_decode(bool getcmd)
     EXECUTABLE, KILL,              KILL_TIMEOUT,
     KILL_GROUP, NICE,              USER,    GROUP,
     DEBUG_OPT,  PTY_ECHO,          WINSZ,   CAPABILITIES,
-    CGROUP
+    CGROUP,     GRAPH_PLAN,        GRAPH_GROUP,
+    STDOUT_FILES, STDERR_FILES,
+    STDOUT_SIBLING_PIPES, STDERR_SIBLING_PIPES, STDIN_FROM_SIBLING,
+    TIMEOUT, STATS
   } opt;
   const char* opts[] = {
     "stdin",      "stdout",            "stderr",
@@ -1725,7 +1974,10 @@ int CmdOptions::ei_decode(bool getcmd)
     "executable", "kill",              "kill_timeout",
     "kill_group", "nice",              "user",  "group",
     "debug",      "pty_echo",          "winsz", "capabilities",
-    "cgroup"
+    "cgroup",     "graph_plan",        "graph_group",
+    "stdout_files", "stderr_files",
+    "stdout_sibling_pipes", "stderr_sibling_pipes", "stdin_from_sibling",
+    "timeout", "stats"
   };
 
   bool seen_opt[sizeof(opts) / sizeof(char*)] = {false};
@@ -1941,6 +2193,12 @@ int CmdOptions::ei_decode(bool getcmd)
 
       case KILL_GROUP:
         m_kill_group = true;
+        break;
+
+      case GRAPH_GROUP:
+        // Marks this task as part of a graph's process group: on *abnormal* exit only
+        // (signaled, or non-zero exit code), kill the rest of the group. See CmdInfo::graph_group.
+        m_graph_group = true;
         break;
 
       case NICE:
@@ -2170,6 +2428,181 @@ int CmdOptions::ei_decode(bool getcmd)
         }
         break;
       }
+
+      case GRAPH_PLAN: {
+        // TODO: Implement graph plan decoder
+        // For now, just acknowledge the option exists (placeholder)
+        // Full implementation needed in Phase 2
+        // Erlang-side plan carries #{tasks := [...], sinks := #{...}, run_options := [...]},
+        // but C++ only needs to decode the "tasks" key:
+        //   - sinks: SinkId => delivery_target (self/Pid/{'fun',Fun}) resolution is a pure
+        //     Erlang-side concern (exec_graph:deliver_sink/5) and is never decoded here.
+        //   - run_options: already consumed on the Erlang side when building spawn options.
+        //
+        // This is a stub for Phase 2 C++ implementation:
+        // - Parse map structure, look up "tasks" key
+        // - Decode tasks array (each with id, stdout, stderr redirects)
+        // - Store in m_graph_plan
+
+        // For now, skip the map without error to allow compilation
+        int map_arity = 0;
+        if (ei_decode_map_header(eis.read_buffer(), eis.read_index(), &map_arity) < 0) {
+          m_err << op << " - bad graph_plan map";
+          return -1;
+        }
+
+        // Skip all map entries for now
+        for (int i = 0; i < map_arity; ++i) {
+          // Skip key
+          int key_type = eis.decodeType(arity);
+          if (key_type == etAtom) {
+            std::string key;
+            eis.decodeAtom(key);
+          } else {
+            std::string key;
+            eis.decodeStringOrBinary(key);
+          }
+
+          // Skip value (recursively if needed)
+          int val_type = eis.decodeType(arity);
+          // This is a simplified skip - full implementation would properly decode
+          // TODO: Implement proper value skipping or full graph plan decoding
+        }
+
+        break;
+      }
+
+      case STDOUT_FILES:
+      case STDERR_FILES: {
+        // {stdout_files, [{Path::string(), [Options]} | Path::string(), ...]}
+        // Multi-destination file fanout: in addition to the primary {stdout, ...} redirect
+        // (if any), fan out every chunk to all of these files too (native, no Erlang round-trip).
+        // Per-file Options grammar is identical to the arity-3 {stdout, Path, [Options]} form
+        // above: append atom | {mode, Int} tuple.
+        int stream_idx = (opt == STDOUT_FILES) ? STDOUT_FILENO : STDERR_FILENO;
+        int n = eis.decodeListSize();
+        if (n < 0) {
+          m_err << op << " requires a list of {Path, [Options]} or Path entries";
+          return -1;
+        }
+        for (int i = 0; i < n; i++) {
+          int elem_sz, elem_type = eis.decodeType(elem_sz);
+          std::string path;
+          bool append = false;
+          int mode = DEF_MODE;
+
+          if (elem_type == etTuple) {
+            if (eis.decodeTupleSize() != 2 || eis.decodeStringOrBinary(path) < 0) {
+              m_err << op << ": each entry must be {Path, [Options]}";
+              return -1;
+            }
+            int opt_n = eis.decodeListSize();
+            if (opt_n < 0) {
+              m_err << op << ": entry options must be a list";
+              return -1;
+            }
+            for (int j = 0; j < opt_n; j++) {
+              int osz;
+              eis.decodeType(osz);
+              std::string a;
+              if (eis.decodeAtom(a) >= 0) {
+                if (a == "append")
+                  append = true;
+                else {
+                  m_err << op << ": unsupported file option '" << a << "'";
+                  return -1;
+                }
+              } else if (eis.decodeTupleSize() != 2 ||
+                   eis.decodeAtom(a) < 0 || a != "mode" || eis.decodeInt(mode) < 0) {
+                m_err << op << ": unsupported file option";
+                return -1;
+              }
+            }
+            eis.decodeListEnd();
+          } else if (eis.decodeStringOrBinary(path) < 0) {
+            m_err << op << ": each entry must be a string/binary path or {Path, [Options]}";
+            return -1;
+          }
+
+          if (path.empty()) {
+            m_err << op << ": path must not be empty";
+            return -1;
+          }
+          add_stream_extra_file(stream_idx, path, append, mode);
+        }
+        eis.decodeListEnd();
+        break;
+      }
+
+      case STDOUT_SIBLING_PIPES:
+      case STDERR_SIBLING_PIPES: {
+        // {stdout_sibling_pipes, [{ConsumerId::atom(), WriteFd::integer()}, ...]}
+        // {stderr_sibling_pipes, [{ConsumerId::atom(), WriteFd::integer()}, ...]}
+        // Graph-only: write-ends of sibling tasks' stdin pipes, pre-allocated by Erlang
+        // (exec_graph:allocate_sibling_pipes/1). These fds get appended to this task's
+        // stdout/stderr fanout list at spawn time (start_child), so every chunk this task
+        // produces is natively copied to each downstream sibling's stdin -- no
+        // Erlang round-trip. ConsumerId is accepted but not retained here (only the
+        // fd matters for fanout); it's informational for debug logging only.
+        int stream_idx = (opt == STDOUT_SIBLING_PIPES) ? STDOUT_FILENO : STDERR_FILENO;
+        int n = eis.decodeListSize();
+        if (n < 0) {
+          m_err << op << " requires a list of {ConsumerId, WriteFd} tuples";
+          return -1;
+        }
+        for (int i = 0; i < n; i++) {
+          if (eis.decodeTupleSize() != 2) {
+            m_err << op << ": each entry must be {ConsumerId, WriteFd}";
+            return -1;
+          }
+          std::string consumer_id;
+          int sz, elem_type = eis.decodeType(sz);
+          if (elem_type == etAtom)
+            eis.decodeAtom(consumer_id);
+          else
+            eis.decodeStringOrBinary(consumer_id);
+          long write_fd;
+          if (eis.decodeInt(write_fd) < 0 || write_fd < 0) {
+            m_err << op << ": WriteFd must be a non-negative integer";
+            return -1;
+          }
+          add_sibling_stdin_write(stream_idx, consumer_id, (int)write_fd);
+        }
+        eis.decodeListEnd();
+        break;
+      }
+
+      case STDIN_FROM_SIBLING: {
+        // {stdin_from_sibling, ReadFd::integer()}
+        // Graph-only: read-end of this task's stdin pipe, pre-allocated by Erlang and
+        // already connected to an upstream sibling's stdout fanout list. start_child
+        // uses this fd directly for stdin instead of creating a new REDIRECT_ERL pipe.
+        long read_fd;
+        if (eis.decodeInt(read_fd) < 0 || read_fd < 0) {
+          m_err << op << " requires a non-negative integer fd";
+          return -1;
+        }
+        stdin_from_sibling((int)read_fd);
+        break;
+      }
+
+      case TIMEOUT:
+        // {timeout, Ms::int()} -- wall-clock watchdog: kill the process (via the same
+        // SIGTERM->SIGKILL escalation used by exec:stop/1) if it's still running Ms
+        // milliseconds after spawn. Distinct from kill_timeout, which only governs the
+        // escalation window *after* a stop/kill has already been requested.
+        if (eis.decodeInt(m_timeout_ms) < 0 || m_timeout_ms < 0) {
+          m_err << op << " - invalid value";
+          return -1;
+        }
+        break;
+
+      case STATS:
+        // stats -- deliver {stats, OsPid, StatsMap} (rusage + wall-clock duration) to the
+        // owner just before the final exit notification. See CmdInfo::want_stats.
+        m_want_stats = true;
+        break;
+
       default:
         m_err << "bad option: " << op; return -1;
     }
