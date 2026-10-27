@@ -2501,6 +2501,82 @@ wait_until_pid_stops(Pid, Retries) ->
             wait_until_pid_stops(Pid, Retries - 1)
     end.
 
+child_group_failure_test_() ->
+    {timeout, 30, fun test_child_group_failure/0}.
+
+test_child_group_failure() ->
+    case build_child_group_failure_harness() of
+        {ok, WrapperPath, PreloadPath, PreloadEnv} ->
+            try
+                Env = [{"ERLEXEC_REAL_PORTEXE", default(portexe)},
+                       {"ERLEXEC_TEST_PRELOAD", PreloadPath},
+                       {"ERLEXEC_TEST_PRELOAD_ENV", PreloadEnv}],
+                with_child_group_failure_exec(WrapperPath, Env, fun() ->
+                    ?assertMatch({ok, [{stdout, [<<"group-ok\n">>]}]},
+                        exec:run(["/bin/echo", "group-ok"],
+                            [sync, stdout, stderr, {group, 0}, kill_group]))
+                end),
+                with_child_group_failure_exec(WrapperPath,
+                    [{"ERLEXEC_TEST_DENY_PARENT_GROUP", "1"} | Env], fun() ->
+                    {error, Details} = exec:run(["/bin/echo", "must-not-run"],
+                        [sync, stdout, stderr, {group, 0}, kill_group]),
+                    ?assertEqual(256, proplists:get_value(exit_status, Details)),
+                    ?assertMatch([<<"Cannot set effective group to 0", _/binary>>],
+                        proplists:get_value(stderr, Details)),
+                    ?assertEqual(undefined, proplists:get_value(stdout, Details))
+                end)
+            after
+                file:delete(WrapperPath),
+                file:delete(PreloadPath)
+            end;
+        {error, Reason} -> erlang:error(Reason);
+        {skip, _Reason} -> ok
+    end.
+
+with_child_group_failure_exec(WrapperPath, Env, Fun) ->
+    case whereis(exec) of
+        undefined -> ok;
+        OldPid ->
+            Ref = monitor(process, OldPid),
+            exit(OldPid, kill),
+            receive {'DOWN', Ref, process, OldPid, _} -> ok
+            after 5000 -> erlang:error(exec_stop_timeout)
+            end
+    end,
+    {ok, ExecPid} = exec:start([{portexe, WrapperPath}, {env, Env}]),
+    try Fun()
+    after
+        Ref2 = monitor(process, ExecPid),
+        exit(ExecPid, kill),
+        receive {'DOWN', Ref2, process, ExecPid, _} -> ok
+        after 5000 -> erlang:error(exec_stop_timeout)
+        end
+    end.
+
+build_child_group_failure_harness() ->
+    case {os:type(), os:find_executable("cc")} of
+        {_, false} -> {skip, no_c_compiler};
+        {{unix, linux}, Cc} ->
+            compile_child_group_failure_harness(Cc, ["-shared", "-fPIC", "-ldl"], "LD_PRELOAD");
+        {{unix, darwin}, Cc} ->
+            compile_child_group_failure_harness(Cc, ["-dynamiclib", "-fPIC"], "DYLD_INSERT_LIBRARIES");
+        _ -> {skip, unsupported_os}
+    end.
+
+compile_child_group_failure_harness(Cc, Flags, PreloadEnv) ->
+    PrivDir = code:priv_dir(erlexec),
+    Base = integer_to_list(erlang:unique_integer([positive])),
+    PreloadPath = filename:join(PrivDir, "deny_child_setpgid_" ++ Base ++ ".so"),
+    WrapperPath = filename:join(PrivDir, "child_setpgid_wrapper_" ++ Base),
+    Source = filename:join([PrivDir, "test", "deny_child_setpgid.c"]),
+    WrapperSource = filename:join([PrivDir, "test", "child_setpgid_wrapper.c"]),
+    case {compile_c_helper(Cc, Flags, PreloadPath, Source),
+          compile_c_helper(Cc, ["-O2"], WrapperPath, WrapperSource)} of
+        {ok, ok} -> {ok, WrapperPath, PreloadPath, PreloadEnv};
+        {{error, _} = Error, _} -> file:delete(WrapperPath), Error;
+        {_, {error, _} = Error} -> file:delete(PreloadPath), Error
+    end.
+
 build_setpgid_failure_harness() ->
     case {os:type(), os:find_executable("cc")} of
         {{unix, linux}, false} ->

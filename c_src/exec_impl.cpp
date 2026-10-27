@@ -1069,13 +1069,22 @@ pid_t start_child(CmdOptions& op, std::string& error)
     #endif
 
     // PTY children that own their session/group already got it from setsid().
-    if (!op.pty_owns_group() &&
-      op.group() != std::numeric_limits<int>::max() &&
-      setpgid(0, op.group()) < 0)
-    {
-      err.write("Cannot set effective group to %d", op.group());
-      perror(err.c_str());
-      exit(EXIT_FAILURE);
+    if (!op.pty_owns_group() && op.group() != std::numeric_limits<int>::max()) {
+      pid_t gid = op.group() ? op.group() : getpid();
+      if (setpgid(0, gid) < 0) {
+        int group_errno = errno;
+        // The parent also assigns this group immediately after fork(). On
+        // macOS the child's concurrent call can fail even when the parent
+        // already established the requested group. Verify the resulting group
+        // before treating the failure as fatal; do not retry or accept a child
+        // that remains in a different group.
+        if (getpgrp() != gid) {
+          errno = group_errno;
+          err.write("Cannot set effective group to %d", op.group());
+          perror(err.c_str());
+          exit(EXIT_FAILURE);
+        }
+      }
     }
 
     // Build the command arguments list
