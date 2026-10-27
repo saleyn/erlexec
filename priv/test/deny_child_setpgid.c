@@ -12,6 +12,9 @@ __attribute__((constructor))
 static void remember_exec_port_pid(void)
 {
     exec_port_pid = getpid();
+    const char* preload_env = getenv("ERLEXEC_TEST_PRELOAD_ENV");
+    if (preload_env)
+        unsetenv(preload_env);
 }
 
 int setpgid(pid_t pid, pid_t pgid)
