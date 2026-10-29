@@ -46,6 +46,8 @@ The following features are supported:
 * Execute OS processes under different user credentials (using Linux capabilities).
 * Attach spawned processes to Linux cgroups for resource isolation and control.
 * Perform proper cleanup of OS child processes at port program termination time.
+* Execute commands in containers (supporting `podman` and `docker`) with
+  `exec:run_container/1`.
 * Run declarative process graphs (`run_graph/2`) with native (no Erlang round-trip)
   sibling-to-sibling piping, multi-destination fan-out, per-task and whole-graph
   wall-clock timeouts, and per-task completion events. See
@@ -85,6 +87,7 @@ and is considered stable.
   - [Debugging](#debugging)
   - [Examples](#examples)
     - [Starting/stopping an OS process](#startingstopping-an-os-process)
+    - [Running a command in a container](#running-a-command-in-a-container)
     - [Clearing environment or unsetting an env variable of the child process](#clearing-environment-or-unsetting-an-env-variable-of-the-child-process)
     - [Running exec-port as another effective user](#running-exec-port-as-another-effective-user)
     - [Allowing exec-port to run commands as other effective users](#allowing-exec-port-to-run-commands-as-other-effective-users)
@@ -271,6 +274,88 @@ iex(2)> :exec.run("echo ok", [:sync, :stdout])
 
 iex(3)> :exec.run(["/bin/echo", "ok"], [:sync, :stdout])
 {:ok, [stdout: ["ok\n"]]}
+```
+
+### Running a command in a container
+
+Use `exec:run_container/1` to execute a command inside a container without
+manually building a `docker run` or `podman run` command line.
+
+Runtime selection:
+
+- `runtime => auto` (default): tries `podman` first, then `docker`.
+- `runtime => podman | docker`: require a specific runtime by name.
+- `runtime => "/full/path/to/runtime"`: use an explicit executable path.
+
+The resolved runtime path is cached internally for faster repeated calls.
+
+Supported spec keys:
+
+- `image` (required)
+- `command` (string/binary shell form, or argv list)
+- `args` (extra argv list)
+- `env` (map or list of `{Key, Value}`)
+- `volumes` (`[{Host, Container}]` or `[{Host, Container, Mode}]`)
+  where `Mode` supports `"ro"`, `"rw"`, `read_only`, and `read_write`, `"ro,z"`
+  (see [podman volumes guide](https://docs.podman.io/en/v4.4/markdown/options/volumes-from.html))
+- `networks` (list)
+- `ports` (list; mapped to `-p` / `--publish`)
+- `memory_limit` (mapped to `--memory`)
+- `cpu_limit` (mapped to `--cpus`, including milli-CPU values such as `"500m"`)
+- `runtime` (`auto | podman | docker | path`)
+- `remove` (default `true`, adds `--rm`)
+- `timeout` (mapped to exec watchdog option `{timeout, Ms}`)
+- `on_timeout` (currently `kill`)
+- `exec_options` (additional options passed to `exec:run_link/3`)
+- `start_timeout` (timeout for the `exec:run_link/3` call itself)
+
+Example: synchronous run and capture stdout.
+
+```erlang
+1> Spec = #{
+1>   image   => "alpine:3.20",
+1>   command => ["sh", "-lc", "echo container-ok"]
+1> }.
+2> exec:run_container(Spec#{exec_options => [sync, stdout]}).
+{ok,[{stdout,[<<"container-ok\n">>]}]}
+```
+
+Example: explicit runtime selection.
+
+```erlang
+1> exec:run_container(#{
+1>   image        => "alpine",
+1>   runtime      => podman,
+1>   command      => ["echo", "using-podman"],
+1>   exec_options => [sync, stdout]
+1> }).
+{ok,[{stdout,[<<"using-podman\n">>]}]}
+```
+
+Example: ports, volumes, env, CPU/memory limits, and timeout.
+
+```erlang
+1> Spec = #{
+1>   image   => "alpine:3.20",
+1>   command => "echo $APP_MODE && sleep 1 && echo done",
+1>   env     => #{
+1>     "APP_MODE" => "demo"
+1>   },
+1>   volumes => [
+1>     {"/tmp",     "/work",  read_only},
+1>     {"/var/tmp", "/cache", read_write}
+1>   ],
+1>   ports   => [
+1>     {8080, 80},
+1>     {"127.0.0.1", udp, 5353, 5353}
+1>   ],
+1>   cpu_limit    => "500m",
+1>   memory_limit => "256M",
+1>   timeout      => 5000,
+1>   exec_options => [sync, stdout, stderr]
+1> }.
+2> exec:run_container(Spec).
+{ok,[{stdout,[...]}]}
 ```
 
 ### Clearing environment or unsetting an env variable of the child process

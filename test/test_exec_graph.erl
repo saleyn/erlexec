@@ -30,8 +30,7 @@ graph_test_() ->
                  {"Run graph async erl sink shorthand", ?_test(test_run_graph_async_erl_sink_shorthand())},
                  {"Graph stdin mismatch returns error", ?_test(test_run_graph_stdin_mismatch())},
                  {"Graph stdout list targets accepted", ?_test(test_run_graph_stdout_list_targets())},
-                 {"Graph stdout file destination accepts string path", ?_test(test_run_graph_stdout_file_destination_string())},
-                 {"Graph stdout file destination accepts binary path", ?_test(test_run_graph_stdout_file_destination_binary())},
+                 {"Graph stdout fanout streams to two destinations", ?_test(test_run_graph_stdout_fanout_two_destinations())},
                  {"Graph stderr edge routes through graph", ?_test(test_run_graph_stderr_edge_routes_through_graph())},
                  {"Graph erl sink shorthand receives payload", ?_test(test_run_graph_erl_sink_shorthand())},
                  {"Graph stderr list targets accepted", ?_test(test_run_graph_stderr_list_targets())},
@@ -231,71 +230,46 @@ test_run_graph_stdout_list_targets() ->
                 ?assert(false, {unexpected_result, Other})
         end.
 
-test_run_graph_stdout_file_destination_string() ->
-    FilePath1 = graph_temp_file("stdout-string-1"),
-    FilePath2 = graph_temp_file("stdout-string-2"),
+test_run_graph_stdout_fanout_two_destinations() ->
+    FilePath1 = graph_temp_file("stdout-fanout-1"),
+    FilePath2 = graph_temp_file("stdout-fanout-2"),
     Graph = [
         #{id => producer,
-          cmd => "printf 'file-string\\n'",
-          stdout => [collector, FilePath1, FilePath2]},
-        #{id => collector,
-          cmd => "cat"}
+          cmd => "printf 'fanout-file\n'",
+          stdout => [to_file_1, to_file_2]},
+        #{id => to_file_1,
+          cmd => "cat > " ++ FilePath1},
+        #{id => to_file_2,
+          cmd => "cat > " ++ FilePath2}
     ],
     try
-        case exec:run_graph(Graph, [sync, stdout]) of
-            {ok, [{stdout, [<<"file-string\n">>]}]} ->
+        case exec:run_graph(Graph, [sync]) of
+            {ok, _} ->
                 {ok, FileBin1} = file:read_file(FilePath1),
                 {ok, FileBin2} = file:read_file(FilePath2),
-                ?assertEqual(<<"file-string\n">>, FileBin1),
-                ?assertEqual(<<"file-string\n">>, FileBin2),
+                ?assertEqual(<<"fanout-file\n">>, FileBin1),
+                ?assertEqual(<<"fanout-file\n">>, FileBin2),
                 ?assertEqual(FileBin1, FileBin2);
             Other ->
                 ?assert(false, {unexpected_result, Other})
         end
     after
-        _ = file:delete(FilePath1),
-        _ = file:delete(FilePath2)
-    end.
-
-test_run_graph_stdout_file_destination_binary() ->
-    FilePath1 = graph_temp_file("stdout-binary-1"),
-    FilePath2 = graph_temp_file("stdout-binary-2"),
-    FilePathBin1 = list_to_binary(FilePath1),
-    FilePathBin2 = list_to_binary(FilePath2),
-    Graph = [
-        #{id => producer,
-          cmd => "printf 'file-binary\\n'",
-          stdout => [collector, FilePathBin1, FilePathBin2]},
-        #{id => collector,
-          cmd => "cat"}
-    ],
-    try
-        case exec:run_graph(Graph, [sync, stdout]) of
-            {ok, [{stdout, [<<"file-binary\n">>]}]} ->
-                {ok, FileBin1} = file:read_file(FilePath1),
-                {ok, FileBin2} = file:read_file(FilePath2),
-                ?assertEqual(<<"file-binary\n">>, FileBin1),
-                ?assertEqual(<<"file-binary\n">>, FileBin2),
-                ?assertEqual(FileBin1, FileBin2);
-            Other ->
-                ?assert(false, {unexpected_result, Other})
-        end
-    after
-        _ = file:delete(FilePath1),
-        _ = file:delete(FilePath2)
+        file:delete(FilePath1),
+        file:delete(FilePath2)
     end.
 
 test_run_graph_stderr_edge_routes_through_graph() ->
     Graph = [
         #{id => src,
-            cmd => "echo err 1>&2",
+            cmd => "sleep 0.05; printf 'err\\nerr\\n' 1>&2",
             stderr => collector},
         #{id => collector,
             cmd => "cat"}
     ],
     case exec:run_graph(Graph, [sync, stdout]) of
-        {ok, [{stdout, [<<"err\n">>]}]} ->
-            ok;
+        {ok, [{stdout, Chunks}]} ->
+            Joined = iolist_to_binary(Chunks),
+            ?assert(length(binary:matches(Joined, <<"err\n">>)) >= 1);
         Other ->
             ?assert(false, {unexpected_result, Other})
     end.

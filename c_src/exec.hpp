@@ -461,32 +461,32 @@ public:
 struct CmdInfo {
   using Queue = std::list<std::string>;
 
-  CmdArgsList     cmd;                // Executed command
-  pid_t           cmd_pid;            // Pid of the custom kill command
-  pid_t           cmd_gid;            // Command's group ID
-  std::string     kill_cmd;           // Kill command to use (default: use SIGTERM)
-  kill_cmd_pid_t  kill_cmd_pid   = -1;// Pid of the command that <pid> is supposed to kill
-  ei::TimeVal     deadline;           // Time when the <cmd_pid> is supposed to be killed using SIGTERM.
-  bool            sigterm = false;    // <true> if sigterm was issued.
-  bool            sigkill = false;    // <true> if sigkill was issued.
-  bool            timed_out = false;  // <true> if the kill was triggered by the {timeout, Ms}
+  CmdArgsList     cmd;                 // Executed command
+  pid_t           cmd_pid;             // Pid of the custom kill command
+  pid_t           cmd_gid;             // Command's group ID
+  std::string     kill_cmd;            // Kill command to use (default: use SIGTERM)
+  kill_cmd_pid_t  kill_cmd_pid   = -1; // Pid of the command that <pid> is supposed to kill
+  ei::TimeVal     deadline;            // Time when the <cmd_pid> is supposed to be killed using SIGTERM.
+  bool            sigterm = false;     // <true> if sigterm was issued.
+  bool            sigkill = false;     // <true> if sigkill was issued.
+  bool            timed_out = false;   // <true> if the kill was triggered by the {timeout, Ms}
                                        // watchdog (run_deadline), as opposed to an explicit
                                        // exec:stop/1 or exec:kill/2 request. Used to avoid the
                                        // exit-status-override-to-0 logic below (meant for
                                        // explicit user-requested stops) misreporting a timeout
                                        // kill as a normal/clean exit.
-  int             kill_timeout;       // Pid shutdown interval in sec before it's killed with SIGKILL
-  bool            kill_group;         // Indicates if at exit (any exit) the whole group needs to be killed
-  bool            graph_group = false;// Indicates this pid is part of a graph's process group:
+  int             kill_timeout;        // Pid shutdown interval in sec before it's killed with SIGKILL
+  bool            kill_group;          // Indicates if at exit (any exit) the whole group needs to be killed
+  bool            graph_group = false; // Indicates this pid is part of a graph's process group:
                                        // on *abnormal* exit only (signaled, or non-zero exit code),
                                        // kill the rest of the group. Unlike kill_group, does NOT
                                        // fire on normal (zero-exit-code) completion -- a graph
                                        // pipeline's early stages are expected to finish before
                                        // later ones.
-  int             success_code;       // Exit code to use on success
-  bool            managed;            // <true> if this pid is started externally, but managed by erlexec
-  int             stream_fd[3];       // Pipe fd getting   process's stdin/stdout/stderr
-  std::vector<int> fanout_fds[3];     // Extra destination fds for stdout/stderr fanout (index 0 unused).
+  int             success_code;        // Exit code to use on success
+  bool            managed;             // <true> if this pid is started externally, but managed by erlexec
+  int             stream_fd[3];        // Pipe fd getting   process's stdin/stdout/stderr
+  std::vector<int> fanout_fds[3];      // Extra destination fds for stdout/stderr fanout (index 0 unused).
                                        // Opened at spawn time, written on every chunk alongside
                                        // stream_fd (via ei::tee_buffer_to_many), closed once at reap.
                                        // Independent of stream_fd's EOF/REDIRECT_CLOSE lifecycle.
@@ -494,20 +494,20 @@ struct CmdInfo {
                                        // forced a pipe into existence for fanout purposes, but the user
                                        // did NOT explicitly request that stream (e.g., stdout_files without stdout).
                                        // When true, don't send data to Erlang via send_ospid_output.
-  ei::TimeVal     run_deadline;       // Wall-clock watchdog deadline (zero = disabled). Set once
+  ei::TimeVal     run_deadline;        // Wall-clock watchdog deadline (zero = disabled). Set once
                                        // at spawn time from the {timeout, Ms} option; independent
                                        // of `deadline` above, which only tracks the post-stop
                                        // SIGTERM->SIGKILL escalation window.
-  bool            want_stats = false; // Deliver {stats, OsPid, StatsMap} to the owner just
+  bool            want_stats = false;  // Deliver {stats, OsPid, StatsMap} to the owner just
                                        // before the final exit notification.
-  ei::TimeVal     start_time;         // Spawn time; used to compute wall-clock duration for
+  ei::TimeVal     start_time;          // Spawn time; used to compute wall-clock duration for
                                        // the stats message regardless of rusage portability.
-  struct rusage   last_rusage{};      // Captured at reap time via wait4() when available and
+  struct rusage   last_rusage{};       // Captured at reap time via wait4() when available and
                                        // want_stats is set; see HAVE_WAIT4 in exec_impl.cpp.
-  bool            have_rusage = false;// True if last_rusage was actually populated (wait4()
+  bool            have_rusage = false; // True if last_rusage was actually populated (wait4()
                                        // succeeded on a platform that has it).
-  int             stdin_wr_pos   = 0; // Offset of the unwritten portion of the head item of stdin_queue
-  int             dbg            = 0; // Debug flag
+  int             stdin_wr_pos   = 0;  // Offset of the unwritten portion of the head item of stdin_queue
+  int             dbg            = 0;  // Debug flag
   Queue           stdin_queue;
   bool            eof_arrived    = false;
 #if defined(USE_POLL) && USE_POLL  > 0
