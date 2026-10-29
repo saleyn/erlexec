@@ -13,7 +13,7 @@ env:
   OTP_LATEST: "29"
   MIN_AGE_HOURS: 1
   # Number of most-recent Hex.pm releases to keep active (not retire).
-  KEEP_RELEASES: 7
+  KEEP_RELEASES: 10
 
 jobs:
   linux:
@@ -68,6 +68,39 @@ jobs:
           adduser --disabled-password --gecos '' newuser
           chown -R newuser:newuser .
           su -c "make test" newuser
+
+  linux-podman:
+    name: OTP ${{ matrix.otp }} linux.podman
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        otp: [29]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Erlang/OTP
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ matrix.otp }}
+          rebar3-version: '3'
+      - name: OTP Version
+        run:  erl -eval '{ok, Version} = file:read_file(filename:join([code:root_dir(), "releases", erlang:system_info(otp_release), "OTP_VERSION"])), io:format("Version=~s\n", [Version]), halt().' -noshell -noinput;
+      - name: Install Podman
+        run:  |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends podman
+      - name: Verify Podman
+        run:  |
+          podman --version
+          podman info
+      - name: Build
+        run:  |
+          make info
+          make
+      - name: Run Podman container integration tests
+        env:
+          ERLEXEC_RUN_CONTAINER_TESTS: "1"
+        run:  rebar3 eunit --module test_exec_container --verbose
 
   macOS:
     name: OTP ${{ matrix.otp }} macos.${{ matrix.compiler.compiler }}
@@ -145,7 +178,7 @@ jobs:
   detect-release:
     name: Detect Release
     runs-on: ubuntu-latest
-    needs: [linux, macOS]
+    needs: [linux, linux-podman, macOS]
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     outputs:
       should_release: ${{ steps.resolve.outputs.should_release }}
