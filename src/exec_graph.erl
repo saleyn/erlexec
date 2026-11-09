@@ -211,6 +211,40 @@ see `is_controlled_native_option/1`):
   completes, before the graph as a whole finishes. Useful for observing per-stage progress in
   a long pipeline without tapping every stage with its own `erl` sink.
 
+### About `GraphOsPid`
+
+The `GraphOsPid` value returned by async `run_graph/2` (as `{ok, Worker, GraphOsPid}`) and
+used in all graph messages (`stdout`, `stderr`, `'DOWN'`) is **not an OS process id**.
+It is a synthetic, VM-unique identifier generated as
+`-erlang:unique_integer([positive])`:
+- It is negative, so it can never collide with a real OS pid returned by `exec:run/2`.
+  A graph's messages therefore never get mixed up with output from ordinary children.
+- A graph runs one OS process per task, so there is no single OS pid that could represent
+  the whole graph.
+- Use it only to match messages. Do not pass it to `exec:stop/1`, `exec:kill/2`, `kill`,
+  or any other function that expects a real OS pid. To control the graph, use the `Worker`
+  pid instead.
+
+### Process group ID for the graph
+
+All tasks of a graph are placed in one OS process group, and that group is created by
+the graph itself, not by the exec port. The group ID (PGID) equals the OS pid of the first
+task spawned by the graph:
+- The first task is spawned with `{group, 0}`, which makes it the leader of a new group.
+  Its OS pid becomes the group ID.
+- Every later task is spawned with `{group, GroupId}`, so it joins that same group.
+
+So `ps -o pid,ppid,pgid` shows the same PGID for all tasks of one graph, and that PGID
+is the OS pid of one of the tasks (not of the exec port program). The tasks' parent
+(PPID) is still the exec port program.
+
+Note that the graph does not send a group-wide kill (`kill_group` is not set). The group
+is only used for bookkeeping. Each task still has to be killed individually, for example
+through `timeout` or `exec:stop/1`.
+
+If you pass `group` in `run_options`, it is added after the graph's own `{group, ...}`
+option. I haven't verified which of the two takes effect, so don't rely on either.
+
 ## Per-task run options (everything else in `run_options`)
 
 Any other option in `run_options` is NOT graph-specific -- it's passed straight through to

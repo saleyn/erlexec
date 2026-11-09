@@ -313,9 +313,9 @@ Example: synchronous run and capture stdout.
 
 ```erlang
 1> Spec = #{
-1>   image   => "alpine:3.20",
-1>   command => ["sh", "-lc", "echo container-ok"]
-1> }.
+     image   => "alpine:3.20",
+     command => ["sh", "-lc", "echo container-ok"]
+   }.
 2> exec:run_container(Spec#{exec_options => [sync, stdout]}).
 {ok,[{stdout,[<<"container-ok\n">>]}]}
 ```
@@ -324,11 +324,11 @@ Example: explicit runtime selection.
 
 ```erlang
 1> exec:run_container(#{
-1>   image        => "alpine",
-1>   runtime      => podman,
-1>   command      => ["echo", "using-podman"],
-1>   exec_options => [sync, stdout]
-1> }).
+     image        => "alpine",
+     runtime      => podman,
+     command      => ["echo", "using-podman"],
+     exec_options => [sync, stdout]
+   }).
 {ok,[{stdout,[<<"using-podman\n">>]}]}
 ```
 
@@ -336,24 +336,24 @@ Example: ports, volumes, env, CPU/memory limits, and timeout.
 
 ```erlang
 1> Spec = #{
-1>   image   => "alpine:3.20",
-1>   command => "echo $APP_MODE && sleep 1 && echo done",
-1>   env     => #{
-1>     "APP_MODE" => "demo"
-1>   },
-1>   volumes => [
-1>     {"/tmp",     "/work",  read_only},
-1>     {"/var/tmp", "/cache", read_write}
-1>   ],
-1>   ports   => [
-1>     {8080, 80},
-1>     {"127.0.0.1", udp, 5353, 5353}
-1>   ],
-1>   cpu_limit    => "500m",
-1>   memory_limit => "256M",
-1>   timeout      => 5000,
-1>   exec_options => [sync, stdout, stderr]
-1> }.
+     image   => "alpine:3.20",
+     command => "echo $APP_MODE && sleep 1 && echo done",
+     env     => #{
+       "APP_MODE" => "demo"
+     },
+     volumes => [
+       {"/tmp",     "/work",  read_only},
+       {"/var/tmp", "/cache", read_write}
+     ],
+     ports   => [
+       {8080, 80},
+       {"127.0.0.1", udp, 5353, 5353}
+     ],
+     cpu_limit    => "500m",
+     memory_limit => "256M",
+     timeout      => 5000,
+     exec_options => [sync, stdout, stderr]
+   }.
 2> exec:run_container(Spec).
 {ok,[{stdout,[...]}]}
 ```
@@ -535,18 +535,18 @@ cgroup directory relative to the mounted cgroup filesystem root (typically
 
 ```erlang
 1> exec:run("/usr/bin/bash -lc 'echo $$; cat /proc/self/cgroup'",
-2>          [sync, stdout, {cgroup, "/erlexec/demo"}]).
+            [sync, stdout, {cgroup, "/erlexec/demo"}]).
 {ok,[{stdout,[...]}]}
 
 2> exec:run("/usr/bin/bash -lc 'echo ready'",
-2>          [sync, stdout,
-2>           {cgroup, #{path   => "/erlexec/demo",
+            [sync, stdout,
+             {cgroup, #{path   => "/erlexec/demo",
                         create => true,
-2>                      clear  => true,
-2>                      limits => #{cpu => "max 100000",
-2>                                  memory => "512M",
-2>                                  pids => 256,
-2>                                  io => "8:0 rbps=1048576"}}}]).
+                        clear  => true,
+                        limits => #{cpu => "max 100000",
+                                    memory => "512M",
+                                    pids => 256,
+                                    io => "8:0 rbps=1048576"}}}]).
 {ok,[{stdout,[<<"ready\n">>]}]}
 ```
 
@@ -912,6 +912,31 @@ Graph8 = [
 ],
 exec:run_graph(Graph8, [sync, stdout]).
 % => {ok, [{stdout, [<<"s3\n">>]}]}
+
+% 9) Run a graph with task-level monitoring
+Graph9 = [
+  #{id => src,   cmd => "printf 'x\\n'", stdout => [left, right]},
+  #{id => left,  cmd => "false"},
+  #{id => right, cmd => "cat >&2"}
+],
+exec:run_graph(Graph9, [monitor, task_monitor, stdout, stderr]).
+% => {ok,<0.433.0>,-66}
+flush().
+% Shell got {'DOWN',-66,task,left,{exit_status,256}}
+% Shell got {'DOWN',-66,task,src,normal}
+% Shell got {stderr,-66,<<"x\n">>}
+% Shell got {'DOWN',-66,task,right,normal}
+% Shell got {'DOWN',-66,process,<0.433.0>,{exit_status,256}}
+
+% 10) Run a graph with task-level monitoring without 'monitor'
+%     (the `{'DOWN', _, process, _, _}` is not being sent):
+exec:run_graph(Graph9, [task_monitor, stdout, stderr]).
+% => {ok,<0.442.0>,-98}
+flush().
+% Shell got {'DOWN',-98,task,left,{exit_status,256}}
+% Shell got {'DOWN',-98,task,src,normal}
+% Shell got {stderr,-98,<<"x\n">>}
+% Shell got {'DOWN',-98,task,right,normal}
 ```
 
 ### `run_graph` vs. shell piping
