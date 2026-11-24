@@ -515,9 +515,30 @@ bool process_pid_input(CmdInfo& ci)
     const void*  p = s.c_str() + ci.stdin_wr_pos;
     int   n,   len = s.size()  - ci.stdin_wr_pos;
 
+    // SIGPIPE safety: the child may have exited (its stdin reader is gone) before this
+    // port has reaped it, and write() to such a pipe raises SIGPIPE. The port's global
+    // SIGPIPE handler would then shut down every process this port manages. Block SIGPIPE
+    // for the write so a closed stdin surfaces as EPIPE, which closes this child's stdin
+    // below. Same approach as the fanout writes in process_pid_output(). The event loop is
+    // single-threaded, so changing the process-wide signal mask here is race-free.
+    sigset_t sigpipe_set, old_set;
+    sigemptyset(&sigpipe_set);
+    sigaddset(&sigpipe_set, SIGPIPE);
+    sigprocmask(SIG_BLOCK, &sigpipe_set, &old_set);
+
     while ((n = write(fd, p, len)) < 0 && errno == EINTR);
 
     auto err = errno;
+
+    // Discard a SIGPIPE raised by the write above so it does not fire when the mask is
+    // restored, then restore the previous mask.
+    sigset_t pending;
+    sigpending(&pending);
+    if (sigismember(&pending, SIGPIPE)) {
+      int discarded;
+      sigwait(&sigpipe_set, &discarded);
+    }
+    sigprocmask(SIG_SETMASK, &old_set, nullptr);
 
     if (n < 0)
       DEBUG(debug, "Error writing %d bytes to stdin (fd=%d) of pid %d: %s",
